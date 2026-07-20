@@ -24,6 +24,7 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -269,52 +270,16 @@ def _process_is_alive(pid: int) -> bool:
     return True
 
 
-_PRODUCTION_DAEMON_WS_PORT = 8765
-
-
-def _soothed_pid_from_pidfile() -> int | None:
-    """Return the host daemon PID from ``SOOTHE_HOME/soothed.pid`` when present."""
-    try:
-        from soothe_nano.config import SOOTHE_HOME
-
-        pf = Path(SOOTHE_HOME).expanduser() / "soothed.pid"
-        if not pf.is_file():
-            return None
-        return int(pf.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError, TypeError, ImportError):
-        return None
-
-
-def _pid_listening_on_port(port: int) -> int | None:
-    """Best-effort PID of the process listening on ``port`` (macOS/Linux ``lsof``)."""
-    if port <= 0:
-        return None
-    try:
-        completed = subprocess.run(  # noqa: S603
-            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        return None
-    for line in (completed.stdout or "").splitlines():
-        token = line.strip()
-        if token.isdigit():
-            return int(token)
-    return None
-
-
 def _protected_kill_refusal(pid: int) -> str | None:
     """Return an error message when ``pid`` must not be killed by agent tools.
 
-    Protects the in-process daemon (thread-pool mode), the host ``soothed``
-    PID file target, and whoever is listening on the production WebSocket port.
+    Built-in guards protect the current agent process and its parent. Host
+    packages may inject additional refusals via :func:`register_protected_kill_hook`
+    (e.g. daemon pidfile / production WebSocket listener).
     """
     if pid == os.getpid():
         return (
-            f"Error: refusing to kill PID {pid} — that is the current agent/daemon process. "
+            f"Error: refusing to kill PID {pid} — that is the current agent process. "
             "kill_process is only for PIDs returned by run_background."
         )
     with contextlib.suppress(OSError):
@@ -324,22 +289,54 @@ def _protected_kill_refusal(pid: int) -> str | None:
                 "kill_process is only for PIDs returned by run_background."
             )
 
-    daemon_pid = _soothed_pid_from_pidfile()
-    if daemon_pid is not None and pid == daemon_pid:
-        return (
-            f"Error: refusing to kill Soothe daemon PID {pid} (soothed.pid). "
-            "Stop the host daemon from an outside shell with `soothed stop`, "
-            "not via agent tools."
-        )
-
-    listener = _pid_listening_on_port(_PRODUCTION_DAEMON_WS_PORT)
-    if listener is not None and pid == listener:
-        return (
-            f"Error: refusing to kill PID {pid} listening on "
-            f"ws://127.0.0.1:{_PRODUCTION_DAEMON_WS_PORT} (live Soothe daemon). "
-            "kill_process is only for PIDs returned by run_background."
-        )
+    with _protected_kill_hooks_lock:
+        hooks = list(_protected_kill_hooks)
+    for hook in hooks:
+        try:
+            message = hook(pid)
+        except Exception:
+            logger.exception("protected kill hook failed for pid=%s", pid)
+            continue
+        if message:
+            return message
     return None
+
+
+# Host-injectable kill refusal hooks (process-local). Nano stays free of
+# daemon/pidfile/port knowledge; soothe registers host guards at startup.
+ProtectedKillHook = Callable[[int], str | None]
+_protected_kill_hooks: list[ProtectedKillHook] = []
+_protected_kill_hooks_lock = threading.Lock()
+
+
+def register_protected_kill_hook(hook: ProtectedKillHook) -> Callable[[], None]:
+    """Register a host-side kill refusal check.
+
+    Hooks run after built-in self/parent guards. The first non-``None`` message
+    wins. Duplicate registration of the same callable is ignored.
+
+    Args:
+        hook: ``(pid) -> refusal_message | None``.
+
+    Returns:
+        Unregister callback for the hook.
+    """
+    with _protected_kill_hooks_lock:
+        if hook not in _protected_kill_hooks:
+            _protected_kill_hooks.append(hook)
+
+    def _unregister() -> None:
+        with _protected_kill_hooks_lock:
+            with contextlib.suppress(ValueError):
+                _protected_kill_hooks.remove(hook)
+
+    return _unregister
+
+
+def clear_protected_kill_hooks() -> None:
+    """Remove all host-injected protected-kill hooks (tests / process reset)."""
+    with _protected_kill_hooks_lock:
+        _protected_kill_hooks.clear()
 
 
 def _kill_process_tree(pid: int, *, sig: int = signal.SIGKILL) -> None:

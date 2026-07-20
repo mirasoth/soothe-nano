@@ -1,7 +1,7 @@
 """Display card mutation persistence (RFC-413).
 
 SQLite (``display.db``) is the default. When ``persistence.default_backend`` is
-``postgresql``, the daemon configures a PostgreSQL store in ``soothe_metadata``.
+``postgresql``, the process configures a PostgreSQL store in ``soothe_metadata``.
 """
 
 from __future__ import annotations
@@ -445,7 +445,7 @@ def _close_shared_store_unlocked() -> None:
 def configure_display_card_store(config: SootheConfig) -> DisplayCardStoreProtocol:
     """Select SQLite or PostgreSQL display store from ``persistence.default_backend``.
 
-    Call once during daemon startup after PostgreSQL databases are provisioned.
+    Call once during process startup after PostgreSQL databases are provisioned.
     """
     global _shared_store
     with _shared_store_lock:

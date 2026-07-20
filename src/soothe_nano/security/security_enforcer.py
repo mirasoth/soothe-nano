@@ -13,8 +13,8 @@ from soothe_nano.workspace.workspace_paths import join_workspace_normalized_path
 
 from .path_security import PathValidator, ValidationSeverity
 from .policy_models import (
+    PathPolicyDecision,
     PolicyAction,
-    PolicyDecision,
     PolicyViolation,
     SecurityPolicy,
 )
@@ -135,7 +135,7 @@ class SecurityEnforcer:
         path: str,
         operation: str,
         context: dict[str, Any] | None = None,
-    ) -> PolicyDecision:
+    ) -> PathPolicyDecision:
         validation = self.validator.validate(path, operation, strict=True)
         if not validation.is_valid:
             violation = PolicyViolation(
@@ -147,7 +147,7 @@ class SecurityEnforcer:
                 severity=self._severity_from_validation(validation.severity),
                 details=validation.details,
             )
-            decision = PolicyDecision(
+            decision = PathPolicyDecision(
                 allowed=False,
                 action=PolicyAction.DENY,
                 reason=validation.message,
@@ -178,7 +178,7 @@ class SecurityEnforcer:
                     operation=operation,
                     severity="high",
                 )
-                decision = PolicyDecision(
+                decision = PathPolicyDecision(
                     allowed=False,
                     action=PolicyAction.DENY,
                     reason="Rate limit exceeded",
@@ -207,7 +207,7 @@ class SecurityEnforcer:
                         operation=operation,
                         severity="high",
                     )
-                    decision = PolicyDecision(
+                    decision = PathPolicyDecision(
                         allowed=False,
                         action=PolicyAction.DENY,
                         reason="Per-path rate limit exceeded",
@@ -236,7 +236,7 @@ class SecurityEnforcer:
         self,
         path: str,
         operation: str,
-        decision: PolicyDecision,
+        decision: PathPolicyDecision,
     ) -> None:
         if not self.enable_audit_log:
             return
@@ -354,7 +354,7 @@ class SecurityError(Exception):
         self,
         message: str,
         violations: str | None = None,
-        decision: PolicyDecision | None = None,
+        decision: PathPolicyDecision | None = None,
     ) -> None:
         super().__init__(message)
         self.violations = violations

@@ -1,6 +1,6 @@
 """Unified persistence configuration (AGENTS.md §10).
 
-Ensures daemon-owned durable stores follow ``persistence.default_backend``
+Ensures process-owned durable stores follow ``persistence.default_backend``
 as a single mode — postgresql XOR sqlite — never mixed.
 """
 

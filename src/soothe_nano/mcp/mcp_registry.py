@@ -1,4 +1,4 @@
-"""Daemon-singleton registry for MCP server connections and capabilities."""
+"""Per-agent registry for MCP server connections and capabilities."""
 
 from __future__ import annotations
 

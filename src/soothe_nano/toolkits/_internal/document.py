@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SOOTHE_INSTALL_HINT = "pip install -U soothe"
+_NANO_INSTALL_HINT = "pip install -U soothe-nano"
 
 
 def _get_cache_path(document_path: str, cache_dir: str = "", config: Any = None) -> Path | None:
@@ -93,7 +93,7 @@ def _parse_pdf_pymupdf(file_path: str) -> str:
         return "\n\n".join(pages)
 
     except ImportError:
-        msg = f"PyMuPDF not installed. Install with: {_SOOTHE_INSTALL_HINT}"
+        msg = f"PyMuPDF not installed. Install with: {_NANO_INSTALL_HINT}"
         raise ImportError(msg) from None
 
 
@@ -114,7 +114,7 @@ def _parse_docx(file_path: str) -> str:
 
         text = docx2txt.process(file_path)
     except ImportError:
-        msg = f"docx2txt not installed. Install with: {_SOOTHE_INSTALL_HINT}"
+        msg = f"docx2txt not installed. Install with: {_NANO_INSTALL_HINT}"
         raise ImportError(msg) from None
     else:
         return text or ""

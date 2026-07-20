@@ -122,7 +122,7 @@ async def search_deferred_skills(
 ) -> list[SkillIndexEntry]:
     """Search deferred skills via substring matching.
 
-    Semantic Skillify search is owned by the daemon service and is not invoked
+    Semantic Skillify search is owned by the soothe host and is not invoked
     from CoreAgent.
     """
     del config, catalog_by_name

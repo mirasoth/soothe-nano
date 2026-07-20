@@ -1,6 +1,6 @@
 """MCP Management package (RFC-412).
 
-Provides daemon-singleton MCP subsystem with:
+Provides per-agent MCP subsystem with:
 - Per-server connection sharing via langchain_mcp_adapters.MultiServerMCPClient
 - Progressive tool surfacing via MCPActivationMiddleware
 - MCP prompts as slash commands (mcp__<server>__<prompt>)

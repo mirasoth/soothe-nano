@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from soothe_nano.security.policy_models import (
+    PathPolicyDecision,
     PolicyAction,
-    PolicyDecision,
     PolicyViolation,
     SecurityPolicy,
 )
@@ -196,21 +196,21 @@ class TestSecurityPolicy:
 
 
 class TestPolicyDecision:
-    """Test cases for PolicyDecision."""
+    """Test cases for PathPolicyDecision."""
 
     def test_is_denied_property(self) -> None:
         """Test is_denied property."""
-        allowed = PolicyDecision(allowed=True, action=PolicyAction.ALLOW)
-        denied = PolicyDecision(allowed=False, action=PolicyAction.DENY)
+        allowed = PathPolicyDecision(allowed=True, action=PolicyAction.ALLOW)
+        denied = PathPolicyDecision(allowed=False, action=PolicyAction.DENY)
 
         assert allowed.is_denied is False
         assert denied.is_denied is True
 
     def test_should_log_property(self) -> None:
         """Test should_log property."""
-        allow = PolicyDecision(allowed=True, action=PolicyAction.ALLOW)
-        log = PolicyDecision(allowed=True, action=PolicyAction.LOG)
-        deny = PolicyDecision(allowed=False, action=PolicyAction.DENY)
+        allow = PathPolicyDecision(allowed=True, action=PolicyAction.ALLOW)
+        log = PathPolicyDecision(allowed=True, action=PolicyAction.LOG)
+        deny = PathPolicyDecision(allowed=False, action=PolicyAction.DENY)
 
         assert allow.should_log is False
         assert log.should_log is True
@@ -218,8 +218,8 @@ class TestPolicyDecision:
 
     def test_merge_allowed_and_denied(self) -> None:
         """Test merging allowed and denied decisions."""
-        allowed = PolicyDecision(allowed=True, action=PolicyAction.ALLOW)
-        denied = PolicyDecision(
+        allowed = PathPolicyDecision(allowed=True, action=PolicyAction.ALLOW)
+        denied = PathPolicyDecision(
             allowed=False,
             action=PolicyAction.DENY,
             reason="blocked",
@@ -243,12 +243,12 @@ class TestPolicyDecision:
             message="m2",
         )
 
-        d1 = PolicyDecision(
+        d1 = PathPolicyDecision(
             allowed=True,
             action=PolicyAction.ALLOW,
             violations=[v1],
         )
-        d2 = PolicyDecision(
+        d2 = PathPolicyDecision(
             allowed=True,
             action=PolicyAction.ALLOW,
             violations=[v2],
@@ -341,9 +341,9 @@ class TestPolicyCustomValidators:
     def test_custom_validator_blocks(self) -> None:
         """Test that custom validators can block operations."""
 
-        def block_secret_files(path: str, operation: str) -> PolicyDecision | None:
+        def block_secret_files(path: str, operation: str) -> PathPolicyDecision | None:
             if "secret" in path.lower():
-                return PolicyDecision(
+                return PathPolicyDecision(
                     allowed=False,
                     action=PolicyAction.DENY,
                     reason="Custom: secret files blocked",
@@ -363,9 +363,9 @@ class TestPolicyCustomValidators:
     def test_custom_validator_allows(self) -> None:
         """Test that custom validators can allow operations."""
 
-        def allow_specific_file(path: str, operation: str) -> PolicyDecision | None:
+        def allow_specific_file(path: str, operation: str) -> PathPolicyDecision | None:
             if path == "allowed.txt":
-                return PolicyDecision(
+                return PathPolicyDecision(
                     allowed=True,
                     action=PolicyAction.ALLOW,
                     reason="Custom: specifically allowed",

@@ -3,8 +3,6 @@
 Static system prompt bodies live as ``.xml`` fragments under
 ``soothe_nano.prompts.fragments``; this module composes them with the
 in-process tool/subagent guides into the final templates.
-
-Host loop plan/classifier templates live under ``soothe.prompts``.
 """
 
 from __future__ import annotations

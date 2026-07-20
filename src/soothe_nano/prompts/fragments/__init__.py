@@ -2,8 +2,6 @@
 
 This module loads static XML fragments at import time to maximize prompt cache hit rate.
 All fragments are read once and cached as module constants.
-
-Host loop plan/classifier fragments live under ``soothe.prompts``.
 """
 
 from pathlib import Path

@@ -51,7 +51,7 @@ def _check_wizsearch_available() -> bool:
 def _require_wizsearch() -> None:
     """Ensure optional wizsearch dependency is available."""
     if not _check_wizsearch_available():
-        msg = "wizsearch package is not installed. Install/upgrade soothe (includes research dependencies): `pip install -U soothe`."
+        msg = "wizsearch package is not installed. Install/upgrade soothe-nano (includes research dependencies): `pip install -U soothe-nano`."
         raise ImportError(msg)
 
 

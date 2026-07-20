@@ -1,6 +1,6 @@
-"""Config hot-reload support for Soothe.
+"""Config hot-reload support for Soothe Nano.
 
-Provides file system watching and signal-based config reload capabilities.
+Provides file system watching for agent config reload.
 """
 
 from __future__ import annotations
@@ -8,7 +8,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import signal
 import threading
 from collections import deque
 from collections.abc import Callable
@@ -22,9 +21,10 @@ from soothe_nano.config.env import SOOTHE_HOME
 
 _logger = logging.getLogger(__name__)
 
-# Default paths for config files
-DEFAULT_CONFIG_PATH = Path(SOOTHE_HOME) / "config" / "config.yml"
-DEFAULT_DAEMON_CONFIG_PATH = Path(SOOTHE_HOME) / "config" / "daemon.yml"
+# Default path for nano-owned agent config (IG-674 split layout)
+DEFAULT_NANO_CONFIG_PATH = Path(SOOTHE_HOME) / "config" / "nano.yml"
+# Backward-compatible alias — prefer ``DEFAULT_NANO_CONFIG_PATH``
+DEFAULT_CONFIG_PATH = DEFAULT_NANO_CONFIG_PATH
 
 # Default debounce interval in seconds
 DEFAULT_DEBOUNCE_SECONDS = 1.0
@@ -63,7 +63,7 @@ class ReloadAuditEntry:
 
     Attributes:
         timestamp: ISO format timestamp when reload occurred.
-        config_type: Type of config ('agent' or 'daemon').
+        config_type: Type of config (e.g. 'agent').
         config_path: Path to the config file.
         old_config_hash: Hash of previous config (or 'null' if first load).
         new_config_hash: Hash of new config (or 'error' if load failed).
@@ -110,7 +110,7 @@ class ReloadAuditLog:
         """Record a reload attempt.
 
         Args:
-            config_type: Type of config ('agent' or 'daemon').
+            config_type: Type of config (e.g. 'agent').
             config_path: Path to the config file.
             old_config: Previous config instance (may be None).
             new_config: New config instance (may be None on error).
@@ -173,7 +173,7 @@ class ConfigReloadEvent:
     """Event emitted when a config file is reloaded.
 
     Attributes:
-        config_type: Type of config that was reloaded ('agent' or 'daemon').
+        config_type: Type of config that was reloaded (e.g. 'agent').
         config_path: Path to the config file that changed.
         old_config: Previous config instance (may be None on first load).
         new_config: New config instance.
@@ -199,7 +199,7 @@ class WatchedConfig:
 
     Attributes:
         path: Path to the config file.
-        config_type: Type identifier ('agent' or 'daemon').
+        config_type: Type identifier (e.g. 'agent').
         loader: Callable that loads and returns the config.
         callbacks: Set of callbacks to invoke on reload.
         last_modified: Last modification timestamp seen.
@@ -221,13 +221,12 @@ class ConfigWatcher:
     Supports:
     - File system watching via watchdog for YAML files
     - Debounced reload callbacks (prevents rapid-fire reloads)
-    - SIGHUP signal handler for manual reload triggers
     - Graceful shutdown via threading.Event
     - Audit logging of all reload attempts
 
     Example:
         ```python
-        from soothe_nano.config.reload import ConfigWatcher, DEFAULT_CONFIG_PATH
+        from soothe_nano.config.reload import ConfigWatcher, DEFAULT_NANO_CONFIG_PATH
         from soothe_nano.config import SootheConfig
 
 
@@ -240,11 +239,11 @@ class ConfigWatcher:
 
         watcher = ConfigWatcher()
 
-        # Watch agent config
+        # Watch nano agent config
         watcher.watch_config(
-            path=DEFAULT_CONFIG_PATH,
+            path=DEFAULT_NANO_CONFIG_PATH,
             config_type="agent",
-            loader=lambda: SootheConfig.from_yaml_file(str(DEFAULT_CONFIG_PATH)),
+            loader=lambda: SootheConfig.from_yaml_file(str(DEFAULT_NANO_CONFIG_PATH)),
             callback=on_reload,
         )
 
@@ -280,8 +279,6 @@ class ConfigWatcher:
         self._stop_event = threading.Event()
         self._debounce_timers: dict[Path, threading.Timer] = {}
         self._observer: Any | None = None  # watchdog.observer.Observer
-        self._sighup_handler_installed = False
-        self._original_sighup_handler: Any = None
         self._thread: threading.Thread | None = None
         self._started = False
 
@@ -301,8 +298,8 @@ class ConfigWatcher:
         """Register a config file to watch.
 
         Args:
-            path: Path to the config file (e.g., config.yml or daemon.yml).
-            config_type: Type identifier for the config ('agent' or 'daemon').
+            path: Path to the config file (e.g., nano.yml).
+            config_type: Type identifier for the config (e.g. 'agent').
             loader: Callable that loads and returns the config instance.
                 Called on initial load and subsequent reloads.
             callback: Optional callback to invoke when config is reloaded.
@@ -358,7 +355,7 @@ class ConfigWatcher:
         """Start watching for config changes.
 
         This method is non-blocking. It starts a background thread for file
-        system watching and installs a SIGHUP handler for manual reload triggers.
+        system watching.
 
         Safe to call multiple times; subsequent calls are no-ops.
         """
@@ -376,16 +373,13 @@ class ConfigWatcher:
         # Start file system observer
         self._start_observer()
 
-        # Install SIGHUP handler
-        self._install_sighup_handler()
-
         _logger.info("ConfigWatcher started (debounce=%.1fs)", self._debounce_seconds)
 
     def stop(self) -> None:
         """Stop watching for config changes.
 
-        Stops the file system observer, cancels pending timers, removes the
-        SIGHUP handler, and waits for the observer thread to finish.
+        Stops the file system observer, cancels pending timers, and waits for
+        the observer thread to finish.
 
         Safe to call multiple times; subsequent calls are no-ops.
         """
@@ -398,9 +392,6 @@ class ConfigWatcher:
 
         # Stop the file system observer
         self._stop_observer()
-
-        # Remove SIGHUP handler
-        self._uninstall_sighup_handler()
 
         # Cancel all pending debounce timers
         for timer in list(self._debounce_timers.values()):
@@ -427,7 +418,7 @@ class ConfigWatcher:
         """Get the current config instance for a given type.
 
         Args:
-            config_type: Type identifier ('agent' or 'daemon').
+            config_type: Type identifier (e.g. 'agent').
 
         Returns:
             Current config instance, or None if not loaded yet.
@@ -665,38 +656,6 @@ class ConfigWatcher:
             self._observer = None
             _logger.debug("Watchdog observer stopped")
 
-    def _install_sighup_handler(self) -> None:
-        """Install SIGHUP handler for manual reload trigger."""
-        if self._sighup_handler_installed:
-            return
-
-        def handle_sighup(_signum: int, frame: Any) -> None:
-            _logger.info("Received SIGHUP, triggering config reload")
-            self.reload_now()
-
-        try:
-            self._original_sighup_handler = signal.getsignal(signal.SIGHUP)
-            signal.signal(signal.SIGHUP, handle_sighup)
-            self._sighup_handler_installed = True
-            _logger.debug("SIGHUP handler installed")
-        except (ValueError, OSError) as e:
-            # SIGHUP not available on this platform (e.g., Windows)
-            _logger.debug("Could not install SIGHUP handler: %s", e)
-
-    def _uninstall_sighup_handler(self) -> None:
-        """Remove SIGHUP handler."""
-        if not self._sighup_handler_installed:
-            return
-
-        try:
-            if self._original_sighup_handler is not None:
-                signal.signal(signal.SIGHUP, self._original_sighup_handler)
-            self._sighup_handler_installed = False
-            self._original_sighup_handler = None
-            _logger.debug("SIGHUP handler removed")
-        except (ValueError, OSError):
-            pass  # Ignore errors during cleanup
-
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit - stops the watcher."""
         self.stop()
@@ -713,20 +672,17 @@ _global_watcher_lock = threading.Lock()
 
 def start_config_watcher(
     agent_config_path: Path | str | None = None,
-    daemon_config_path: Path | str | None = None,
     callback: ConfigReloadCallback | None = None,
     debounce_seconds: float = DEFAULT_DEBOUNCE_SECONDS,
 ) -> ConfigWatcher:
-    """Start a global config watcher for agent and daemon config files.
+    """Start a global config watcher for agent config files.
 
-    This is a convenience function for standalone usage (e.g., in scripts
-    or non-daemon applications). For daemon integration, use
-    `SootheDaemon.enable_config_reload()` instead.
+    Convenience helper for standalone / process-local usage. Host daemon
+    reload (including daemon.yml) is owned by the soothe host package.
 
     Args:
-        agent_config_path: Path to agent config.yml (defaults to ~/.soothe/config/config.yml).
-        daemon_config_path: Path to daemon.yml (defaults to ~/.soothe/config/daemon.yml).
-        callback: Optional callback to invoke when either config is reloaded.
+        agent_config_path: Path to nano.yml (defaults to ~/.soothe/config/nano.yml).
+        callback: Optional callback to invoke when agent config is reloaded.
         debounce_seconds: Minimum seconds between reloads for the same file.
 
     Returns:
@@ -741,8 +697,7 @@ def start_config_watcher(
         if _global_watcher is not None and _global_watcher.is_running:
             raise RuntimeError("Config watcher already running; call stop_config_watcher() first")
 
-        agent_path = Path(agent_config_path or DEFAULT_CONFIG_PATH)
-        daemon_path = Path(daemon_config_path or DEFAULT_DAEMON_CONFIG_PATH)
+        agent_path = Path(agent_config_path or DEFAULT_NANO_CONFIG_PATH)
 
         _global_watcher = ConfigWatcher(debounce_seconds=debounce_seconds)
 
@@ -752,15 +707,6 @@ def start_config_watcher(
                 path=agent_path,
                 config_type="agent",
                 loader=lambda: _load_agent_config(agent_path),
-                callback=callback,
-            )
-
-        # Watch daemon config if file exists
-        if daemon_path.exists():
-            _global_watcher.watch_config(
-                path=daemon_path,
-                config_type="daemon",
-                loader=lambda: _load_daemon_config(daemon_path),
                 callback=callback,
             )
 
@@ -802,23 +748,13 @@ def _load_agent_config(path: Path) -> Any:
     return SootheConfig.from_yaml_file(str(path))
 
 
-def _load_daemon_config(path: Path) -> Any:
-    """Load daemon config from YAML file."""
-    # Import locally to avoid circular dependency
-    import importlib
-
-    module = importlib.import_module("soothe_daemon.config.settings")
-    daemon_config_cls = getattr(module, "SootheDaemonConfig")
-    return daemon_config_cls.from_yaml_file(str(path))
-
-
 # ---------------------------------------------------------------------------
 # __all__ export list
 # ---------------------------------------------------------------------------
 
 __all__ = [
     "DEFAULT_CONFIG_PATH",
-    "DEFAULT_DAEMON_CONFIG_PATH",
+    "DEFAULT_NANO_CONFIG_PATH",
     "DEFAULT_DEBOUNCE_SECONDS",
     "ConfigReloadEvent",
     "ConfigReloadCallback",

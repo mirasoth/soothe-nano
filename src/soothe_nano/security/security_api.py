@@ -12,8 +12,8 @@ from .path_security import (
     create_strict_validator,
 )
 from .policy_models import (
+    PathPolicyDecision,
     PolicyAction,
-    PolicyDecision,
     PolicyScope,
     PolicyViolation,
     SecurityPolicy,
@@ -49,7 +49,7 @@ __all__ = [
     "PolicyAction",
     "PolicyScope",
     "PolicyViolation",
-    "PolicyDecision",
+    "PathPolicyDecision",
     "SecurityPolicy",
     "STRICT_POLICY",
     "PERMISSIVE_POLICY",

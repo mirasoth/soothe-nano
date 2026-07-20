@@ -1,4 +1,4 @@
-"""Mtime-based skill index for fast daemon-level skill discovery.
+"""Mtime-based skill index for fast process-level skill discovery.
 
 Indexes skills under ``~/.agents/skills``, package-bundled
 ``skills/builtin_skills/``, and ``~/.soothe/skills``.

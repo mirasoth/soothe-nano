@@ -41,7 +41,7 @@ from soothe_nano.config.models import (
 )
 from soothe_nano.config.reload import (
     DEFAULT_CONFIG_PATH,
-    DEFAULT_DAEMON_CONFIG_PATH,
+    DEFAULT_NANO_CONFIG_PATH,
     ConfigReloadCallback,
     ConfigReloadEvent,
     ConfigWatcher,
@@ -61,7 +61,7 @@ NanoConfig = SootheConfig
 
 __all__ = [
     "DEFAULT_CONFIG_PATH",
-    "DEFAULT_DAEMON_CONFIG_PATH",
+    "DEFAULT_NANO_CONFIG_PATH",
     "DEFAULT_EXECUTE_TIMEOUT",
     "SOOTHE_HOME",
     "_DEFAULT_SYSTEM_PROMPT",

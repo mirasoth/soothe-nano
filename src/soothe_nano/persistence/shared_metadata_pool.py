@@ -29,7 +29,7 @@ class SharedMetadataPool:
 
     @classmethod
     def _register_pool(cls, pool: AsyncConnectionPool) -> None:
-        """Bind the registry metadata pool to this shim (daemon pre-open)."""
+        """Bind the registry metadata pool to this shim (process pre-open)."""
         global _shared_metadata_pool
 
         with _sync_lock:
@@ -92,7 +92,7 @@ class SharedMetadataPool:
 
     @classmethod
     async def release_idle(cls) -> None:
-        """Drop idle metadata connections (daemon periodic maintenance)."""
+        """Drop idle metadata connections (process periodic maintenance)."""
         await release_idle_pool_connections(_shared_metadata_pool, label="metadata")
 
     @classmethod

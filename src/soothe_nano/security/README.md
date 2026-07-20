@@ -10,7 +10,7 @@ through a small public API.
 - `path_security.py`
   - Path validation + normalization (`PathValidator`, `ValidationResult`)
 - `policy_models.py`
-  - Policy data models and evaluation (`SecurityPolicy`, `PolicyDecision`, `PolicyViolation`)
+  - Policy data models and evaluation (`SecurityPolicy`, `PathPolicyDecision`, `PolicyViolation`)
 - `policy_profiles.py`
   - Predefined policy constants + profile-driven policy (`ConfigDrivenPolicy`)
 - `operation_guard.py`

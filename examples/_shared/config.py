@@ -9,7 +9,7 @@ from soothe_nano.config import SOOTHE_HOME, SootheConfig
 
 def load_nano_example_config() -> SootheConfig:
     """Load config from ``SOOTHE_HOME``, monorepo develop config, or defaults."""
-    home_config = Path(SOOTHE_HOME).expanduser() / "config" / "config.yml"
+    home_config = Path(SOOTHE_HOME).expanduser() / "config" / "nano.yml"
     if home_config.is_file():
         return SootheConfig.from_yaml_file(str(home_config))
 
@@ -20,7 +20,7 @@ def load_nano_example_config() -> SootheConfig:
     if len(here.parents) > 4:
         candidates.append(here.parents[4])
     for root in candidates:
-        dev_config = root / "config" / "develop" / "config.yml"
+        dev_config = root / "config" / "develop" / "nano.yml"
         if dev_config.is_file():
             return SootheConfig.from_yaml_file(str(dev_config))
 

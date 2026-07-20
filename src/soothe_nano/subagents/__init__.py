@@ -1,7 +1,4 @@
-"""Built-in CoreAgent subagents (soothe-nano).
-
-Veritas lives in ``soothe.subagents.veritas`` (host clarification relay).
-"""
+"""Built-in CoreAgent subagents (soothe-nano)."""
 
 from .academic_research import events as _academic_research_events  # noqa: F401
 from .browser_use import events as _browser_use_events  # noqa: F401

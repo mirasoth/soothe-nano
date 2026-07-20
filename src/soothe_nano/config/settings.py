@@ -308,19 +308,6 @@ class SootheConfig(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def _strip_daemon_top_level(cls, data: Any) -> Any:
-        """Drop ``daemon:`` from agent YAML or kwargs.
-
-        Daemon transport and server limits live in ``daemon.yml`` (``SootheDaemonConfig``).
-        Older unified configs sometimes nested those keys under ``daemon`` here; they are ignored
-        for ``SootheConfig`` so startup does not fail with extra_forbidden.
-        """
-        if isinstance(data, dict):
-            data.pop("daemon", None)
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def _merge_top_level_logging_yaml(cls, data: Any) -> Any:
         """Fold top-level ``logging:`` YAML into ``observability`` and ``agent.middleware.report_output``."""
         if not isinstance(data, dict):
@@ -521,7 +508,7 @@ class SootheConfig(BaseSettings):
     """Maximum number of activity lines retained in the TUI Activity Panel."""
 
     tui_debug: bool = False
-    """Emit structured TUI trace logs (logger ``soothe.ux.tui.trace``) for EventProcessor + TuiRenderer."""
+    """Emit structured TUI trace logs when enabled."""
 
     ui: UIConfig = Field(default_factory=UIConfig)
     """UI preferences configuration (theme, etc.)."""
@@ -802,7 +789,7 @@ class SootheConfig(BaseSettings):
         active profile so vector indexes stay consistent.
 
         Args:
-            role: Purpose role — one of the :data:`~soothe.config.models.ModelRole` values.
+            role: Purpose role — one of the :data:`~soothe_nano.config.models.ModelRole` values.
 
         Returns:
             A ``provider_name:model_name`` string.
@@ -885,7 +872,7 @@ class SootheConfig(BaseSettings):
         different ``provider:model`` spec.
 
         Args:
-            role: Purpose role — one of the :data:`~soothe.config.models.ModelRole` values.
+            role: Purpose role — one of the :data:`~soothe_nano.config.models.ModelRole` values.
             fallback_role: Optional explicit fallback role. ``None`` enables automatic
                 ``default`` fallback for non-``default`` primary roles.
 

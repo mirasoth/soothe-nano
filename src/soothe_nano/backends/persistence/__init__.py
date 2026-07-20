@@ -28,7 +28,7 @@ def create_persist_store(
         db_path: SQLite database file path (SQLite only).
         reader_pool_size: SQLite reader connection pool size for concurrent reads.
         config: Optional ``SootheConfig`` for PostgreSQL pool sizing.
-        shared_pool: Optional shared ``AsyncConnectionPool`` for metadata (daemon mode).
+        shared_pool: Optional shared ``AsyncConnectionPool`` for metadata (long-running process).
 
     Returns:
         An AsyncPersistStore instance, or None if persistence is disabled.

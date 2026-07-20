@@ -1,52 +1,10 @@
 """Tests for workspace resolution and validation."""
 
-import os
-import tempfile
 from pathlib import Path
-from unittest import mock
 
 import pytest
 
 from soothe_nano.workspace.workspace_policy import validate_client_workspace
-from soothe_nano.workspace.workspace_runtime import (
-    resolve_daemon_workspace,
-)
-
-
-class TestResolveDaemonWorkspace:
-    """Tests for daemon workspace resolution."""
-
-    def test_resolve_from_env_var(self, tmp_path: Path) -> None:
-        """Should use SOOTHE_WORKSPACE env var when set."""
-        custom_workspace = tmp_path / "custom"
-        custom_workspace.mkdir()
-
-        with mock.patch.dict(os.environ, {"SOOTHE_WORKSPACE": str(custom_workspace)}):
-            result = resolve_daemon_workspace()
-            assert result == custom_workspace.resolve()
-
-    def test_resolve_to_temp_when_no_env(self) -> None:
-        """Should use TEMP directory when SOOTHE_WORKSPACE not set."""
-        with mock.patch.dict(os.environ, {}, clear=True):
-            os.environ.pop("SOOTHE_WORKSPACE", None)
-
-            result = resolve_daemon_workspace()
-            # Should be under temp directory
-            assert str(result).startswith(tempfile.gettempdir())
-            assert "soothe-daemon-workspace" in str(result)
-            assert result.exists()
-
-    def test_reject_system_directory_root(self) -> None:
-        """Should reject / as invalid workspace."""
-        with mock.patch.dict(os.environ, {"SOOTHE_WORKSPACE": "/"}):
-            with pytest.raises(ValueError, match="system directory"):
-                resolve_daemon_workspace()
-
-    def test_reject_system_directory_users(self) -> None:
-        """Should reject /Users as invalid workspace."""
-        with mock.patch.dict(os.environ, {"SOOTHE_WORKSPACE": "/Users"}):
-            with pytest.raises(ValueError, match="system directory"):
-                resolve_daemon_workspace()
 
 
 class TestValidateClientWorkspace:

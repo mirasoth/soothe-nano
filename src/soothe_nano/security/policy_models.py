@@ -73,7 +73,7 @@ class PolicyViolation:
 
 
 @dataclass
-class PolicyDecision:
+class PathPolicyDecision:
     """Decision made by policy evaluation."""
 
     allowed: bool
@@ -93,10 +93,10 @@ class PolicyDecision:
         """Check if this decision should be logged."""
         return self.action in (PolicyAction.LOG, PolicyAction.DENY, PolicyAction.NOTIFY)
 
-    def merge(self, other: PolicyDecision) -> PolicyDecision:
+    def merge(self, other: PathPolicyDecision) -> PathPolicyDecision:
         """Merge another decision into this one (most restrictive wins)."""
         if other.is_denied:
-            return PolicyDecision(
+            return PathPolicyDecision(
                 allowed=False,
                 action=PolicyAction.DENY,
                 reason=other.reason or self.reason,
@@ -104,7 +104,7 @@ class PolicyDecision:
                 sanitized_path=self.sanitized_path or other.sanitized_path,
                 metadata={**self.metadata, **other.metadata},
             )
-        return PolicyDecision(
+        return PathPolicyDecision(
             allowed=self.allowed,
             action=self.action if self.action != PolicyAction.ALLOW else other.action,
             reason=self.reason or other.reason,
@@ -144,7 +144,7 @@ class SecurityPolicy:
     per_path_rate_limit: int | None = None
     on_violation: PolicyAction = PolicyAction.DENY
     on_suspicious: PolicyAction = PolicyAction.LOG
-    custom_validators: list[Callable[[str, str], PolicyDecision | None]] = field(
+    custom_validators: list[Callable[[str, str], PathPolicyDecision | None]] = field(
         default_factory=list,
         repr=False,
     )
@@ -154,10 +154,10 @@ class SecurityPolicy:
         path: str,
         operation: str,
         context: dict[str, Any] | None = None,
-    ) -> PolicyDecision:
+    ) -> PathPolicyDecision:
         violations: list[PolicyViolation] = []
         if operation not in self.allowed_operations:
-            return PolicyDecision(
+            return PathPolicyDecision(
                 allowed=False,
                 action=PolicyAction.DENY,
                 reason=f"Operation '{operation}' not allowed",
@@ -349,27 +349,27 @@ class SecurityPolicy:
         if violations:
             critical = any(v.severity == "critical" for v in violations)
             if critical:
-                return PolicyDecision(
+                return PathPolicyDecision(
                     allowed=False,
                     action=PolicyAction.DENY,
                     reason="Critical policy violations detected",
                     violations=violations,
                 )
             if self.on_violation == PolicyAction.DENY:
-                return PolicyDecision(
+                return PathPolicyDecision(
                     allowed=False,
                     action=PolicyAction.DENY,
                     reason="Policy violations detected and denied by policy",
                     violations=violations,
                 )
-            return PolicyDecision(
+            return PathPolicyDecision(
                 allowed=True,
                 action=self.on_suspicious,
                 reason="Policy violations detected but not denied",
                 violations=violations,
             )
 
-        return PolicyDecision(
+        return PathPolicyDecision(
             allowed=True,
             action=PolicyAction.ALLOW,
             reason="Policy check passed",

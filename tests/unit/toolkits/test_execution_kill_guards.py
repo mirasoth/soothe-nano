@@ -1,15 +1,16 @@
-"""Unit tests for kill_process daemon/self protection (IG-665)."""
+"""Unit tests for kill_process self/parent protection and host hooks."""
 
 from __future__ import annotations
 
 import os
 import signal
-from pathlib import Path
 
 from soothe_nano.toolkits.execution import (
     KillProcessTool,
     _kill_process_tree,
     _protected_kill_refusal,
+    clear_protected_kill_hooks,
+    register_protected_kill_hook,
 )
 
 
@@ -17,35 +18,39 @@ def test_kill_process_refuses_self_pid() -> None:
     tool = KillProcessTool()
     result = tool._run(os.getpid())
     assert "refusing to kill" in result
-    assert "current agent/daemon" in result
+    assert "current agent process" in result
 
 
-def test_protected_kill_refusal_soothed_pidfile(tmp_path: Path, monkeypatch) -> None:
-    pid_file = tmp_path / "soothed.pid"
-    pid_file.write_text("424242\n", encoding="utf-8")
-    monkeypatch.setattr("soothe_nano.config.SOOTHE_HOME", tmp_path)
+def test_protected_kill_hook_is_consulted() -> None:
+    clear_protected_kill_hooks()
 
-    msg = _protected_kill_refusal(424242)
-    assert msg is not None
-    assert "soothed.pid" in msg
+    def refuse_4242(pid: int) -> str | None:
+        if pid == 4242:
+            return "Error: refusing to kill PID 4242 — host hook"
+        return None
 
-    tool = KillProcessTool()
-    result = tool._run(424242)
-    assert "soothed.pid" in result
+    unregister = register_protected_kill_hook(refuse_4242)
+    try:
+        assert _protected_kill_refusal(4242) == "Error: refusing to kill PID 4242 — host hook"
+        tool = KillProcessTool()
+        result = tool._run(4242)
+        assert "host hook" in result
+    finally:
+        unregister()
+        clear_protected_kill_hooks()
 
 
-def test_protected_kill_refusal_ws_listener(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "soothe_nano.toolkits.execution._soothed_pid_from_pidfile",
-        lambda: None,
-    )
-    monkeypatch.setattr(
-        "soothe_nano.toolkits.execution._pid_listening_on_port",
-        lambda _port: 55555,
-    )
-    msg = _protected_kill_refusal(55555)
-    assert msg is not None
-    assert "8765" in msg
+def test_protected_kill_hook_unregister() -> None:
+    clear_protected_kill_hooks()
+
+    def refuse_99(pid: int) -> str | None:
+        return "blocked" if pid == 99 else None
+
+    unregister = register_protected_kill_hook(refuse_99)
+    assert _protected_kill_refusal(99) == "blocked"
+    unregister()
+    assert _protected_kill_refusal(99) is None
+    clear_protected_kill_hooks()
 
 
 def test_kill_process_tree_avoids_killpg_on_own_group(monkeypatch) -> None:

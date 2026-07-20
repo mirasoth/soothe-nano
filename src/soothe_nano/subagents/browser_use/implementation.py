@@ -23,13 +23,6 @@ from pydantic import BaseModel, Field
 from soothe_sdk.utils.formatting import format_cli_error
 
 from soothe_nano.subagents.browser_use._preview import preview_first
-from soothe_nano.subagents.browser_use._runtime import (
-    cleanup_browser_temp_files,
-    cleanup_stale_chrome,
-    get_browser_extensions_dir,
-    get_browser_runtime_dir,
-    get_browser_user_data_dir,
-)
 from soothe_nano.subagents.browser_use.action_format import summarize_browser_step_action
 from soothe_nano.subagents.browser_use.config_model import BrowserUseSubagentConfig
 from soothe_nano.subagents.browser_use.display_summary import browser_use_result_summary_for_display
@@ -37,6 +30,13 @@ from soothe_nano.subagents.browser_use.events import (
     BrowserUseCompletedEvent,
     BrowserUseStartedEvent,
     BrowserUseStepCompletedEvent,
+)
+from soothe_nano.utils.browser_cdp import cleanup_stale_chrome
+from soothe_nano.utils.runtime import (
+    cleanup_browser_temp_files,
+    get_browser_extensions_dir,
+    get_browser_runtime_dir,
+    get_browser_user_data_dir,
 )
 from soothe_nano.utils.subagent_emit import emit_subagent_wire_event
 

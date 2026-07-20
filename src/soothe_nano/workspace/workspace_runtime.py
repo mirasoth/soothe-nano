@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import tempfile
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -104,48 +101,3 @@ def resolve_process_workspace_root() -> Path:
     workspace = Path(tempfile.gettempdir()) / "soothe-workspace"
     workspace.mkdir(parents=True, exist_ok=True)
     return workspace.resolve()
-
-
-def resolve_daemon_workspace() -> Path:
-    """Resolve daemon fallback workspace (ephemeral TEMP unless overridden)."""
-    from soothe_nano.workspace.workspace_policy import _validate_workspace_dir
-
-    env_workspace = os.environ.get("SOOTHE_WORKSPACE")
-    if env_workspace:
-        workspace = Path(env_workspace).expanduser().resolve()
-        _validate_workspace_dir(workspace)
-        return workspace
-    workspace = Path(tempfile.gettempdir()) / "soothe-daemon-workspace"
-    workspace.mkdir(parents=True, exist_ok=True)
-    _validate_workspace_dir(workspace)
-    return workspace
-
-
-def cleanup_anonymous_workspaces() -> None:
-    """Clean up anonymous workspace directories (daemon shutdown)."""
-    import shutil
-
-    from soothe_nano.config import SOOTHE_HOME
-    from soothe_nano.workspace.workspace_policy import normalize_user_id
-
-    cleaned = 0
-    for base in ("data/workspaces", "workspaces"):
-        workspaces_dir = Path(SOOTHE_HOME) / base
-        if not workspaces_dir.exists():
-            continue
-        anon_tree = workspaces_dir / normalize_user_id(None)
-        if anon_tree.is_dir():
-            try:
-                shutil.rmtree(anon_tree)
-                cleaned += 1
-            except OSError as e:
-                logger.warning("Failed to cleanup %s: %s", anon_tree, e)
-        for ws_dir in workspaces_dir.glob("anon_*"):
-            if ws_dir.is_dir():
-                try:
-                    shutil.rmtree(ws_dir)
-                    cleaned += 1
-                except OSError as e:
-                    logger.warning("Failed to cleanup %s: %s", ws_dir, e)
-    if cleaned > 0:
-        logger.info("Cleaned %d anonymous workspace location(s)", cleaned)

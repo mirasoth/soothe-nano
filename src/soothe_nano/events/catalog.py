@@ -196,7 +196,13 @@ def register_event(
     summary_template: str = "",
     priority: EventPriority = EventPriority.NORMAL,
 ) -> None:
-    """Register an event class with the global event registry."""
+    """Register an event class with the nano runtime bus and the SDK plugin catalog.
+
+    Metadata for plugin/host discovery is owned by ``soothe_sdk.plugin.register_event``.
+    The nano ``REGISTRY`` remains the process-local runtime bus (``on`` / ``dispatch``).
+    """
+    from soothe_sdk.plugin import register_event as _sdk_register_event
+
     if "type" not in event_class.model_fields:
         msg = f"Event class {event_class.__name__} must have a 'type' field with a default value"
         raise KeyError(msg)
@@ -207,6 +213,11 @@ def register_event(
         msg = f"Event class {event_class.__name__} 'type' field must have a string default value"
         raise KeyError(msg)
 
+    _sdk_register_event(
+        event_class,
+        verbosity=verbosity,
+        summary_template=summary_template,
+    )
     _reg(
         type_string,
         event_class,

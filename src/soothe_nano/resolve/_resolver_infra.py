@@ -55,7 +55,7 @@ def resolve_durability(config: SootheConfig) -> DurabilityProtocol:
             logger.error(
                 "PostgreSQL durability requested but failed: %s. "
                 "Check PostgreSQL configuration and connectivity. "
-                "Ensure soothe is up to date: pip install -U soothe",
+                "Ensure soothe is up to date: pip install -U soothe-nano",
                 e,
             )
             raise ConfigurationError(

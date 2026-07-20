@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from soothe_nano.security.policy_models import (
+    PathPolicyDecision,
     PolicyAction,
-    PolicyDecision,
     PolicyViolation,
 )
 from soothe_nano.security.policy_profiles import (
@@ -366,7 +366,7 @@ class TestSecurityError:
 
     def test_security_error_with_decision(self) -> None:
         """Test SecurityError with decision."""
-        decision = PolicyDecision(
+        decision = PathPolicyDecision(
             allowed=False,
             action=PolicyAction.DENY,
             reason="Test reason",

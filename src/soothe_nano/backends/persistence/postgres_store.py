@@ -43,7 +43,7 @@ class PostgreSQLPersistStore:
             namespace: Namespace for key isolation (e.g., "context", "memory", "durability")
             pool_size: Connection pool size (default: 10). Use 0 with ``shared_pool`` for
                 process-wide singleton mode.
-            shared_pool: Externally managed ``AsyncConnectionPool`` (daemon singleton).
+            shared_pool: Externally managed ``AsyncConnectionPool`` (process singleton).
             pool_timing: Optional psycopg pool options when creating an owned pool.
         """
         self._dsn = dsn
@@ -215,7 +215,7 @@ class PostgreSQLPersistStore:
             except ImportError as exc:
                 msg = (
                     "psycopg[pool] is required for PostgreSQL persistence. "
-                    "Install with: pip install -U soothe"
+                    "Install with: pip install -U soothe-nano"
                 )
                 raise ImportError(msg) from exc
 
