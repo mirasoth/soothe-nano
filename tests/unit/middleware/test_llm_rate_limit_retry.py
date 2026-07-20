@@ -268,7 +268,10 @@ def test_effective_timeout_uses_shorter_cap_after_429(
 
 def test_executor_error_classification_enhanced_timeout() -> None:
     """Test executor classifies EnhancedTimeoutError as execution (retryable)."""
+    pytest.importorskip("soothe")
     from soothe.foundation.coreagent import CodingCoreAgent as CoreAgent
+
+    pytest.importorskip("soothe")
     from soothe.foundation.sloop.engine.executor import Executor
 
     exc = EnhancedTimeoutError(
@@ -291,7 +294,10 @@ def test_executor_error_classification_enhanced_timeout() -> None:
 
 def test_executor_error_extraction_enhanced_timeout() -> None:
     """Test executor extracts EnhancedTimeoutError metadata."""
+    pytest.importorskip("soothe")
     from soothe.foundation.coreagent import CodingCoreAgent as CoreAgent
+
+    pytest.importorskip("soothe")
     from soothe.foundation.sloop.engine.executor import Executor
 
     exc = EnhancedTimeoutError(
@@ -364,7 +370,10 @@ def test_executor_timeout_not_misclassified_as_rate_limit() -> None:
     rate limit detection, causing timeouts to be counted towards the rate limit
     circuit breaker threshold, stopping the loop prematurely.
     """
+    pytest.importorskip("soothe")
     from soothe.foundation.coreagent import CodingCoreAgent as CoreAgent
+
+    pytest.importorskip("soothe")
     from soothe.foundation.sloop.engine.executor import Executor
 
     # This is the exact TimeoutError message from graph_interrupt.py
@@ -384,6 +393,7 @@ def test_executor_timeout_not_misclassified_as_rate_limit() -> None:
     assert msg == "Request timed out", f"Expected 'Request timed out' but got '{msg}'"
 
     # Verify the orchestrator's _is_rate_limit_error does NOT match this message
+    pytest.importorskip("soothe")
     from soothe.foundation.sloop.orchestrator.nodes.execute_steps import _is_rate_limit_error
 
     assert _is_rate_limit_error(msg) is False, (

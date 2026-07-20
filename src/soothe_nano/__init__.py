@@ -1,4 +1,4 @@
-"""soothe-nano — batteries-included Coding CoreAgent (no StrangeLoop/Autopilot)."""
+"""soothe-nano — batteries-included Coding CoreAgent."""
 
 from __future__ import annotations
 

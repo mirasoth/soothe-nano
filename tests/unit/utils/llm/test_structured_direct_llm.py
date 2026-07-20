@@ -244,6 +244,7 @@ async def test_json_schema_wrapper_dict_schema() -> None:
 @pytest.mark.asyncio
 async def test_invoke_structured_chat_applies_normalize_before_validation() -> None:
     """Answers-only provider payloads reach normalize before jsonschema validation."""
+    pytest.importorskip("soothe")
     from soothe.subagents.veritas.schemas import (
         build_veritas_response_schema,
         coerce_veritas_response,

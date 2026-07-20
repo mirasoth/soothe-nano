@@ -6,7 +6,7 @@ This example demonstrates a nano agent with configured subagents:
 - Optional community plugins when installed and configured
 
 Run:
-    python packages/soothe-nano/examples/nano_agent/04_nano_with_subagents_example.py
+    python examples/nano_agent/04_nano_with_subagents_example.py
 """
 
 import asyncio
@@ -15,15 +15,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-_PACKAGES_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(_PACKAGES_ROOT / "soothe-nano" / "src"))
-sys.path.insert(0, str(_PACKAGES_ROOT / "soothe-sdk" / "src"))
-sys.path.insert(0, str(_PACKAGES_ROOT / "soothe-deepagents"))
-
-from soothe_nano import create_nano_agent
+# Make local ``_shared`` importable when run as a script.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _shared.config import load_nano_example_config
 from _shared.streaming import stream_nano_agent
+
+from soothe_nano import create_nano_agent
 
 load_dotenv()
 

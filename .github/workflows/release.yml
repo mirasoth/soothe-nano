@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # required for PyPI trusted publishing (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/soothe-nano
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: |
+          make sync-dev
+          # Release requires soothe-sdk 1.1.0 on PyPI (guard below); re-sync after guard.
+
+      - name: Guard — soothe-sdk 1.1.0 must be on PyPI
+        run: |
+          # Nano needs CoreAgent protocols introduced in soothe-sdk 1.1.0.
+          # PyPI still has a stale 1.0.1 wheel without those modules.
+          if ! curl -sf "https://pypi.org/pypi/soothe-sdk/1.1.0/json" >/dev/null; then
+            echo "Publish soothe-sdk 1.1.0 to PyPI before releasing soothe-nano"
+            exit 1
+          fi
+          echo "soothe-sdk 1.1.0 is available on PyPI"
+          uv sync --extra dev
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(grep '^version = "' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Package version: $VERSION"
+
+      - name: Check if version exists on PyPI
+        id: check
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          PKG="soothe-nano"
+          echo "Checking if ${PKG}==${VERSION} exists on PyPI..."
+          if curl -sf "https://pypi.org/pypi/${PKG}/${VERSION}/json" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${VERSION} already exists on PyPI, skipping publish"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Version ${VERSION} not found on PyPI, will publish"
+          fi
+
+      - name: Format check
+        if: steps.check.outputs.exists == 'false'
+        run: make format-check
+
+      - name: Lint
+        if: steps.check.outputs.exists == 'false'
+        run: make lint
+
+      - name: Unit tests
+        if: steps.check.outputs.exists == 'false'
+        run: make test-unit
+
+      - name: Build package
+        if: steps.check.outputs.exists == 'false'
+        run: make build
+
+      - name: Verify dist directory
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Error: dist directory not found"
+            exit 1
+          fi
+          if [ -z "$(ls -A dist | grep soothe_nano)" ]; then
+            echo "Error: dist directory doesn't contain soothe-nano packages"
+            exit 1
+          fi
+          uv run twine check dist/*
+          ls -la dist/
+
+      - name: Publish to PyPI
+        if: steps.check.outputs.exists == 'false'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          verbose: true
+          print-hash: true

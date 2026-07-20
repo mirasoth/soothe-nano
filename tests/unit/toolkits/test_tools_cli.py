@@ -1,11 +1,11 @@
 """Tests for CLI tools functionality."""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from langchain_community.tools import ShellTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_experimental.tools.python.tool import PythonREPLTool
-from soothe.foundation.sloop.utils.messages import LoopHumanMessage
 
 from soothe_nano.toolkits.execution import (
     ExecutionToolkit,
@@ -34,7 +34,7 @@ class TestRunCommandShellToolWorkspaceResolution:
         runtime.config = {"configurable": {"thread_id": "t1"}}
         runtime.state = {
             "messages": [
-                LoopHumanMessage(
+                SimpleNamespace(
                     content="Execute: x",
                     thread_id="t1",
                     workspace="/client/from_state",

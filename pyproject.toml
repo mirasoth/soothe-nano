@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "soothe-nano"
 version = "0.9.0"
-description = "Soothe Nano — batteries-included Coding CoreAgent on deepagents (no StrangeLoop/Autopilot)"
+description = "Soothe Nano — batteries-included Coding CoreAgent on deepagents"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<3.15"
@@ -77,12 +77,13 @@ dev = [
     "pytest-cov",
     "ruff>=0.12.0",
     "mypy>=1.0.0",
+    "twine>=5.0.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/mirasoth/soothe"
+Homepage = "https://github.com/mirasoth/soothe-nano"
 Documentation = "https://soothe.readthedocs.io"
-Repository = "https://github.com/mirasoth/soothe"
+Repository = "https://github.com/mirasoth/soothe-nano"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/soothe_nano"]
@@ -102,7 +103,7 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
 ignore = ["E501"]
-per-file-ignores = { "examples/nano_agent/*.py" = ["N999"] }
+per-file-ignores = { "examples/**/*.py" = ["N999", "E402"] }
 
 [tool.ruff.format]
 docstring-code-format = true

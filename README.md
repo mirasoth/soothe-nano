@@ -4,15 +4,13 @@ A **ready-to-run coding agent** you can drop into a script or app.
 
 Built on [soothe-deepagents](https://github.com/mirasoth/soothe-deepagents) (filesystem, shell, subagents, skills, MCP). Nano adds the pieces you usually wire yourself: workspace safety, progressive tools/skills, research & explore subagents, and a config-driven factory.
 
-No StrangeLoop, Autopilot, or daemon — just the agent.
-
 ## Vision
 
-Give builders a production-shaped coding CoreAgent without standing up the full Soothe host.
+Give builders a production-shaped coding CoreAgent in a few lines of Python.
 
-- **Start small** — chat, tools, or full composition in a few lines
+- **Start small** — chat, tools, or full composition
 - **Stay portable** — embed in notebooks, CLIs, or your own service
-- **Grow later** — same agent surface powers the full `soothe` stack when you need planning loops and 24/7 autonomy
+- **Compose what you need** — tools, memory, subagents, skills, and MCP via config
 
 ## Architecture
 
@@ -22,8 +20,6 @@ soothe-deepagents   agent harness (FS, shell, memory, skills base)
 soothe-sdk          shared contracts (protocols, events)
         ↓
 soothe-nano         coding CoreAgent + toolkits + subagents + MCP
-        ↓
-soothe (optional)   StrangeLoop / Autopilot / Context Engine / runner
 ```
 
 ```text
@@ -36,17 +32,28 @@ create_nano_agent(config)
         └─ MCP (on-demand activation)
 ```
 
+## Features
+
+| Area | What nano provides |
+|---|---|
+| Tools | Builtin groups: shell, file ops, HTTP, search, data, … |
+| Subagents | Ready: explore, plan, deep/academic research, browser |
+| Skills / tools in context | Progressive loading — activate what the turn needs |
+| Workspace | Scoped workspace + security defaults |
+| Config | YAML / `SootheConfig` factory |
+| Memory | Optional long-term memory via protocols |
+| MCP | Registry and on-demand adapters |
+
 ## vs deepagents
 
 | | deepagents | soothe-nano |
 |---|---|---|
 | What you get | Opinionated harness | Harness **plus** coding product defaults |
-| Tools | Bring your own | Builtin groups: shell, file ops, HTTP, search, data, … |
-| Subagents | You define them | Ready: explore, plan, deep/academic research, browser |
-| Skills / tools in context | Base support | Progressive loading — activate what the turn needs |
+| Tools | Bring your own | Builtin groups out of the box |
+| Subagents | You define them | Ready explore / plan / research / browser |
+| Skills / tools in context | Base support | Progressive loading |
 | Workspace | Pluggable backends | Scoped workspace + security defaults |
-| Config | Code-first | YAML/`SootheConfig` factory |
-| Host loop | — | Not included (use full `soothe` for that) |
+| Config | Code-first | YAML / `SootheConfig` factory |
 
 Use **deepagents** when you want a minimal harness and full control.  
 Use **nano** when you want a coding agent that already knows how to work in a repo.
@@ -58,9 +65,8 @@ Use **nano** when you want a coding agent that already knows how to work in a re
 | Coding assistant in a repo | ✅ Files, shell, explore/plan out of the box |
 | Research / browsing agent | ✅ Deep research, academic, browser subagents |
 | Embed in your product | ✅ Library API, no daemon required |
-| Plugin / toolkit author | ✅ Depends on nano, not full `soothe` |
+| Plugin / toolkit author | ✅ Depends on nano only |
 | Simple Q&A chat | ✅ Strip tools/subagents as needed |
-| Multi-goal 24/7 autonomy | → Full `soothe` (StrangeLoop + Autopilot) |
 
 ## Install
 
@@ -104,11 +110,16 @@ soothe_nano/
   backends/    Persistence helpers
 ```
 
-## In the Soothe family
+## Development
 
-| Package | Role |
-|---|---|
-| `soothe-nano` | Coding CoreAgent (this package) |
-| `soothe` | Host: StrangeLoop, Autopilot, runner |
-| `soothe-daemon` / `soothe-cli` | Long-running server + TUI |
-| `soothe-plugins` | Community plugins on nano |
+From `packages/soothe-nano/`:
+
+```bash
+make help              # list targets
+make sync-dev          # sync deps
+make format lint       # format + lint
+make test-unit         # unit tests
+make test-integration  # integration tests (--run-integration)
+make examples          # run nano_agent examples
+make build             # build dist/
+```
