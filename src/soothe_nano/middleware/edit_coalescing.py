@@ -22,9 +22,8 @@ from typing import TYPE_CHECKING, Any
 
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.messages import ToolMessage
-
-from soothe_nano.filesystem._lock_registry import FileEditLockRegistry
-from soothe_nano.filesystem.protocol import BatchedEditOperation
+from soothe_deepagents.backends.edit_locks import FileEditLockRegistry
+from soothe_deepagents.backends.protocol import BatchedEditOperation
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable

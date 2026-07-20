@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from soothe_deepagents.backends.filesystem import FilesystemBackend
+from soothe_deepagents.middleware.skills import list_skills
+
 from soothe_nano.config import SOOTHE_HOME
 
 _BUILTIN_SKILLS_DIR_NAME = "builtin_skills"
@@ -47,20 +50,19 @@ def get_built_in_skills_paths(workspace: str | None = None) -> list[str]:
         SOOTHE_HOME / "skills",
     ]
 
-    # Add workspace .soothe/skills if provided
     if workspace:
         ws_path = Path(workspace).expanduser().resolve()
         candidate_roots.append(ws_path / ".soothe" / "skills")
 
-    # Last-wins dedup by skill directory name (case-insensitive)
     by_name: dict[str, str] = {}
     for root in candidate_roots:
         if not root.exists() or not root.is_dir():
             continue
-
-        for skill_file in root.glob("*/SKILL.md"):
-            skill_dir = skill_file.parent.resolve()
-            skill_path = str(skill_dir)
-            by_name[skill_dir.name.lower()] = skill_path
+        backend = FilesystemBackend(root_dir=root, virtual_mode=True)
+        for skill in list_skills(backend, "/"):
+            # Virtual backend paths look like ``/skill-name/SKILL.md``.
+            rel = str(skill["path"]).lstrip("/")
+            skill_dir = (root / Path(rel).parent).resolve()
+            by_name[skill["name"].lower()] = str(skill_dir)
 
     return sorted(by_name.values())

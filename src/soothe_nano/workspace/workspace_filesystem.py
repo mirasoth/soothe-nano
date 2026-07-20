@@ -25,19 +25,29 @@ logger = logging.getLogger(__name__)
 _DEFAULT_READ_LINE_LIMIT = 2000
 
 
-def _coerce_fs_grep_to_da_matches(result: Any) -> list[dict[str, Any]]:
-    from soothe_nano.filesystem.protocol import GrepResult as FsGrepResult
+def _grep_matches_for_backend(result: Any) -> list[dict[str, Any]]:
+    """Normalize LocalFilesystem grep return shapes to GrepMatch dicts."""
+    from soothe_deepagents.backends.protocol import GrepResult
 
     matches: list[dict[str, Any]] = []
-    if isinstance(result, FsGrepResult):
-        for match in result.matches:
-            matches.append(
-                {
-                    "path": match.path,
-                    "line": match.line_number,
-                    "text": match.line_content,
-                }
-            )
+    if isinstance(result, GrepResult):
+        for match in result.matches or []:
+            if isinstance(match, dict):
+                matches.append(
+                    {
+                        "path": match.get("path", ""),
+                        "line": int(match.get("line", 0)),
+                        "text": match.get("text", ""),
+                    }
+                )
+            else:
+                matches.append(
+                    {
+                        "path": getattr(match, "path", ""),
+                        "line": int(getattr(match, "line", getattr(match, "line_number", 0))),
+                        "text": getattr(match, "text", getattr(match, "line_content", "")),
+                    }
+                )
     elif isinstance(result, list):
         for item in result:
             if isinstance(item, dict):
@@ -74,26 +84,34 @@ def _read_result_for_path(
     except FilesystemError as exc:
         return ReadResult(error=str(exc))
 
-    if raw.is_binary:
-        return ReadResult(file_data=FileData(content=raw.content, encoding="base64"))
-
-    content = raw.content
-    if not content:
-        return ReadResult(file_data=FileData(content="", encoding="utf-8"))
-
-    lines = content.splitlines(keepends=True)
-    start_idx = max(offset, 0)
-    end_idx = min(start_idx + limit, len(lines))
-    if start_idx >= len(lines):
+    if isinstance(raw, ReadResult):
+        if raw.error:
+            return raw
+        file_data = raw.file_data
+        if not file_data:
+            return ReadResult(file_data=FileData(content="", encoding="utf-8"))
+        content = file_data.get("content", "")
+        encoding = file_data.get("encoding", "utf-8")
+        if encoding == "base64":
+            return ReadResult(file_data=FileData(content=content, encoding="base64"))
+        if not content:
+            return ReadResult(file_data=FileData(content="", encoding="utf-8"))
+        lines = content.splitlines(keepends=True)
+        start_idx = max(offset, 0)
+        end_idx = min(start_idx + limit, len(lines))
+        if start_idx >= len(lines):
+            return ReadResult(
+                error=(
+                    f"Line offset {offset} exceeds file length ({len(lines)} lines). "
+                    f"Offset is 0-indexed: use offset={max(len(lines) - 1, 0)} to read the last line."
+                ),
+            )
         return ReadResult(
-            error=(
-                f"Line offset {offset} exceeds file length ({len(lines)} lines). "
-                f"Offset is 0-indexed: use offset={max(len(lines) - 1, 0)} to read the last line."
-            ),
+            file_data=FileData(content="".join(lines[start_idx:end_idx]), encoding="utf-8")
         )
-    return ReadResult(
-        file_data=FileData(content="".join(lines[start_idx:end_idx]), encoding="utf-8")
-    )
+
+    # Legacy nano-shaped read (should not appear after cutover)
+    return ReadResult(error=f"Unexpected read result for '{display_path}'")
 
 
 class NormalizedPathBackend:
@@ -265,7 +283,7 @@ class NormalizedPathBackend:
         *,
         backup: bool = True,
     ) -> Any:
-        from soothe_nano.filesystem.protocol import BatchedEditResult
+        from soothe_deepagents.backends.protocol import BatchedEditResult
 
         normalized = self._normalize_path(path)
         try:
@@ -278,22 +296,34 @@ class NormalizedPathBackend:
         normalized = self._normalize_path(path)
         try:
             result = self._fs.ls(normalized, include_info=True)
+            entries: list[dict[str, Any]] = []
             if isinstance(result, list) and result:
-                entries = [
-                    {
-                        "path": item.path if hasattr(item, "path") else str(item),
-                        "is_dir": item.is_dir if hasattr(item, "is_dir") else False,
-                        "size": item.size if hasattr(item, "size") else 0,
-                        "modified_at": (
-                            item.modified_at.isoformat()
-                            if hasattr(item, "modified_at") and item.modified_at
-                            else None
-                        ),
-                    }
-                    for item in result
-                ]
-            else:
-                entries = []
+                for item in result:
+                    if isinstance(item, dict):
+                        entries.append(
+                            {
+                                "path": item.get("path", ""),
+                                "is_dir": bool(item.get("is_dir", False)),
+                                "size": item.get("size", 0),
+                                "modified_at": item.get("modified_at"),
+                            }
+                        )
+                    elif isinstance(item, str):
+                        entries.append({"path": item, "is_dir": False})
+                    else:
+                        modified = getattr(item, "modified_at", None)
+                        entries.append(
+                            {
+                                "path": item.path,
+                                "is_dir": item.is_dir,
+                                "size": item.size,
+                                "modified_at": (
+                                    modified.isoformat()
+                                    if hasattr(modified, "isoformat")
+                                    else modified
+                                ),
+                            }
+                        )
             return LsResult(entries=entries)
         except Exception as e:
             logger.warning("ls error for %s: %s", path, e)
@@ -303,22 +333,34 @@ class NormalizedPathBackend:
         normalized = self._normalize_path(path)
         try:
             result = await self._fs.als(normalized, include_info=True)
+            entries: list[dict[str, Any]] = []
             if isinstance(result, list) and result:
-                entries = [
-                    {
-                        "path": item.path if hasattr(item, "path") else str(item),
-                        "is_dir": item.is_dir if hasattr(item, "is_dir") else False,
-                        "size": item.size if hasattr(item, "size") else 0,
-                        "modified_at": (
-                            item.modified_at.isoformat()
-                            if hasattr(item, "modified_at") and item.modified_at
-                            else None
-                        ),
-                    }
-                    for item in result
-                ]
-            else:
-                entries = []
+                for item in result:
+                    if isinstance(item, dict):
+                        entries.append(
+                            {
+                                "path": item.get("path", ""),
+                                "is_dir": bool(item.get("is_dir", False)),
+                                "size": item.get("size", 0),
+                                "modified_at": item.get("modified_at"),
+                            }
+                        )
+                    elif isinstance(item, str):
+                        entries.append({"path": item, "is_dir": False})
+                    else:
+                        modified = getattr(item, "modified_at", None)
+                        entries.append(
+                            {
+                                "path": item.path,
+                                "is_dir": item.is_dir,
+                                "size": item.size,
+                                "modified_at": (
+                                    modified.isoformat()
+                                    if hasattr(modified, "isoformat")
+                                    else modified
+                                ),
+                            }
+                        )
             return LsResult(entries=entries)
         except Exception as e:
             logger.warning("als error for %s: %s", path, e)
@@ -331,15 +373,28 @@ class NormalizedPathBackend:
             return []
         if isinstance(result[0], str):
             return [{"path": p, "is_dir": False} for p in result]
-        return [
-            {
-                "path": item.path,
-                "is_dir": item.is_dir,
-                "size": item.size,
-                "modified_at": item.modified_at.isoformat() if item.modified_at else None,
-            }
-            for item in result
-        ]
+        out: list[dict[str, Any]] = []
+        for item in result:
+            if isinstance(item, dict):
+                out.append(
+                    {
+                        "path": item.get("path", ""),
+                        "is_dir": bool(item.get("is_dir", False)),
+                        "size": item.get("size", 0),
+                        "modified_at": item.get("modified_at"),
+                    }
+                )
+            else:
+                modified = getattr(item, "modified_at", None)
+                out.append(
+                    {
+                        "path": item.path,
+                        "is_dir": item.is_dir,
+                        "size": item.size,
+                        "modified_at": modified.isoformat() if modified else None,
+                    }
+                )
+        return out
 
     async def als_info(self, path: str = ".") -> list[dict[str, Any]]:
         normalized = self._normalize_path(path)
@@ -348,31 +403,58 @@ class NormalizedPathBackend:
             return []
         if isinstance(result[0], str):
             return [{"path": p, "is_dir": False} for p in result]
-        return [
-            {
-                "path": item.path,
-                "is_dir": item.is_dir,
-                "size": item.size,
-                "modified_at": item.modified_at.isoformat() if item.modified_at else None,
-            }
-            for item in result
-        ]
+        out: list[dict[str, Any]] = []
+        for item in result:
+            if isinstance(item, dict):
+                out.append(
+                    {
+                        "path": item.get("path", ""),
+                        "is_dir": bool(item.get("is_dir", False)),
+                        "size": item.get("size", 0),
+                        "modified_at": item.get("modified_at"),
+                    }
+                )
+            else:
+                modified = getattr(item, "modified_at", None)
+                out.append(
+                    {
+                        "path": item.path,
+                        "is_dir": item.is_dir,
+                        "size": item.size,
+                        "modified_at": modified.isoformat() if modified else None,
+                    }
+                )
+        return out
 
     def glob(self, pattern: str, path: str = "/") -> Any:
-        from soothe_deepagents.backends.protocol import GlobResult as DaGlobResult
+        from soothe_deepagents.backends.protocol import GlobResult
 
         normalized = self._normalize_path(path)
         result = self._fs.glob(pattern, path=normalized)
-        file_infos = [{"path": p, "is_dir": False} for p in (result.matches or [])]
-        return DaGlobResult(error=result.error, matches=file_infos)
+        file_infos: list[dict[str, Any]] = []
+        for item in result.matches or []:
+            if isinstance(item, dict):
+                file_infos.append(
+                    {"path": item.get("path", ""), "is_dir": bool(item.get("is_dir", False))}
+                )
+            else:
+                file_infos.append({"path": str(item), "is_dir": False})
+        return GlobResult(error=result.error, matches=file_infos)
 
     async def aglob(self, pattern: str, path: str = "/") -> Any:
-        from soothe_deepagents.backends.protocol import GlobResult as DaGlobResult
+        from soothe_deepagents.backends.protocol import GlobResult
 
         normalized = self._normalize_path(path)
         result = await self._fs.aglob(pattern, path=normalized)
-        file_infos = [{"path": p, "is_dir": False} for p in (result.matches or [])]
-        return DaGlobResult(error=result.error, matches=file_infos)
+        file_infos: list[dict[str, Any]] = []
+        for item in result.matches or []:
+            if isinstance(item, dict):
+                file_infos.append(
+                    {"path": item.get("path", ""), "is_dir": bool(item.get("is_dir", False))}
+                )
+            else:
+                file_infos.append({"path": str(item), "is_dir": False})
+        return GlobResult(error=result.error, matches=file_infos)
 
     def grep(
         self,
@@ -381,21 +463,17 @@ class NormalizedPathBackend:
         output_mode: str = "files_with_matches",
         glob: str | None = None,
     ) -> Any:
-        from soothe_deepagents.backends.protocol import GrepResult as DaGrepResult
-
-        from soothe_nano.filesystem.protocol import GrepResult as FsGrepResult
+        from soothe_deepagents.backends.protocol import GrepResult
 
         normalized = self._normalize_path(path)
         try:
             result = self._fs.grep(pattern, path=normalized, glob=glob, output_mode=output_mode)
-            matches = _coerce_fs_grep_to_da_matches(result)
-            error: str | None = None
-            if isinstance(result, FsGrepResult):
-                error = result.error
-            return DaGrepResult(error=error, matches=matches)
+            if isinstance(result, GrepResult):
+                return result
+            return GrepResult(error=None, matches=_grep_matches_for_backend(result))
         except Exception as e:
             logger.warning("grep error for %s: %s", path, e)
-            return DaGrepResult(error=str(e), matches=None)
+            return GrepResult(error=str(e), matches=None)
 
     async def agrep(
         self,
@@ -404,23 +482,19 @@ class NormalizedPathBackend:
         output_mode: str = "files_with_matches",
         glob: str | None = None,
     ) -> Any:
-        from soothe_deepagents.backends.protocol import GrepResult as DaGrepResult
-
-        from soothe_nano.filesystem.protocol import GrepResult as FsGrepResult
+        from soothe_deepagents.backends.protocol import GrepResult
 
         normalized = self._normalize_path(path)
         try:
             result = await self._fs.agrep(
                 pattern, path=normalized, glob=glob, output_mode=output_mode
             )
-            matches = _coerce_fs_grep_to_da_matches(result)
-            error: str | None = None
-            if isinstance(result, FsGrepResult):
-                error = result.error
-            return DaGrepResult(error=error, matches=matches)
+            if isinstance(result, GrepResult):
+                return result
+            return GrepResult(error=None, matches=_grep_matches_for_backend(result))
         except Exception as e:
             logger.warning("agrep error for %s: %s", path, e)
-            return DaGrepResult(error=str(e), matches=None)
+            return GrepResult(error=str(e), matches=None)
 
     def delete(self, path: str) -> str:
         normalized = self._normalize_path(path)

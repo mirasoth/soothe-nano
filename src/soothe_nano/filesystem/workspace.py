@@ -14,11 +14,7 @@ from pathlib import Path
 
 import wcmatch.glob as wcglob
 from pathspec import PathSpec
-
-from soothe_nano.workspace.workspace_runtime import resolve_process_workspace_root
-
-from .local import LocalFilesystem
-from .protocol import (
+from soothe_deepagents.backends.protocol import (
     BatchedEditOperation,
     BatchedEditResult,
     DeleteResult,
@@ -29,6 +25,10 @@ from .protocol import (
     ReadResult,
     WriteResult,
 )
+
+from soothe_nano.workspace.workspace_runtime import resolve_process_workspace_root
+
+from .local import LocalFilesystem
 from .unified import UnifiedFilesystem
 
 _WCMATCH_FLAGS = wcglob.BRACE | wcglob.GLOBSTAR
@@ -670,9 +670,8 @@ class WorkspaceFilesystem(UnifiedFilesystem):
             )
 
         return GlobResult(
-            matches=limited_results,
+            matches=[{"path": p, "is_dir": False} for p in limited_results],
             truncated=truncated,
-            total_count=len(results) if truncated else None,
             error=hint,
         )
 

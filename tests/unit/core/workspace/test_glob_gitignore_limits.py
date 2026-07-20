@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from soothe_nano.filesystem.protocol import GlobResult
+from soothe_deepagents.backends.protocol import GlobResult
+
 from soothe_nano.filesystem.workspace import WorkspaceFilesystem
 from soothe_nano.workspace.workspace_filesystem import NormalizedPathBackend
 
@@ -57,7 +58,7 @@ def test_glob_emits_host_absolute_paths_in_virtual_mode(tmp_path: Path) -> None:
 
     fs = WorkspaceFilesystem(workspace=str(ws), virtual_mode=True)
     result = fs.glob("**/*.md")
-    paths = result.matches or []
+    paths = [m["path"] for m in (result.matches or [])]
 
     assert paths, "expected at least one match"
     for p in paths:
@@ -82,7 +83,7 @@ def test_glob_api_respects_gitignore_and_essential_excludes(tmp_path: Path) -> N
     result = fs.glob("**/*")
     assert isinstance(result, GlobResult)
     assert result.error is None
-    paths = result.matches or []
+    paths = [m["path"] for m in (result.matches or [])]
     # Essential excludes filter out .git and node_modules
     assert not any(".git" in p for p in paths)
     assert not any("node_modules" in p for p in paths)
@@ -103,7 +104,7 @@ def test_glob_respects_root_gitignore_patterns(tmp_path: Path) -> None:
     fs = WorkspaceFilesystem(workspace=str(ws), virtual_mode=True)
     result = fs.glob("**/*")
     assert isinstance(result, GlobResult)
-    paths = result.matches or []
+    paths = [m["path"] for m in (result.matches or [])]
     assert any("visible.txt" in p for p in paths)
     assert not any("secret_dir" in p for p in paths)
     assert not any(".log" in p for p in paths)
@@ -120,7 +121,7 @@ def test_glob_api_output_size_matches_filtered_cap(tmp_path: Path) -> None:
     fs = WorkspaceFilesystem(workspace=str(ws), virtual_mode=True)
     result = fs.glob("**/*")
     assert isinstance(result, GlobResult)
-    paths = result.matches or []
+    paths = [m["path"] for m in (result.matches or [])]
     # WorkspaceFilesystem caps results at DEFAULT_GLOB_MAX_RESULTS (50)
     assert len(paths) <= WorkspaceFilesystem.DEFAULT_GLOB_MAX_RESULTS
     assert result.truncated is True

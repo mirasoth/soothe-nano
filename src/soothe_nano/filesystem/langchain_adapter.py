@@ -21,8 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .local import LocalFilesystem
-from .protocol import (
+from soothe_deepagents.backends.protocol import (
     BatchedEditOperation,
     BatchedEditResult,
     DeleteResult,
@@ -33,6 +32,8 @@ from .protocol import (
     ReadResult,
     WriteResult,
 )
+
+from .local import LocalFilesystem
 from .unified import UnifiedFilesystem
 
 

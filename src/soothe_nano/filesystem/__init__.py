@@ -1,8 +1,10 @@
 """Unified filesystem interface for Soothe.
 
-This module provides a consistent, abstract interface for filesystem operations
-across all Soothe components. It unifies the various filesystem backends and
-provides a common API for file operations.
+Product composition over soothe-deepagents backends: LocalFilesystem,
+WorkspaceFilesystem, factory helpers, and LangChain adapter.
+
+Protocol result types (`ReadResult`, `GrepResult`, etc.) come from
+`soothe_deepagents.backends.protocol` — import them there, not here.
 """
 
 from __future__ import annotations
@@ -28,16 +30,6 @@ from .factory import (
 )
 from .langchain_adapter import LangChainAdapter
 from .local import LocalFilesystem
-from .protocol import (
-    DeleteResult,
-    EditResult,
-    FileInfo,
-    GlobResult,
-    GrepMatch,
-    GrepResult,
-    ReadResult,
-    WriteResult,
-)
 from .unified import UnifiedFilesystem
 from .workspace import WorkspaceFilesystem
 
@@ -56,15 +48,6 @@ __all__ = [
     "PathValidationConfig",
     "SecurityConfig",
     "create_filesystem",
-    # Protocol types
-    "FileInfo",
-    "GlobResult",
-    "ReadResult",
-    "WriteResult",
-    "EditResult",
-    "DeleteResult",
-    "GrepResult",
-    "GrepMatch",
     # Exceptions
     "FilesystemError",
     "PathNotFoundError",

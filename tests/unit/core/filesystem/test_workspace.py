@@ -6,15 +6,16 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from soothe_deepagents.backends.protocol import (
+    EditResult,
+    GrepResult,
+    ReadResult,
+    WriteResult,
+)
 
 from soothe_nano.filesystem import (
-    EditResult,
-    FileInfo,
-    GrepResult,
     LocalFilesystem,
-    ReadResult,
     WorkspaceFilesystem,
-    WriteResult,
 )
 from soothe_nano.filesystem.grep_search import is_grep_available
 
@@ -68,7 +69,8 @@ class TestWorkspaceFilesystem:
         # Read content
         read_result = workspace_fs.read("test.txt")
         assert isinstance(read_result, ReadResult)
-        assert read_result.content == "Hello, World!"
+        assert read_result.file_data is not None
+        assert read_result.file_data["content"] == "Hello, World!"
 
     def test_ls(self, workspace_fs: WorkspaceFilesystem, temp_dir: Path):
         """Test directory listing."""
@@ -83,9 +85,10 @@ class TestWorkspaceFilesystem:
     def test_mkdir(self, workspace_fs: WorkspaceFilesystem):
         """Test directory creation."""
         info = workspace_fs.mkdir("new_dir")
-        assert isinstance(info, FileInfo)
-        assert info.is_dir is True
-        assert info.path.endswith("new_dir")
+        assert isinstance(info, dict)
+        assert "path" in info
+        assert info["is_dir"] is True
+        assert info["path"].endswith("new_dir")
 
     def test_delete(self, workspace_fs: WorkspaceFilesystem, temp_dir: Path):
         """Test file deletion."""
@@ -123,7 +126,7 @@ class TestWorkspaceFilesystem:
         (temp_dir / "source.txt").write_text("copy me")
 
         result = workspace_fs.copy("source.txt", "dest.txt")
-        assert result.path.endswith("dest.txt")
+        assert result["path"].endswith("dest.txt")
         assert (temp_dir / "dest.txt").exists()
 
     def test_move(self, workspace_fs: WorkspaceFilesystem, temp_dir: Path):
@@ -131,7 +134,7 @@ class TestWorkspaceFilesystem:
         (temp_dir / "old.txt").write_text("move me")
 
         result = workspace_fs.move("old.txt", "new.txt")
-        assert result.path.endswith("new.txt")
+        assert result["path"].endswith("new.txt")
         assert (temp_dir / "new.txt").exists()
         assert not (temp_dir / "old.txt").exists()
 
@@ -140,10 +143,11 @@ class TestWorkspaceFilesystem:
         (temp_dir / "info_test.txt").write_text("test content")
 
         info = workspace_fs.info("info_test.txt")
-        assert isinstance(info, FileInfo)
-        assert info.path.endswith("info_test.txt")
-        assert info.is_dir is False
-        assert info.size == len("test content")
+        assert isinstance(info, dict)
+        assert "path" in info
+        assert info["path"].endswith("info_test.txt")
+        assert info["is_dir"] is False
+        assert info["size"] == len("test content")
 
     def test_is_file_is_dir(self, workspace_fs: WorkspaceFilesystem, temp_dir: Path):
         """Test is_file and is_dir methods."""
@@ -228,9 +232,10 @@ class TestLocalFilesystemOutsideWorkspace:
 
         info = non_virtual_fs.info(str(outside_file))
 
-        assert isinstance(info, FileInfo)
+        assert isinstance(info, dict)
+        assert "path" in info
         # Compare resolved paths (macOS /var is symlink to /private/var)
-        assert Path(info.path).resolve() == outside_file.resolve()
+        assert Path(info["path"]).resolve() == outside_file.resolve()
 
     def test_write_within_workspace_still_relative(
         self, non_virtual_fs: LocalFilesystem, temp_dir: Path

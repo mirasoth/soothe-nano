@@ -30,21 +30,6 @@ _SKILL_ROOTS: tuple[tuple[Path, str], ...] = (
 )
 
 
-def _parse_core_frontmatter(raw: object) -> bool | None:
-    """Parse optional ``core:`` frontmatter scalar."""
-    if raw is None:
-        return None
-    if isinstance(raw, bool):
-        return raw
-    if isinstance(raw, str):
-        token = raw.strip().lower()
-        if token in ("true", "yes", "1"):
-            return True
-        if token in ("false", "no", "0"):
-            return False
-    return None
-
-
 @dataclass(frozen=True, slots=True)
 class SkillIndexEntry:
     """Lightweight skill metadata cached by the index."""
@@ -180,52 +165,42 @@ class SkillIndex:
         except OSError:
             return fallback
         try:
-            from soothe_nano.skills.catalog import _parse_frontmatter
+            from soothe_deepagents.middleware.skills import parse_skill_metadata
 
-            fm = _parse_frontmatter(text)
+            meta = parse_skill_metadata(text, str(skill_md), fallback_dir_name)
         except Exception:  # noqa: BLE001
             return fallback
-        raw_name = fm.get("name")
-        if isinstance(raw_name, str) and raw_name.strip():
-            return raw_name.strip().lower()
+        if meta and meta.get("name"):
+            return str(meta["name"]).strip().lower()
         return fallback
 
     def _parse_skill_dir(
         self, skill_dir: Path, mtime: float, *, source: str = "user"
     ) -> SkillIndexEntry | None:
         """Parse SKILL.md frontmatter and build an index entry."""
+        from soothe_deepagents.middleware.skills import parse_skill_metadata
+
         md_file = skill_dir / "SKILL.md"
         try:
             text = md_file.read_text(encoding="utf-8")
         except OSError:
             return None
 
-        from soothe_nano.skills.catalog import _parse_frontmatter, _strip_frontmatter
+        meta = parse_skill_metadata(text, str(md_file), skill_dir.name)
+        if meta is None:
+            return None
 
-        fm = _parse_frontmatter(text)
-        name = fm.get("name", skill_dir.name)
-        description = fm.get("description", "")
-        if not description:
-            body = _strip_frontmatter(text)
-            for line in body.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("#"):
-                    description = stripped.lstrip("#").strip()
-                    break
-                if stripped:
-                    description = stripped
-                    break
-
+        paths = meta.get("paths")
         return SkillIndexEntry(
-            name=name,
-            description=description,
-            tags=fm.get("tags", ""),
+            name=meta["name"],
+            description=meta["description"],
+            tags=meta.get("tags") or "",
             source=source,
             path=str(skill_dir),
             mtime=mtime,
-            paths=tuple(fm["paths"]) if "paths" in fm and isinstance(fm["paths"], list) else None,
-            when_to_use=fm.get("when_to_use") or None,
-            core=_parse_core_frontmatter(fm.get("core")),
+            paths=tuple(paths) if isinstance(paths, list) else None,
+            when_to_use=meta.get("when_to_use") or None,
+            core=meta.get("core"),
         )
 
     def _load_cache(self) -> None:

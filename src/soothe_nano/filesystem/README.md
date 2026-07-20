@@ -194,8 +194,8 @@ print(f"Backup at: {result.backup_path}")
 ## Implementing Custom Backends
 
 ```python
-from soothe.foundation.filesystem import UnifiedFilesystem
-from soothe.foundation.filesystem.protocol import ReadResult, WriteResult
+from soothe_deepagents.backends.protocol import ReadResult, WriteResult
+from soothe_nano.filesystem import UnifiedFilesystem
 
 class S3Filesystem(UnifiedFilesystem):
     """S3-backed filesystem implementation."""
@@ -218,40 +218,40 @@ class S3Filesystem(UnifiedFilesystem):
 
 ## Protocol Types
 
+Result / match types live in `soothe_deepagents.backends.protocol`
+(not re-exported from `soothe_nano.filesystem`).
+
 ### FileInfo
 
 ```python
-from soothe.foundation.filesystem import FileInfo
+from soothe_deepagents.backends.protocol import FileInfo
 
 info: FileInfo = fs.info("file.txt")
-print(f"Size: {info.size}")
-print(f"Modified: {info.modified_at}")
-print(f"Permissions: {info.permissions}")
+print(f"Size: {info['size']}")
+print(f"Modified: {info.get('modified_at')}")
 ```
 
 ### ReadResult
 
 ```python
-from soothe.foundation.filesystem import ReadResult
+from soothe_deepagents.backends.protocol import ReadResult
 
 result: ReadResult = fs.read("file.txt")
-print(f"Content: {result.content}")
-print(f"Is binary: {result.is_binary}")
-print(f"Truncated: {result.truncated}")
+print(f"Content: {result.file_data['content'] if result.file_data else None}")
+print(f"Error: {result.error}")
 ```
 
 ### GlobResult
 
 ```python
-from soothe.foundation.filesystem import GlobResult
+from soothe_deepagents.backends.protocol import GlobResult
 
 result: GlobResult = fs.glob("**/*.py")
-for match in result.matches:
+for match in result.matches or []:
     print(match)
-if result.truncated:
-    print("Results were truncated")
+if result.error:
+    print(result.error)
 ```
-
 ## Configuration
 
 ```python

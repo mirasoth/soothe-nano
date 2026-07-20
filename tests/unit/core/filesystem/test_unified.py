@@ -5,17 +5,24 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from soothe_deepagents.backends.protocol import GrepResult, ReadResult
 
 from soothe_nano.filesystem import (
     DirectoryNotEmptyError,
     FilesystemError,
-    GrepResult,
     InvalidPathError,
     NotAFileError,
     PathNotFoundError,
     PathTraversalError,
 )
 from soothe_nano.filesystem.local import LocalFilesystem
+
+
+def _read_text(result: ReadResult) -> str:
+    """Extract text content from a ReadResult (utf-8, non-binary)."""
+    assert result.file_data is not None
+    assert result.file_data["encoding"] != "base64"
+    return result.file_data["content"]
 
 
 class TestUnifiedFilesystem:
@@ -93,22 +100,22 @@ class TestUnifiedFilesystem:
     def test_read_file(self, temp_workspace: LocalFilesystem, sample_file: str) -> None:
         """Test reading a file."""
         result = temp_workspace.read(sample_file)
-        assert "Hello, World!" in result.content
-        assert result.is_binary is False
-        assert result.encoding == "utf-8"
+        assert result.file_data is not None
+        assert "Hello, World!" in result.file_data["content"]
+        assert result.file_data["encoding"] == "utf-8"
 
     def test_read_with_offset(self, temp_workspace: LocalFilesystem) -> None:
         """Test reading with offset."""
         temp_workspace.write("offset.txt", "ABCDEFGHIJ")
         result = temp_workspace.read("offset.txt", offset=5)
-        assert result.content == "FGHIJ"
+        assert _read_text(result) == "FGHIJ"
 
     def test_read_with_limit(self, temp_workspace: LocalFilesystem) -> None:
         """Test reading with limit."""
         temp_workspace.write("limit.txt", "ABCDEFGHIJ")
         result = temp_workspace.read("limit.txt", limit=5)
-        assert result.content == "ABCDE"
-        assert result.truncated is True
+        assert _read_text(result) == "ABCDE"
+        assert len(_read_text(result)) == 5
 
     def test_read_not_found(self, temp_workspace: LocalFilesystem) -> None:
         """Test reading non-existent file."""
@@ -127,12 +134,12 @@ class TestUnifiedFilesystem:
     def test_write_file(self, temp_workspace: LocalFilesystem) -> None:
         """Test writing a file."""
         result = temp_workspace.write("new.txt", "New content")
-        assert result.created is True
-        assert result.bytes_written == len("New content")
+        assert result.path == "new.txt"
+        assert result.error is None
 
         # Verify content
         read_result = temp_workspace.read("new.txt")
-        assert read_result.content == "New content"
+        assert _read_text(read_result) == "New content"
 
     def test_write_with_backup(self, temp_workspace: LocalFilesystem) -> None:
         """Test writing with backup creation."""
@@ -160,8 +167,8 @@ class TestUnifiedFilesystem:
         temp_workspace.write("edit.txt", "Hello World")
         result = temp_workspace.edit("edit.txt", "World", "Universe")
 
-        assert result.lines_changed > 0
-        content = temp_workspace.read("edit.txt").content
+        assert result.occurrences is not None and result.occurrences > 0
+        content = _read_text(temp_workspace.read("edit.txt"))
         assert "Hello Universe" in content
 
     def test_edit_string_not_found(self, temp_workspace: LocalFilesystem) -> None:
@@ -175,7 +182,7 @@ class TestUnifiedFilesystem:
         temp_workspace.write("lines.txt", "Line 1\nLine 2\nLine 3\nLine 4")
         temp_workspace.edit_lines("lines.txt", 2, 3, "New Line 2\nNew Line 3")
 
-        content = temp_workspace.read("lines.txt").content
+        content = _read_text(temp_workspace.read("lines.txt"))
         assert "Line 1" in content
         assert "New Line 2" in content
         assert "New Line 3" in content
@@ -187,7 +194,7 @@ class TestUnifiedFilesystem:
         temp_workspace.write("insert.txt", "Line 1\nLine 2")
         temp_workspace.insert_lines("insert.txt", 2, "Inserted")
 
-        content = temp_workspace.read("insert.txt").content
+        content = _read_text(temp_workspace.read("insert.txt"))
         lines = content.split("\n")
         assert lines[0] == "Line 1"
         assert lines[1] == "Inserted"
@@ -198,7 +205,7 @@ class TestUnifiedFilesystem:
         temp_workspace.write("delete.txt", "Line 1\nLine 2\nLine 3\nLine 4")
         temp_workspace.delete_lines("delete.txt", 2, 3)
 
-        content = temp_workspace.read("delete.txt").content
+        content = _read_text(temp_workspace.read("delete.txt"))
         lines = content.split("\n")
         assert lines[0] == "Line 1"
         assert lines[1] == "Line 4"
@@ -210,13 +217,13 @@ class TestUnifiedFilesystem:
     def test_mkdir(self, temp_workspace: LocalFilesystem) -> None:
         """Test creating directory."""
         info = temp_workspace.mkdir("newdir")
-        assert info.is_dir is True
+        assert info["is_dir"] is True
         assert temp_workspace.exists("newdir")
 
     def test_mkdir_recursive(self, temp_workspace: LocalFilesystem) -> None:
         """Test recursive directory creation."""
         info = temp_workspace.mkdir("a/b/c", recursive=True)
-        assert info.is_dir is True
+        assert info["is_dir"] is True
         assert temp_workspace.exists("a/b/c")
 
     def test_ls(self, temp_workspace: LocalFilesystem) -> None:
@@ -236,15 +243,16 @@ class TestUnifiedFilesystem:
         entries = temp_workspace.ls(".", include_info=True)
 
         assert len(entries) == 1
-        assert entries[0].path == "info.txt"
-        assert entries[0].is_dir is False
-        assert entries[0].size == len("content")
+        assert entries[0]["path"] == "info.txt"
+        assert entries[0]["is_dir"] is False
+        assert entries[0]["size"] == len("content")
 
     def test_rmdir(self, temp_workspace: LocalFilesystem) -> None:
         """Test removing empty directory."""
         temp_workspace.mkdir("emptydir")
         result = temp_workspace.rmdir("emptydir")
-        assert result.was_directory is True
+        assert result.path == "emptydir"
+        assert result.error is None
         assert not temp_workspace.exists("emptydir")
 
     def test_rmdir_not_empty(self, temp_workspace: LocalFilesystem) -> None:
@@ -261,7 +269,8 @@ class TestUnifiedFilesystem:
         temp_workspace.write("deep/nested/file.txt", "content")
 
         result = temp_workspace.rmdir("deep", recursive=True)
-        assert result.was_directory is True
+        assert result.path == "deep"
+        assert result.error is None
         assert not temp_workspace.exists("deep")
 
     # ===================================================================
@@ -273,7 +282,8 @@ class TestUnifiedFilesystem:
         temp_workspace.write("delete.txt", "content")
         result = temp_workspace.delete("delete.txt")
 
-        assert result.was_directory is False
+        assert result.path == "delete.txt"
+        assert result.error is None
         assert not temp_workspace.exists("delete.txt")
 
     def test_delete_with_backup(self, temp_workspace: LocalFilesystem) -> None:
@@ -288,10 +298,10 @@ class TestUnifiedFilesystem:
     def test_info(self, temp_workspace: LocalFilesystem, sample_file: str) -> None:
         """Test getting file info."""
         info = temp_workspace.info(sample_file)
-        assert info.path == sample_file
-        assert info.is_dir is False
-        assert info.size > 0
-        assert info.modified_at is not None
+        assert info["path"] == sample_file
+        assert info["is_dir"] is False
+        assert info["size"] > 0
+        assert info["modified_at"] is not None
 
     def test_copy_file(self, temp_workspace: LocalFilesystem) -> None:
         """Test copying a file."""
@@ -299,7 +309,7 @@ class TestUnifiedFilesystem:
         temp_workspace.copy("source.txt", "dest.txt")
 
         assert temp_workspace.exists("dest.txt")
-        assert temp_workspace.read("dest.txt").content == "content"
+        assert _read_text(temp_workspace.read("dest.txt")) == "content"
 
     def test_copy_overwrite(self, temp_workspace: LocalFilesystem) -> None:
         """Test copy with overwrite."""
@@ -310,7 +320,7 @@ class TestUnifiedFilesystem:
             temp_workspace.copy("source.txt", "dest.txt", overwrite=False)
 
         temp_workspace.copy("source.txt", "dest.txt", overwrite=True)
-        assert temp_workspace.read("dest.txt").content == "new"
+        assert _read_text(temp_workspace.read("dest.txt")) == "new"
 
     def test_move_file(self, temp_workspace: LocalFilesystem) -> None:
         """Test moving a file."""
@@ -319,7 +329,7 @@ class TestUnifiedFilesystem:
 
         assert not temp_workspace.exists("old.txt")
         assert temp_workspace.exists("new.txt")
-        assert temp_workspace.read("new.txt").content == "content"
+        assert _read_text(temp_workspace.read("new.txt")) == "content"
 
     # ===================================================================
     # Search Operations
@@ -332,9 +342,10 @@ class TestUnifiedFilesystem:
         temp_workspace.write("c.py", "3")
 
         result = temp_workspace.glob("*.txt")
-        assert "a.txt" in result.matches
-        assert "b.txt" in result.matches
-        assert "c.py" not in result.matches
+        match_paths = [m["path"] for m in result.matches or []]
+        assert "a.txt" in match_paths
+        assert "b.txt" in match_paths
+        assert "c.py" not in match_paths
 
     def test_grep_files_with_matches(self, temp_workspace: LocalFilesystem) -> None:
         """Test grep returning file list."""
@@ -354,9 +365,9 @@ class TestUnifiedFilesystem:
 
         result = temp_workspace.grep("hello", output_mode="content")
         assert isinstance(result, GrepResult)
-        assert len(result.matches) == 1
-        assert result.matches[0].line_content == "hello world"
-        assert result.matches[0].line_number == 2
+        assert len(result.matches or []) == 1
+        assert result.matches[0]["text"] == "hello world"
+        assert result.matches[0]["line"] == 2
 
     # ===================================================================
     # Security Tests
@@ -391,13 +402,14 @@ class TestUnifiedFilesystem:
         """Test async read."""
         temp_workspace.write("async.txt", "async content")
         result = await temp_workspace.aread("async.txt")
-        assert result.content == "async content"
+        assert _read_text(result) == "async content"
 
     @pytest.mark.asyncio
     async def test_awrite(self, temp_workspace: LocalFilesystem) -> None:
         """Test async write."""
         result = await temp_workspace.awrite("async.txt", "async content")
-        assert result.created is True
+        assert result.path == "async.txt"
+        assert result.error is None
 
     @pytest.mark.asyncio
     async def test_als(self, temp_workspace: LocalFilesystem) -> None:
@@ -426,7 +438,7 @@ class TestLocalFilesystemNonVirtual:
 
         if os.path.exists("/etc/hosts") and os.access("/etc/hosts", os.R_OK):
             result = non_virtual_fs.read("/etc/hosts")
-            assert result.content  # Should have content
+            assert _read_text(result)  # Should have content
         else:
             # Use a temp file we can guarantee exists
             import tempfile
@@ -436,7 +448,7 @@ class TestLocalFilesystemNonVirtual:
                 temp_path = f.name
             try:
                 result = non_virtual_fs.read(temp_path)
-                assert result.content == "test content"
+                assert _read_text(result) == "test content"
             finally:
                 os.unlink(temp_path)
 
@@ -448,4 +460,4 @@ class TestLocalFilesystemNonVirtual:
         # Should be able to read with absolute path
         abs_path = str(non_virtual_fs.workspace / "test.txt")
         result = non_virtual_fs.read(abs_path)
-        assert result.content == "content"
+        assert _read_text(result) == "content"

@@ -6,9 +6,11 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from soothe_deepagents.backends.protocol import (
+    GrepResult,
+)
 
 from soothe_nano.filesystem import (
-    GrepResult,
     LangChainAdapter,
     LocalFilesystem,
     PathNotFoundError,
@@ -78,8 +80,9 @@ class TestLangChainAdapter:
         test_file.write_text("Hello, World!")
 
         result = adapter.read("test.txt")
-        assert result.content == "Hello, World!"
-        assert result.is_binary is False
+        assert result.file_data is not None
+        assert result.file_data["content"] == "Hello, World!"
+        assert result.file_data["encoding"] == "utf-8"
 
     def test_read_not_found(self, adapter: LangChainAdapter):
         """Test read raises error for nonexistent file."""
@@ -90,11 +93,12 @@ class TestLangChainAdapter:
         """Test write method."""
         result = adapter.write("test.txt", "Hello, World!")
         assert result.path == "test.txt"
-        assert result.created is True
+        assert result.error is None
 
         # Verify content
         read_result = adapter.read("test.txt")
-        assert read_result.content == "Hello, World!"
+        assert read_result.file_data is not None
+        assert read_result.file_data["content"] == "Hello, World!"
 
     def test_edit(self, adapter: LangChainAdapter, temp_dir: Path):
         """Test edit method."""
@@ -103,11 +107,12 @@ class TestLangChainAdapter:
 
         result = adapter.edit("test.txt", "World", "Universe")
         assert result.path == "test.txt"
-        assert result.lines_changed == 1
+        assert result.occurrences == 1
 
         # Verify content
         read_result = adapter.read("test.txt")
-        assert read_result.content == "Hello, Universe!"
+        assert read_result.file_data is not None
+        assert read_result.file_data["content"] == "Hello, Universe!"
 
     def test_delete(self, adapter: LangChainAdapter, temp_dir: Path):
         """Test delete method."""
@@ -130,8 +135,8 @@ class TestLangChainAdapter:
     def test_mkdir(self, adapter: LangChainAdapter):
         """Test mkdir method."""
         result = adapter.mkdir("newdir")
-        assert result.path == "newdir"
-        assert result.is_dir is True
+        assert result["path"] == "newdir"
+        assert result["is_dir"] is True
         assert adapter.is_dir("newdir") is True
 
     def test_glob(self, adapter: LangChainAdapter, temp_dir: Path):
@@ -141,8 +146,8 @@ class TestLangChainAdapter:
         (temp_dir / "test.txt").write_text("content")
 
         result = adapter.glob("*.py")
-        assert len(result.matches) == 2
-        assert all(m.endswith(".py") for m in result.matches)
+        assert len(result.matches or []) == 2
+        assert all(m["path"].endswith(".py") for m in result.matches or [])
 
     def test_grep(self, adapter: LangChainAdapter, temp_dir: Path):
         """Test grep method."""
@@ -158,8 +163,8 @@ class TestLangChainAdapter:
             assert "test2.txt" in result
             return
         assert isinstance(result, GrepResult)
-        assert any(match.path.endswith("test1.txt") for match in result.matches)
-        assert any(match.path.endswith("test2.txt") for match in result.matches)
+        assert any(match["path"].endswith("test1.txt") for match in result.matches or [])
+        assert any(match["path"].endswith("test2.txt") for match in result.matches or [])
 
     def test_info(self, adapter: LangChainAdapter, temp_dir: Path):
         """Test info method."""
@@ -167,9 +172,9 @@ class TestLangChainAdapter:
         test_file.write_text("content")
 
         result = adapter.info("test.txt")
-        assert result.path == "test.txt"
-        assert result.is_dir is False
-        assert result.size == len("content")
+        assert result["path"] == "test.txt"
+        assert result["is_dir"] is False
+        assert result["size"] == len("content")
 
     def test_copy(self, adapter: LangChainAdapter, temp_dir: Path):
         """Test copy method."""
@@ -177,7 +182,7 @@ class TestLangChainAdapter:
         test_file.write_text("content")
 
         result = adapter.copy("source.txt", "dest.txt")
-        assert result.path == "dest.txt"
+        assert result["path"] == "dest.txt"
         assert adapter.exists("dest.txt") is True
 
     def test_move(self, adapter: LangChainAdapter, temp_dir: Path):
@@ -186,7 +191,7 @@ class TestLangChainAdapter:
         test_file.write_text("content")
 
         result = adapter.move("source.txt", "dest.txt")
-        assert result.path == "dest.txt"
+        assert result["path"] == "dest.txt"
         assert adapter.exists("source.txt") is False
         assert adapter.exists("dest.txt") is True
 

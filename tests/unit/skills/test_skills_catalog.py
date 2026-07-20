@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from soothe_deepagents.middleware.skills import parse_skill_metadata
+
 from soothe_nano.config import SootheConfig
 from soothe_nano.skills.catalog import (
-    _parse_frontmatter,
     build_skill_invocation_envelope,
     format_slash_skill_invoke_line,
     parse_slash_skill_user_line,
@@ -110,17 +111,20 @@ def test_try_expand_slash_skill_user_line(tmp_path: Path) -> None:
 class TestFrontmatterPathsAndWhenToUse:
     def test_paths_block_list(self) -> None:
         content = "---\nname: py-skill\ndescription: d\npaths:\n  - '*.py'\n  - '*.pyx'\n---\nbody"
-        fm = _parse_frontmatter(content)
+        fm = parse_skill_metadata(content, "/tmp/py-skill/SKILL.md", "py-skill")
+        assert fm is not None
         assert fm.get("paths") == ["*.py", "*.pyx"]
 
     def test_when_to_use_block_scalar(self) -> None:
         content = "---\nname: x\ndescription: d\nwhen_to_use: |\n  Use for Python.\n  And also Jupyter.\n---\nbody"
-        fm = _parse_frontmatter(content)
-        assert "Python" in fm.get("when_to_use", "")
+        fm = parse_skill_metadata(content, "/tmp/x/SKILL.md", "x")
+        assert fm is not None
+        assert "Python" in (fm.get("when_to_use") or "")
 
     def test_no_paths_no_when_to_use(self) -> None:
         content = "---\nname: plain\ndescription: d\n---\nbody"
-        fm = _parse_frontmatter(content)
+        fm = parse_skill_metadata(content, "/tmp/plain/SKILL.md", "plain")
+        assert fm is not None
         assert fm.get("paths") is None
         assert fm.get("when_to_use") is None
 

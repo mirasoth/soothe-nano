@@ -9,9 +9,9 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from soothe_deepagents.backends.protocol import BatchedEditOperation, BatchedEditResult
 
 from soothe_nano.filesystem.local import LocalFilesystem
-from soothe_nano.filesystem.protocol import BatchedEditOperation, BatchedEditResult
 
 
 class TestBatchedEditOperations:
@@ -338,7 +338,7 @@ class TestBatchedEditOperations:
 
     @pytest.mark.asyncio
     async def test_hash_tracking(self, local_fs: LocalFilesystem, temp_dir: Path) -> None:
-        """BatchedEditResult should track old_hash and new_hash."""
+        """Batched edit applies and changes file content (hashes are deepagents-internal)."""
         # Create test file
         test_file = temp_dir / "test.txt"
         test_file.write_text("original\n")
@@ -355,9 +355,9 @@ class TestBatchedEditOperations:
 
         result = await local_fs.aedit_batched(str(test_file), operations, backup=False)
 
-        assert result.old_hash is not None
-        assert result.new_hash is not None
-        assert result.old_hash != result.new_hash
+        assert result.error is None
+        assert result.operations_applied == 1
+        assert test_file.read_text() == "modified\n"
 
 
 class TestConcurrentEdits:
@@ -460,8 +460,8 @@ class TestConcurrentEdits:
 class TestBatchedEditOperationModel:
     """Tests for BatchedEditOperation data model."""
 
-    def test_to_dict_complete(self) -> None:
-        """to_dict should include all fields."""
+    def test_fields_complete(self) -> None:
+        """All fields should be accessible on the dataclass."""
         op = BatchedEditOperation(
             operation_type="replace",
             start_line=1,
@@ -470,38 +470,32 @@ class TestBatchedEditOperationModel:
             original_call_id="call-123",
         )
 
-        result = op.to_dict()
+        assert op.operation_type == "replace"
+        assert op.start_line == 1
+        assert op.end_line == 5
+        assert op.content == "test content"
+        assert op.original_call_id == "call-123"
 
-        assert result["operation_type"] == "replace"
-        assert result["start_line"] == 1
-        assert result["end_line"] == 5
-        assert result["content"] == "test content"
-        assert result["original_call_id"] == "call-123"
-
-    def test_to_dict_minimal(self) -> None:
-        """to_dict should work with minimal required fields."""
+    def test_fields_minimal(self) -> None:
+        """Minimal required fields should use defaults."""
         op = BatchedEditOperation(
             operation_type="delete",
             start_line=1,
             end_line=5,
         )
 
-        result = op.to_dict()
-
-        assert result["operation_type"] == "delete"
-        assert result["content"] == ""
-        assert result["original_call_id"] is None
+        assert op.operation_type == "delete"
+        assert op.content == ""
+        assert op.original_call_id is None
 
 
 class TestBatchedEditResultModel:
     """Tests for BatchedEditResult data model."""
 
-    def test_to_dict_with_all_fields(self) -> None:
-        """to_dict should include all non-None fields."""
+    def test_fields_with_all_values(self) -> None:
+        """All fields should be accessible on the dataclass."""
         result = BatchedEditResult(
             path="/test/file.txt",
-            old_hash="abc123",
-            new_hash="def456",
             total_lines_changed=10,
             operations_applied=3,
             failed_operations=["call-1"],
@@ -509,43 +503,34 @@ class TestBatchedEditResultModel:
             error=None,
         )
 
-        d = result.to_dict()
+        assert result.path == "/test/file.txt"
+        assert result.total_lines_changed == 10
+        assert result.operations_applied == 3
+        assert result.failed_operations == ["call-1"]
+        assert result.backup_path == "/test/file.txt.bak"
+        assert result.error is None
 
-        assert d["path"] == "/test/file.txt"
-        assert d["old_hash"] == "abc123"
-        assert d["new_hash"] == "def456"
-        assert d["total_lines_changed"] == 10
-        assert d["operations_applied"] == 3
-        assert d["failed_operations"] == ["call-1"]
-        assert d["backup_path"] == "/test/file.txt.bak"
-        assert "error" not in d  # None values omitted
-
-    def test_to_dict_minimal(self) -> None:
-        """to_dict should work with minimal required fields."""
+    def test_fields_minimal(self) -> None:
+        """Minimal required fields should use defaults."""
         result = BatchedEditResult(
             path="/test/file.txt",
             total_lines_changed=1,
             operations_applied=1,
         )
 
-        d = result.to_dict()
-
-        assert d["path"] == "/test/file.txt"
-        assert d["total_lines_changed"] == 1
-        assert d["operations_applied"] == 1
-        assert "old_hash" not in d
-        assert "failed_operations" not in d
-        assert "backup_path" not in d
-        assert "error" not in d
+        assert result.path == "/test/file.txt"
+        assert result.total_lines_changed == 1
+        assert result.operations_applied == 1
+        assert result.failed_operations is None
+        assert result.backup_path is None
+        assert result.error is None
 
     def test_result_with_error(self) -> None:
-        """Result with error should include it in to_dict."""
+        """Result with error should store it on the dataclass."""
         result = BatchedEditResult(
             path="/test/file.txt",
             error="Something went wrong",
             operations_applied=0,
         )
 
-        d = result.to_dict()
-
-        assert d["error"] == "Something went wrong"
+        assert result.error == "Something went wrong"

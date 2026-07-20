@@ -16,9 +16,17 @@ from pathlib import Path
 
 import aiofiles
 import pytest
+from soothe_deepagents.backends.edit_locks import FileEditLockRegistry
+from soothe_deepagents.backends.protocol import ReadResult
 
-from soothe_nano.filesystem._lock_registry import FileEditLockRegistry
 from soothe_nano.filesystem.local import LocalFilesystem
+
+
+def _read_text(result: ReadResult) -> str:
+    """Extract text content from a ReadResult."""
+    assert result.file_data is not None
+    return result.file_data["content"]
+
 
 # ======================================================================
 # FileEditLockRegistry unit tests
@@ -201,7 +209,7 @@ class TestConcurrentEditSerialization:
         async def append_line(line: str) -> None:
             """Read current content, append a line, write back."""
             resolved = temp_workspace._resolve_path("counter.txt")
-            async with temp_workspace._edit_locks.acquire(resolved):
+            async with temp_workspace._backend.edit_locks.acquire(resolved):
                 # Read
                 async with aiofiles.open(resolved, encoding="utf-8") as f:
                     content = await f.read()
@@ -216,7 +224,7 @@ class TestConcurrentEditSerialization:
         await asyncio.gather(*[append_line(line) for line in lines_expected])
 
         # Verify all lines are present (no lost updates).
-        final_content = temp_workspace.read("counter.txt").content
+        final_content = _read_text(temp_workspace.read("counter.txt"))
         for line in lines_expected:
             assert line in final_content, f"lost update: {line!r} not in file"
         assert final_content.count("\n") == num_writers - 1
@@ -237,7 +245,7 @@ class TestConcurrentEditSerialization:
         async def edit_and_hold(filename: str) -> None:
             resolved = temp_workspace._resolve_path(filename)
             temp_workspace.write(filename, "initial")
-            async with temp_workspace._edit_locks.acquire(resolved):
+            async with temp_workspace._backend.edit_locks.acquire(resolved):
                 await asyncio.sleep(hold_time)
 
         filenames = [f"file_{i}.txt" for i in range(num_files)]
@@ -267,7 +275,7 @@ class TestConcurrentEditSerialization:
 
         await asyncio.gather(*[replace_marker(i) for i in range(10)])
 
-        content = temp_workspace.read("markers.txt").content
+        content = _read_text(temp_workspace.read("markers.txt"))
         for i in range(10):
             assert f"[DONE-{i}]" in content, f"edit {i} was lost"
             assert f"<!-- marker-{i} -->" not in content, f"edit {i} did not apply"
@@ -278,11 +286,11 @@ class TestConcurrentEditSerialization:
         resolved = temp_workspace._resolve_path("nested.txt")
 
         # Simulate nested acquisition: outer lock + inner edit (which also locks).
-        with temp_workspace._edit_locks.acquire_sync(resolved):
+        with temp_workspace._backend.edit_locks.acquire_sync(resolved):
             # edit() internally acquires the sync lock again (reentrant RLock).
             temp_workspace.edit("nested.txt", "a=1", "a=2", backup=False)
 
-        content = temp_workspace.read("nested.txt").content
+        content = _read_text(temp_workspace.read("nested.txt"))
         assert "a=2" in content
 
     @pytest.mark.asyncio
@@ -302,7 +310,7 @@ class TestConcurrentEditSerialization:
         result = await temp_workspace.aapply_diff("diff_target.txt", diff, backup=False)
         assert result is not None
 
-        content = temp_workspace.read("diff_target.txt").content
+        content = _read_text(temp_workspace.read("diff_target.txt"))
         assert "world!" in content
 
     @pytest.mark.asyncio

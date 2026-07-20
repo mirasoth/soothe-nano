@@ -3,17 +3,32 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import os
 import shutil
 import subprocess
-import uuid
 from pathlib import Path
 
 import aiofiles
+from soothe_deepagents.backends.filesystem import FilesystemBackend
+from soothe_deepagents.backends.fs_safety import (
+    compute_version_stamp,
+    create_backup,
+    write_atomic,
+)
+from soothe_deepagents.backends.protocol import (
+    BatchedEditOperation,
+    BatchedEditResult,
+    DeleteResult,
+    EditResult,
+    FileData,
+    FileInfo,
+    GlobResult,
+    GrepResult,
+    ReadResult,
+    WriteResult,
+)
 
-from ._lock_registry import FileEditLockRegistry
 from .exceptions import (
     DirectoryNotEmptyError,
     FilesystemError,
@@ -23,18 +38,6 @@ from .exceptions import (
     PathNotFoundError,
     PathTraversalError,
     PermissionDeniedError,
-)
-from .grep_search import GREP_UNAVAILABLE_ERROR, is_grep_available, run_grep
-from .protocol import (
-    BatchedEditOperation,
-    BatchedEditResult,
-    DeleteResult,
-    EditResult,
-    FileInfo,
-    GlobResult,
-    GrepResult,
-    ReadResult,
-    WriteResult,
 )
 from .unified import UnifiedFilesystem
 
@@ -71,10 +74,14 @@ class LocalFilesystem(UnifiedFilesystem):
             max_file_size_mb=max_file_size_mb,
         )
         self._backup_dir = Path(backup_dir)
-        # Per-resolved-path edit locks for serialising concurrent read-modify-write
-        # operations on the same file. Async methods use asyncio.Lock; sync methods
-        # use threading.RLock (reentrant for nested acquisition).
-        self._edit_locks = FileEditLockRegistry()
+        # Shared deepagents backend owns atomic write / backup / locks / versioned
+        # RMW / batched edits. Nano keeps path resolution + exception APIs on top.
+        self._backend = FilesystemBackend(
+            root_dir=self._workspace,
+            virtual_mode=virtual_mode,
+            max_file_size_mb=max_file_size_mb,
+            backup_dir=backup_dir,
+        )
 
     def _resolve_path(self, path: str, *, allow_host_absolute: bool = False) -> Path:
         """Resolve path within workspace.
@@ -143,26 +150,13 @@ class LocalFilesystem(UnifiedFilesystem):
         return resolved
 
     def _create_backup(self, path: Path) -> Path | None:
-        """Create backup of file before modification.
-
-        Args:
-            path: Path to backup.
-
-        Returns:
-            Path to backup file, or None if backup not needed.
-        """
-        if not path.exists():
-            return None
-
-        backup_dir = self.workspace / self._backup_dir
-        backup_dir.mkdir(parents=True, exist_ok=True)
-
-        timestamp = __import__("datetime").datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_name = f"{path.name}.{timestamp}.bak"
-        backup_path = backup_dir / backup_name
-
-        shutil.copy2(path, backup_path)
-        return backup_path
+        """Create backup of file before modification via deepagents helper."""
+        backup_root = (
+            self._backup_dir
+            if self._backup_dir.is_absolute()
+            else self.workspace / self._backup_dir
+        )
+        return create_backup(path, backup_dir=backup_root)
 
     def _result_path(self, resolved: Path) -> str:
         """Compute result path string for WriteResult/EditResult.
@@ -180,32 +174,9 @@ class LocalFilesystem(UnifiedFilesystem):
             return str(resolved.relative_to(self.workspace))
         return str(resolved)
 
-    def _compute_hash(self, content: str | bytes) -> str:
-        """Compute MD5 hash of content."""
-        if isinstance(content, str):
-            content = content.encode("utf-8")
-        return hashlib.md5(content).hexdigest()[:8]
-
     def _compute_version_stamp(self, resolved: Path) -> str | None:
-        """Compute a version stamp for optimistic concurrency control.
-
-        Combines file mtime (nanosecond precision) and size into a compact
-        string.  Two stamps are equal only if the file was not modified
-        between the two stat calls.  Returns ``None`` when the file does
-        not exist (new-file creation), allowing callers to skip the
-        stamp-verification step for brand-new files.
-
-        Args:
-            resolved: Absolute path to the file on disk.
-
-        Returns:
-            A ``"mtime_ns:size"`` string, or ``None`` if the file is absent.
-        """
-        try:
-            stat = resolved.stat()
-            return f"{stat.st_mtime_ns}:{stat.st_size}"
-        except FileNotFoundError:
-            return None
+        """Compute a version stamp for optimistic concurrency control."""
+        return compute_version_stamp(resolved)
 
     def _write_atomic(
         self,
@@ -214,42 +185,20 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         encoding: str = "utf-8",
     ) -> None:
-        """Write content atomically via temp-file + ``os.replace``.
+        """Write content atomically via temp-file + ``os.replace``."""
+        if isinstance(content, str):
+            write_atomic(resolved, content, encoding=encoding)
+            return
+        # Binary path (deepagents helper is text-only).
+        import uuid
 
-        The content is first written to a uniquely-named temporary file in
-        the **same directory** as the target (guaranteeing the same
-        filesystem so that ``os.replace`` is atomic).  Only after the temp
-        file is fully written and flushed is it renamed into place.
-
-        Crash safety: the target file is either the old version or the new
-        version—never a partially-written file.
-
-        Stale temp files are cleaned up on any exception to avoid
-        accumulating orphaned ``.tmp`` files.
-
-        Args:
-            resolved: Absolute target path.
-            content: Content to write (``str`` or ``bytes``).
-            encoding: Text encoding (ignored for ``bytes`` content).
-
-        Raises:
-            OSError: If the temp file cannot be created or renamed.
-        """
-        tmp_name = f".{resolved.name}.{uuid.uuid4().hex}.tmp"
-        tmp_path = resolved.parent / tmp_name
-
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = resolved.parent / f".{resolved.name}.{uuid.uuid4().hex}.tmp"
         try:
-            if isinstance(content, str):
-                tmp_path.write_text(content, encoding=encoding)
-            else:
-                tmp_path.write_bytes(content)
+            tmp_path.write_bytes(content)
             os.replace(tmp_path, resolved)
         except Exception:
-            # Best-effort cleanup of stale temp file on any error
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            tmp_path.unlink(missing_ok=True)
             raise
 
     def _check_file_size(self, resolved: Path, path: str) -> None:
@@ -272,6 +221,21 @@ class LocalFilesystem(UnifiedFilesystem):
                     f"File too large: {file_size} bytes (max: {self.max_file_size_bytes})",
                     path=path,
                 )
+
+    def _backend_path(self, path: str, resolved: Path) -> str:
+        """Path form expected by ``FilesystemBackend`` for this mode."""
+        return path if self.virtual_mode else str(resolved)
+
+    def _map_backend_error(self, error: str | None, path: str) -> None:
+        """Raise nano typed exceptions from a deepagents ``*.error`` string."""
+        if not error:
+            return
+        lowered = error.lower()
+        if "not found" in lowered:
+            raise PathNotFoundError(f"File not found: {path}", path=path)
+        if "permission" in lowered:
+            raise PermissionDeniedError(f"Permission denied: {path}", path=path)
+        raise FilesystemError(error, path=path)
 
     # =======================================================================
     # Path Operations
@@ -356,11 +320,10 @@ class LocalFilesystem(UnifiedFilesystem):
             is_binary = True
 
         return ReadResult(
-            content=content,
-            is_binary=is_binary,
-            encoding=encoding if not is_binary else "base64",
-            truncated=limit is not None and len(content_bytes) == limit,
-            total_size=file_size,
+            file_data=FileData(
+                content=content,
+                encoding="base64" if is_binary else encoding,
+            )
         )
 
     async def aread(
@@ -410,11 +373,10 @@ class LocalFilesystem(UnifiedFilesystem):
             is_binary = True
 
         return ReadResult(
-            content=content,
-            is_binary=is_binary,
-            encoding=encoding if not is_binary else "base64",
-            truncated=limit is not None and len(content_bytes) == limit,
-            total_size=file_size,
+            file_data=FileData(
+                content=content,
+                encoding="base64" if is_binary else encoding,
+            )
         )
 
     # =======================================================================
@@ -429,15 +391,9 @@ class LocalFilesystem(UnifiedFilesystem):
         encoding: str = "utf-8",
         backup: bool = False,
     ) -> WriteResult:
-        """Write content to file."""
+        """Write content to file via deepagents ``FilesystemBackend`` (text) or atomic bytes."""
         resolved = self._resolve_path(path)
 
-        # Create backup if needed
-        backup_path = None
-        if backup and resolved.exists():
-            backup_path = self._create_backup(resolved)
-
-        # Ensure parent directory exists
         try:
             resolved.parent.mkdir(parents=True, exist_ok=True)
         except PermissionError as e:
@@ -445,31 +401,33 @@ class LocalFilesystem(UnifiedFilesystem):
         except OSError as e:
             raise FilesystemError(f"Cannot create directory for {path}: {e}", path=path) from e
 
-        # Write content
-        created = not resolved.exists()
-        try:
-            if isinstance(content, str):
-                with open(resolved, "w", encoding=encoding) as f:
-                    f.write(content)
-                bytes_written = len(content.encode(encoding))
-            else:
-                with open(resolved, "wb") as f:
-                    f.write(content)
-                bytes_written = len(content)
-        except PermissionError as e:
-            raise PermissionDeniedError(f"Permission denied: {path}", path=path) from e
-        except OSError as e:
-            raise FilesystemError(f"Write error: {e}", path=path) from e
+        if isinstance(content, bytes):
+            backup_path = None
+            if backup and resolved.exists():
+                backup_path = self._create_backup(resolved)
+            try:
+                with self._backend.edit_locks.acquire_sync(resolved):
+                    self._write_atomic(resolved, content)
+            except PermissionError as e:
+                raise PermissionDeniedError(f"Permission denied: {path}", path=path) from e
+            except OSError as e:
+                raise FilesystemError(f"Write error: {e}", path=path) from e
+            return WriteResult(
+                path=self._result_path(resolved),
+                backup_path=self._result_path(backup_path) if backup_path else None,
+            )
 
-        # Compute result path: use relative path if within workspace, else absolute
-        result_path = self._result_path(resolved)
-        result_backup = self._result_path(backup_path) if backup_path else None
+        if encoding.lower().replace("-", "") != "utf8":
+            # Non-UTF8 text: encode locally then atomic bytes write.
+            data = content.encode(encoding)
+            return self.write(path, data, backup=backup)
 
+        backend_path = self._backend_path(path, resolved)
+        result = self._backend.write(backend_path, content, backup=backup)
+        self._map_backend_error(result.error, path)
         return WriteResult(
-            path=result_path,
-            bytes_written=bytes_written,
-            created=created,
-            backup_path=result_backup,
+            path=self._result_path(resolved),
+            backup_path=result.backup_path,
         )
 
     async def awrite(
@@ -480,26 +438,9 @@ class LocalFilesystem(UnifiedFilesystem):
         encoding: str = "utf-8",
         backup: bool = False,
     ) -> WriteResult:
-        """Async write content to file using atomic temp-file + rename.
-
-        Writes content to a temporary file in the same directory as the
-        target, then atomically renames it into place via
-        ``os.replace()``. A version stamp (mtime+size) is captured before
-        the write and verified just before the rename to detect concurrent
-        external writers. If the stamp changed, the write is retried once.
-
-        Args:
-            path: Path to write to.
-            content: Content to write (str or bytes).
-            encoding: Text encoding for str content.
-            backup: If True, create a backup before writing.
-
-        Returns:
-            WriteResult with write details.
-        """
+        """Async write via deepagents backend (text) or locked atomic bytes."""
         resolved = self._resolve_path(path)
 
-        # Ensure parent directory exists
         try:
             resolved.parent.mkdir(parents=True, exist_ok=True)
         except PermissionError as e:
@@ -507,55 +448,32 @@ class LocalFilesystem(UnifiedFilesystem):
         except OSError as e:
             raise FilesystemError(f"Cannot create directory for {path}: {e}", path=path) from e
 
-        # Guard against oversized files
         self._check_file_size(resolved, path)
 
-        async with self._edit_locks.acquire(resolved):
-            for attempt in range(2):
-                # Snapshot version stamp before backup / write
-                stamp_before = self._compute_version_stamp(resolved)
-                created = stamp_before is None  # file did not exist
-
-                # Create backup if needed (sync — rare operation)
-                backup_path = None
+        if isinstance(content, bytes) or encoding.lower().replace("-", "") != "utf8":
+            data: str | bytes = content if isinstance(content, bytes) else content.encode(encoding)
+            backup_path = None
+            async with self._backend.edit_locks.acquire(resolved):
                 if backup and resolved.exists():
                     backup_path = self._create_backup(resolved)
-
-                # Verify no external writer modified the file
-                stamp_after = self._compute_version_stamp(resolved)
-                if stamp_before != stamp_after:
-                    if attempt == 0:
-                        logger.debug(
-                            "Concurrent modification detected for %s, retrying write",
-                            path,
-                        )
-                        continue
-                    # On second attempt, proceed anyway (best-effort)
-
-                # Atomic write via temp file + os.replace
                 try:
-                    self._write_atomic(resolved, content, encoding=encoding)
-                    if isinstance(content, str):
-                        bytes_written = len(content.encode(encoding))
-                    else:
-                        bytes_written = len(content)
+                    self._write_atomic(resolved, data)
                 except PermissionError as e:
                     raise PermissionDeniedError(f"Permission denied: {path}", path=path) from e
                 except OSError as e:
                     raise FilesystemError(f"Write error: {e}", path=path) from e
+            return WriteResult(
+                path=self._result_path(resolved),
+                backup_path=self._result_path(backup_path) if backup_path else None,
+            )
 
-                result_path = self._result_path(resolved)
-                result_backup = self._result_path(backup_path) if backup_path else None
-
-                return WriteResult(
-                    path=result_path,
-                    bytes_written=bytes_written,
-                    created=created,
-                    backup_path=result_backup,
-                )
-
-            # Unreachable — loop always returns or raises
-            raise FilesystemError(f"Write failed after retry: {path}", path=path)
+        backend_path = self._backend_path(path, resolved)
+        result = await self._backend.awrite(backend_path, content, backup=backup)
+        self._map_backend_error(result.error, path)
+        return WriteResult(
+            path=self._result_path(resolved),
+            backup_path=result.backup_path,
+        )
 
     # =======================================================================
     # Edit Operations
@@ -569,86 +487,22 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         backup: bool = True,
     ) -> EditResult:
-        """Replace old_string with new_string in file.
-
-        Uses optimistic concurrency: a version stamp is captured before
-        reading the file and verified before the atomic write. If an
-        external writer modified the file in between, the operation is
-        retried once.
-        """
+        """Replace old_string with new_string via deepagents ``FilesystemBackend``."""
         resolved = self._resolve_path(path)
-
         if not resolved.exists():
             raise PathNotFoundError(f"File not found: {path}", path=path)
-
-        # Guard against oversized files
         self._check_file_size(resolved, path)
 
-        with self._edit_locks.acquire_sync(resolved):
-            for attempt in range(2):
-                # Snapshot version stamp before reading
-                stamp_before = self._compute_version_stamp(resolved)
-
-                # Read current content
-                with open(resolved, encoding="utf-8") as f:
-                    content = f.read()
-
-                old_hash = self._compute_hash(content)
-
-                # Check for matches
-                if old_string not in content:
-                    raise FilesystemError(
-                        f"String not found in file: {old_string!r}. Re-read the file with "
-                        "read_file and retry with exact surrounding context including whitespace.",
-                        path=path,
-                    )
-
-                count = content.count(old_string)
-                if count > 1:
-                    raise FilesystemError(
-                        f"Multiple matches ({count}) found for string: {old_string!r}. "
-                        "Add more surrounding context to old_string or set replace_all=true.",
-                        path=path,
-                    )
-
-                # Create backup
-                backup_path = None
-                if backup:
-                    backup_path = self._create_backup(resolved)
-
-                # Verify stamp unchanged before write
-                stamp_after = self._compute_version_stamp(resolved)
-                if stamp_before != stamp_after:
-                    if attempt == 0:
-                        logger.debug(
-                            "Concurrent modification detected for %s, retrying edit",
-                            path,
-                        )
-                        continue
-                    # On second attempt, proceed anyway (best-effort)
-
-                # Apply edit
-                new_content = content.replace(old_string, new_string, 1)
-                new_hash = self._compute_hash(new_content)
-
-                # Count changed lines (approximate)
-                old_lines = old_string.count("\n")
-                new_lines = new_string.count("\n")
-                lines_changed = abs(new_lines - old_lines) + 1
-
-                # Atomic write back
-                self._write_atomic(resolved, new_content)
-
-                return EditResult(
-                    path=self._result_path(resolved),
-                    old_hash=old_hash,
-                    new_hash=new_hash,
-                    lines_changed=lines_changed,
-                    backup_path=self._result_path(backup_path) if backup_path else None,
-                )
-
-            # Unreachable — loop always returns or raises
-            raise FilesystemError(f"Edit failed after retry: {path}", path=path)
+        backend_path = self._backend_path(path, resolved)
+        result = self._backend.edit(
+            backend_path, old_string, new_string, replace_all=False, backup=backup
+        )
+        self._map_backend_error(result.error, path)
+        return EditResult(
+            path=self._result_path(resolved),
+            occurrences=result.occurrences or 1,
+            backup_path=result.backup_path,
+        )
 
     async def aedit(
         self,
@@ -658,86 +512,22 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         backup: bool = True,
     ) -> EditResult:
-        """Async replace old_string with new_string in file.
-
-        Uses optimistic concurrency: a version stamp is captured before
-        reading the file and verified before the atomic write. If an
-        external writer modified the file in between, the operation is
-        retried once. The final write is atomic (temp file + os.replace).
-        """
+        """Async replace via deepagents ``FilesystemBackend``."""
         resolved = self._resolve_path(path)
-
         if not resolved.exists():
             raise PathNotFoundError(f"File not found: {path}", path=path)
-
-        # Guard against oversized files
         self._check_file_size(resolved, path)
 
-        async with self._edit_locks.acquire(resolved):
-            for attempt in range(2):
-                # Snapshot version stamp before reading
-                stamp_before = self._compute_version_stamp(resolved)
-
-                # Async read current content
-                async with aiofiles.open(resolved, encoding="utf-8") as f:
-                    content = await f.read()
-
-                old_hash = self._compute_hash(content)
-
-                # Check for matches
-                if old_string not in content:
-                    raise FilesystemError(
-                        f"String not found in file: {old_string!r}. Re-read the file with "
-                        "read_file and retry with exact surrounding context including whitespace.",
-                        path=path,
-                    )
-
-                count = content.count(old_string)
-                if count > 1:
-                    raise FilesystemError(
-                        f"Multiple matches ({count}) found for string: {old_string!r}. "
-                        "Add more surrounding context to old_string or set replace_all=true.",
-                        path=path,
-                    )
-
-                # Create backup (sync — rare operation)
-                backup_path = None
-                if backup:
-                    backup_path = self._create_backup(resolved)
-
-                # Verify stamp unchanged before write
-                stamp_after = self._compute_version_stamp(resolved)
-                if stamp_before != stamp_after:
-                    if attempt == 0:
-                        logger.debug(
-                            "Concurrent modification detected for %s, retrying edit",
-                            path,
-                        )
-                        continue
-                    # On second attempt, proceed anyway (best-effort)
-
-                # Apply edit
-                new_content = content.replace(old_string, new_string, 1)
-                new_hash = self._compute_hash(new_content)
-
-                # Count changed lines (approximate)
-                old_lines = old_string.count("\n")
-                new_lines = new_string.count("\n")
-                lines_changed = abs(new_lines - old_lines) + 1
-
-                # Atomic write back (temp file + os.replace)
-                self._write_atomic(resolved, new_content)
-
-                return EditResult(
-                    path=self._result_path(resolved),
-                    old_hash=old_hash,
-                    new_hash=new_hash,
-                    lines_changed=lines_changed,
-                    backup_path=self._result_path(backup_path) if backup_path else None,
-                )
-
-            # Unreachable — loop always returns or raises
-            raise FilesystemError(f"Edit failed after retry: {path}", path=path)
+        backend_path = self._backend_path(path, resolved)
+        result = await self._backend.aedit(
+            backend_path, old_string, new_string, replace_all=False, backup=backup
+        )
+        self._map_backend_error(result.error, path)
+        return EditResult(
+            path=self._result_path(resolved),
+            occurrences=result.occurrences or 1,
+            backup_path=result.backup_path,
+        )
 
     def edit_lines(
         self,
@@ -754,7 +544,7 @@ class LocalFilesystem(UnifiedFilesystem):
         if not resolved.exists():
             raise PathNotFoundError(f"File not found: {path}", path=path)
 
-        with self._edit_locks.acquire_sync(resolved):
+        with self._backend.edit_locks.acquire_sync(resolved):
             with open(resolved, encoding="utf-8") as f:
                 lines = f.readlines()
 
@@ -771,9 +561,6 @@ class LocalFilesystem(UnifiedFilesystem):
                     path=path,
                 )
 
-            old_content = "".join(lines)
-            old_hash = self._compute_hash(old_content)
-
             # Create backup
             backup_path = None
             if backup:
@@ -788,22 +575,14 @@ class LocalFilesystem(UnifiedFilesystem):
                 result_lines = (
                     lines[: start_line - 1] + formatted_new_lines + lines[start_line - 1 :]
                 )
-                lines_changed = len(formatted_new_lines)
             else:
                 result_lines = lines[: start_line - 1] + formatted_new_lines + lines[end_line:]
-                lines_changed = end_line - start_line + 1
 
-            new_full_content = "".join(result_lines)
-            new_hash = self._compute_hash(new_full_content)
-
-            with open(resolved, "w", encoding="utf-8") as f:
-                f.writelines(result_lines)
+            self._write_atomic(resolved, "".join(result_lines))
 
             return EditResult(
                 path=self._result_path(resolved),
-                old_hash=old_hash,
-                new_hash=new_hash,
-                lines_changed=lines_changed,
+                occurrences=1,
                 backup_path=self._result_path(backup_path) if backup_path else None,
             )
 
@@ -831,7 +610,7 @@ class LocalFilesystem(UnifiedFilesystem):
         # Guard against oversized files
         self._check_file_size(resolved, path)
 
-        async with self._edit_locks.acquire(resolved):
+        async with self._backend.edit_locks.acquire(resolved):
             for attempt in range(2):
                 # Snapshot version stamp before reading
                 stamp_before = self._compute_version_stamp(resolved)
@@ -853,8 +632,6 @@ class LocalFilesystem(UnifiedFilesystem):
                         f"Invalid line range: {start_line}-{end_line} (file has {len(lines)} lines)",
                         path=path,
                     )
-
-                old_hash = self._compute_hash(content)
 
                 # Create backup (sync — rare operation)
                 backup_path = None
@@ -881,22 +658,17 @@ class LocalFilesystem(UnifiedFilesystem):
                     result_lines = (
                         lines[: start_line - 1] + formatted_new_lines + lines[start_line - 1 :]
                     )
-                    lines_changed = len(formatted_new_lines)
                 else:
                     result_lines = lines[: start_line - 1] + formatted_new_lines + lines[end_line:]
-                    lines_changed = end_line - start_line + 1
 
                 new_full_content = "".join(result_lines)
-                new_hash = self._compute_hash(new_full_content)
 
                 # Atomic write back (temp file + os.replace)
                 self._write_atomic(resolved, new_full_content)
 
                 return EditResult(
                     path=self._result_path(resolved),
-                    old_hash=old_hash,
-                    new_hash=new_hash,
-                    lines_changed=lines_changed,
+                    occurrences=1,
                     backup_path=self._result_path(backup_path) if backup_path else None,
                 )
 
@@ -955,156 +727,28 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         backup: bool = True,
     ) -> BatchedEditResult:
-        """Apply multiple edit operations to a file in one atomic read/modify/write.
-
-        All operations are applied to in-memory content in a single pass,
-        then the result is written atomically via temp file + ``os.replace``.
-        Optimistic concurrency (version stamp) is used to detect external
-        writers and retry once if the file changed between read and write.
-
-        Operations are applied in order: deletions → insertions →
-        replacements. Replacements are sorted by line number descending
-        (bottom-to-top) to preserve line indices during modification.
-
-        Args:
-            path: Path to the file to edit.
-            operations: List of edit operations to apply.
-            backup: Whether to create a backup before editing.
-
-        Returns:
-            BatchedEditResult with details of all operations applied.
+        """Apply multiple edit operations via deepagents `FilesystemBackend`.
 
         Raises:
             PathNotFoundError: If file does not exist.
-            FilesystemError: If operations have overlapping line ranges.
         """
         resolved = self._resolve_path(path)
 
         if not resolved.exists():
             raise PathNotFoundError(f"File not found: {path}", path=path)
 
-        # Guard against oversized files
         self._check_file_size(resolved, path)
 
-        # Separate operations by type (validated once, outside retry loop)
-        deletions = [op for op in operations if op.operation_type == "delete"]
-        insertions = [op for op in operations if op.operation_type == "insert"]
-        replacements = [op for op in operations if op.operation_type == "replace"]
-
-        # Check for overlaps in replacements (fail fast before any I/O)
-        for i, op_a in enumerate(replacements):
-            for op_b in replacements[i + 1 :]:
-                if self._ranges_overlap(op_a, op_b):
-                    return BatchedEditResult(
-                        path=self._result_path(resolved),
-                        error=f"Overlapping edits: lines {op_a.start_line}-{op_a.end_line} and {op_b.start_line}-{op_b.end_line}",
-                        failed_operations=[
-                            op_a.original_call_id or "",
-                            op_b.original_call_id or "",
-                        ],
-                    )
-
-        async with self._edit_locks.acquire(resolved):
-            for attempt in range(2):
-                # Snapshot version stamp before reading
-                stamp_before = self._compute_version_stamp(resolved)
-
-                # Async read file
-                async with aiofiles.open(resolved, encoding="utf-8") as f:
-                    content = await f.read()
-                lines = content.splitlines(keepends=True)
-                old_hash = self._compute_hash(content)
-
-                # Create backup (sync — rare operation)
-                backup_path = None
-                if backup:
-                    backup_path = self._create_backup(resolved)
-
-                # Verify stamp unchanged before write
-                stamp_after = self._compute_version_stamp(resolved)
-                if stamp_before != stamp_after:
-                    if attempt == 0:
-                        logger.debug(
-                            "Concurrent modification detected for %s, retrying batched edit",
-                            path,
-                        )
-                        continue
-                    # On second attempt, proceed anyway (best-effort)
-
-                # Track changes
-                total_lines_changed = 0
-                operations_applied = 0
-                failed_ops: list[str] = []
-
-                # Apply deletions first (sorted descending to preserve indices)
-                deletions_sorted = sorted(deletions, key=lambda op: op.start_line, reverse=True)
-                for op in deletions_sorted:
-                    if op.start_line < 1 or op.end_line > len(lines) or op.start_line > op.end_line:
-                        failed_ops.append(op.original_call_id or "")
-                        continue
-                    lines = lines[: op.start_line - 1] + lines[op.end_line :]
-                    total_lines_changed += op.end_line - op.start_line + 1
-                    operations_applied += 1
-
-                # Apply insertions (sorted by line number ascending)
-                insertions_sorted = sorted(insertions, key=lambda op: op.start_line)
-                for op in insertions_sorted:
-                    if op.start_line < 1 or op.start_line > len(lines) + 1:
-                        failed_ops.append(op.original_call_id or "")
-                        continue
-                    new_lines = op.content.split("\n")
-                    if new_lines and new_lines[-1] == "":
-                        new_lines = new_lines[:-1]
-                    formatted_new_lines = [line + "\n" for line in new_lines]
-                    lines = (
-                        lines[: op.start_line - 1]
-                        + formatted_new_lines
-                        + lines[op.start_line - 1 :]
-                    )
-                    total_lines_changed += len(formatted_new_lines)
-                    operations_applied += 1
-
-                # Apply replacements (sorted descending to preserve indices)
-                replacements_sorted = sorted(
-                    replacements, key=lambda op: op.start_line, reverse=True
-                )
-                for op in replacements_sorted:
-                    if op.start_line < 1 or op.end_line > len(lines) or op.start_line > op.end_line:
-                        failed_ops.append(op.original_call_id or "")
-                        continue
-                    new_lines = op.content.split("\n")
-                    if new_lines and new_lines[-1] == "":
-                        new_lines = new_lines[:-1]
-                    formatted_new_lines = [line + "\n" for line in new_lines]
-                    lines = lines[: op.start_line - 1] + formatted_new_lines + lines[op.end_line :]
-                    total_lines_changed += max(
-                        op.end_line - op.start_line + 1, len(formatted_new_lines)
-                    )
-                    operations_applied += 1
-
-                # Compute new hash
-                new_content = "".join(lines)
-                new_hash = self._compute_hash(new_content)
-
-                # Atomic write back (temp file + os.replace)
-                self._write_atomic(resolved, new_content)
-
-                return BatchedEditResult(
-                    path=self._result_path(resolved),
-                    old_hash=old_hash,
-                    new_hash=new_hash,
-                    total_lines_changed=total_lines_changed,
-                    operations_applied=operations_applied,
-                    failed_operations=failed_ops if failed_ops else None,
-                    backup_path=self._result_path(backup_path) if backup_path else None,
-                )
-
-            # Unreachable — loop always returns or raises
-            raise FilesystemError(f"Batched edit failed after retry: {path}", path=path)
-
-    def _ranges_overlap(self, a: BatchedEditOperation, b: BatchedEditOperation) -> bool:
-        """Check if two edit operations have overlapping line ranges."""
-        return a.start_line <= b.end_line and b.start_line <= a.end_line
+        backend_path = path if self.virtual_mode else str(resolved)
+        da = await self._backend.aedit_batched(backend_path, operations, backup=backup)
+        return BatchedEditResult(
+            path=self._result_path(resolved),
+            total_lines_changed=da.total_lines_changed,
+            operations_applied=da.operations_applied,
+            failed_operations=da.failed_operations,
+            backup_path=da.backup_path,
+            error=da.error,
+        )
 
     def apply_diff(
         self,
@@ -1131,7 +775,7 @@ class LocalFilesystem(UnifiedFilesystem):
         # Guard against oversized files
         self._check_file_size(resolved, path)
 
-        with self._edit_locks.acquire_sync(resolved):
+        with self._backend.edit_locks.acquire_sync(resolved):
             for attempt in range(2):
                 # Snapshot version stamp before reading
                 stamp_before = self._compute_version_stamp(resolved)
@@ -1204,13 +848,9 @@ class LocalFilesystem(UnifiedFilesystem):
                 # Atomic write back
                 self._write_atomic(resolved, new_content)
 
-                old_hash = self._compute_hash(content)
-                new_hash = self._compute_hash(new_content)
-
                 return EditResult(
                     path=self._result_path(resolved),
-                    old_hash=old_hash,
-                    new_hash=new_hash,
+                    occurrences=1,
                     backup_path=self._result_path(backup_path) if backup_path else None,
                 )
 
@@ -1232,7 +872,7 @@ class LocalFilesystem(UnifiedFilesystem):
         writers and retry once.
         """
         resolved = self._resolve_path(path)
-        async with self._edit_locks.acquire(resolved):
+        async with self._backend.edit_locks.acquire(resolved):
             return self.apply_diff(path, diff, backup=backup)
 
     # =======================================================================
@@ -1277,19 +917,14 @@ class LocalFilesystem(UnifiedFilesystem):
         from datetime import datetime
 
         modified_at = datetime.fromtimestamp(stat.st_mtime)
-        created_at = datetime.fromtimestamp(stat.st_ctime)
 
-        # Get permissions as octal
-        permissions = oct(stat.st_mode)[-3:]
-
-        return FileInfo(
-            path=self._result_path(path),
-            is_dir=path.is_dir(),
-            size=stat.st_size,
-            modified_at=modified_at,
-            created_at=created_at,
-            permissions=permissions,
-        )
+        info: FileInfo = {
+            "path": self._result_path(path),
+            "is_dir": path.is_dir(),
+            "size": stat.st_size,
+            "modified_at": modified_at.isoformat(),
+        }
+        return info
 
     def mkdir(
         self,
@@ -1355,7 +990,6 @@ class LocalFilesystem(UnifiedFilesystem):
 
         return DeleteResult(
             path=self._result_path(resolved),
-            was_directory=True,
             backup_path=self._result_path(backup_path) if backup_path else None,
         )
 
@@ -1379,7 +1013,7 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         backup: bool = True,
     ) -> DeleteResult:
-        """Delete file."""
+        """Delete file via deepagents ``FilesystemBackend`` (file-only semantics)."""
         resolved = self._resolve_path(path)
 
         if not resolved.exists():
@@ -1387,20 +1021,12 @@ class LocalFilesystem(UnifiedFilesystem):
         if not resolved.is_file():
             raise NotAFileError(f"Not a file: {path}", path=path)
 
-        # Create backup
-        backup_path = None
-        if backup:
-            backup_path = self._create_backup(resolved)
-
-        try:
-            resolved.unlink()
-        except PermissionError as e:
-            raise PermissionDeniedError(f"Permission denied: {path}", path=path) from e
-
+        backend_path = self._backend_path(path, resolved)
+        result = self._backend.delete(backend_path, backup=backup)
+        self._map_backend_error(result.error, path)
         return DeleteResult(
             path=self._result_path(resolved),
-            was_directory=False,
-            backup_path=self._result_path(backup_path) if backup_path else None,
+            backup_path=result.backup_path,
         )
 
     async def adelete(
@@ -1409,8 +1035,21 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         backup: bool = True,
     ) -> DeleteResult:
-        """Async delete file."""
-        return self.delete(path, backup=backup)
+        """Async delete file via deepagents ``FilesystemBackend``."""
+        resolved = self._resolve_path(path)
+
+        if not resolved.exists():
+            raise PathNotFoundError(f"File not found: {path}", path=path)
+        if not resolved.is_file():
+            raise NotAFileError(f"Not a file: {path}", path=path)
+
+        backend_path = self._backend_path(path, resolved)
+        result = await self._backend.adelete(backend_path, backup=backup)
+        self._map_backend_error(result.error, path)
+        return DeleteResult(
+            path=self._result_path(resolved),
+            backup_path=result.backup_path,
+        )
 
     def info(self, path: str) -> FileInfo:
         """Get file/directory information."""
@@ -1513,12 +1152,12 @@ class LocalFilesystem(UnifiedFilesystem):
         if not resolved.is_dir():
             return GlobResult(matches=[], error=f"Not a directory: {path}")
 
-        matches = []
+        matches: list[FileInfo] = []
         # Use pathlib's glob for proper ** handling
         try:
             for match in resolved.glob(pattern):
-                rel_path = str(match.relative_to(resolved))
-                matches.append(rel_path)
+                if match.is_file():
+                    matches.append({"path": str(match.relative_to(resolved)), "is_dir": False})
         except OSError:
             pass
 
@@ -1544,10 +1183,14 @@ class LocalFilesystem(UnifiedFilesystem):
         glob: str | None = None,
         output_mode: str = "files_with_matches",
     ) -> GrepResult | list[str] | str:
-        """Search for pattern in files via ``ag`` or ``rg``.
+        """Search for pattern in files via deepagents public search API.
+
+        Uses ``FilesystemBackend.grep`` (ripgrep + Python fallback). Paths in
+        results are normalized to the same workspace-relative / absolute form
+        as other LocalFilesystem operations.
 
         Args:
-            pattern: Regex pattern to search for.
+            pattern: Literal text pattern to search for.
             path: Directory or file to search.
             glob: Optional glob pattern for file filtering.
             output_mode: ``files_with_matches``, ``count``, or ``content``.
@@ -1560,19 +1203,60 @@ class LocalFilesystem(UnifiedFilesystem):
         if not resolved.is_dir() and not resolved.is_file():
             return GrepResult(matches=[])
 
-        if not is_grep_available():
-            return GrepResult(matches=[], error=GREP_UNAVAILABLE_ERROR)
+        if self._is_within_workspace(resolved):
+            use_backend = self._backend
+            backend_path = path if self.virtual_mode else str(resolved)
+            normalize_virtual = self.virtual_mode
+        else:
+            # Host-absolute paths outside the workspace (e.g. log files).
+            search_root = resolved.parent if resolved.is_file() else resolved
+            use_backend = FilesystemBackend(
+                root_dir=search_root,
+                virtual_mode=False,
+                max_file_size_mb=self.max_file_size_mb,
+            )
+            backend_path = str(resolved)
+            normalize_virtual = False
 
-        result = run_grep(
-            workspace=self.workspace,
-            search_path=resolved,
-            pattern=pattern,
-            glob=glob,
-            output_mode=output_mode,
-        )
-        if result is None:
-            return GrepResult(matches=[], error="grep search failed")
-        return result
+        da = use_backend.grep(pattern, path=backend_path, glob=glob)
+        matches: list[dict[str, object]] = []
+        for match in da.matches or []:
+            if not isinstance(match, dict):
+                continue
+            raw_path = str(match.get("path", ""))
+            if normalize_virtual:
+                norm = raw_path.lstrip("/")
+            else:
+                try:
+                    match_resolved = Path(raw_path)
+                    if not match_resolved.is_absolute():
+                        match_resolved = (resolved.parent / raw_path).resolve()
+                    else:
+                        match_resolved = match_resolved.resolve()
+                    if self._is_within_workspace(match_resolved):
+                        norm = self._result_path(match_resolved)
+                    else:
+                        norm = str(match_resolved)
+                except (OSError, ValueError, RuntimeError):
+                    norm = raw_path
+            matches.append(
+                {
+                    "path": norm,
+                    "line": int(match.get("line", 0)),
+                    "text": str(match.get("text", "")),
+                }
+            )
+
+        if output_mode == "content":
+            return GrepResult(error=da.error, matches=matches, truncated=da.truncated)
+        if output_mode == "count":
+            return str(len(matches))
+        seen: list[str] = []
+        for match in matches:
+            p = str(match.get("path", ""))
+            if p and p not in seen:
+                seen.append(p)
+        return seen
 
     async def agrep(
         self,

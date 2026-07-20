@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -18,109 +17,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# YAML-like frontmatter parser (lightweight, no yaml dependency required)
+# Skill directory parsing (deepagents public skill APIs)
 # ---------------------------------------------------------------------------
-
-_FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
-_FM_LINE_RE = re.compile(r"^(\w[\w_-]*):\s*(.+)$")
-
-
-def _parse_frontmatter(text: str) -> dict[str, Any]:
-    """Parse YAML-like frontmatter from SKILL.md content.
-
-    Supports scalar keys, block-list ``paths:`` entries (``- pattern``), and
-    block-scalar ``when_to_use: |`` multi-line values (RFC-105).
-
-    Args:
-        text: Full SKILL.md content, possibly with ``---`` delimited header.
-
-    Returns:
-        Dict of parsed key-value pairs.
-    """
-    m = _FM_RE.match(text)
-    if not m:
-        return {}
-
-    result: dict[str, Any] = {}
-    lines = m.group(1).splitlines()
-    i = 0
-    while i < len(lines):
-        stripped = lines[i].strip()
-        if not stripped or stripped.startswith("#"):
-            i += 1
-            continue
-
-        # Block-list: "key:" followed by indented "  - item" lines
-        if stripped.endswith(":") and i + 1 < len(lines) and _is_list_line(lines[i + 1]):
-            key = stripped[:-1].strip()
-            items: list[str] = []
-            j = i + 1
-            while j < len(lines) and _is_list_line(lines[j]):
-                item = lines[j].strip().lstrip("-").strip()
-                if (item.startswith('"') and item.endswith('"')) or (
-                    item.startswith("'") and item.endswith("'")
-                ):
-                    item = item[1:-1]
-                items.append(item)
-                j += 1
-            result[key] = items
-            i = j
-            continue
-
-        # Block-scalar: "key: |" or "key: >" followed by indented lines
-        lm = _FM_LINE_RE.match(stripped)
-        if lm and lm.group(2).strip() in ("|", ">"):
-            key = lm.group(1)
-            block_lines: list[str] = []
-            j = i + 1
-            while j < len(lines) and (lines[j].startswith(("  ", "\t")) or not lines[j].strip()):
-                if not lines[j].strip():
-                    block_lines.append("")
-                else:
-                    block_lines.append(
-                        lines[j][2:] if lines[j].startswith("  ") else lines[j].lstrip()
-                    )
-                j += 1
-            result[key] = "\n".join(block_lines).rstrip()
-            i = j
-            continue
-
-        # Scalar key: value
-        if lm:
-            key, val = lm.group(1), lm.group(2).strip()
-            if (val.startswith('"') and val.endswith('"')) or (
-                val.startswith("'") and val.endswith("'")
-            ):
-                val = val[1:-1]
-            result[key] = val
-
-        i += 1
-    return result
-
-
-def _is_list_line(line: str) -> bool:
-    """Check if a line is a YAML list item (indented, starts with '-')."""
-    stripped = line.strip()
-    return stripped.startswith("- ") and (line.startswith("  ") or line.startswith("\t"))
 
 
 def _strip_frontmatter(text: str) -> str:
-    """Remove frontmatter block, returning only the body content.
+    """Remove frontmatter block, returning only the body content."""
+    from soothe_deepagents.middleware.skills import strip_skill_frontmatter
 
-    Args:
-        text: Full SKILL.md content.
-
-    Returns:
-        Body content after frontmatter, or the original text if no frontmatter.
-    """
-    m = _FM_RE.match(text)
-    if m:
-        return text[m.end() :]
-    return text
+    return strip_skill_frontmatter(text)
 
 
 def _parse_skill_directory(skill_dir: str | Path) -> dict[str, Any] | None:
-    """Parse a skill directory's SKILL.md and return metadata with path.
+    """Parse a skill directory's SKILL.md via deepagents ``parse_skill_metadata``.
 
     Args:
         skill_dir: Path to the skill directory (must contain SKILL.md).
@@ -129,26 +38,24 @@ def _parse_skill_directory(skill_dir: str | Path) -> dict[str, Any] | None:
         Metadata dict with ``name``, ``description``, ``path``, and optional
         fields, or ``None`` if the directory is invalid.
     """
+    from soothe_deepagents.middleware.skills import parse_skill_metadata
+
     skill_path = Path(skill_dir)
     md_file = skill_path / "SKILL.md"
     if not md_file.exists():
         return None
 
     try:
-        text = md_file.read_text(encoding="utf-8")
+        text_content = md_file.read_text(encoding="utf-8")
     except OSError:
         logger.debug("Failed to read SKILL.md in %s", skill_dir)
         return None
 
-    fm = _parse_frontmatter(text)
-    body = _strip_frontmatter(text)
-
-    # Derive name from frontmatter or directory name
-    name = fm.get("name", skill_path.name)
-    # Derive description from frontmatter or first heading/line of body
-    description = fm.get("description", "")
-    if not description:
-        # Try first markdown heading or first non-empty line
+    meta = parse_skill_metadata(text_content, str(md_file), skill_path.name)
+    if meta is None:
+        # Soft product fallback: name from directory, description from body.
+        body = _strip_frontmatter(text_content)
+        description = ""
         for line in body.splitlines():
             stripped = line.strip()
             if stripped.startswith("#"):
@@ -157,19 +64,36 @@ def _parse_skill_directory(skill_dir: str | Path) -> dict[str, Any] | None:
             if stripped:
                 description = stripped
                 break
+        if not description:
+            return None
+        return {
+            "name": skill_path.name,
+            "description": description,
+            "path": str(skill_path.resolve()),
+            "source": "",
+            "version": "",
+            "tags": "",
+            "tools": None,
+            "default_model": None,
+            "requires": None,
+            "paths": None,
+            "when_to_use": None,
+            "core": None,
+        }
 
     return {
-        "name": name,
-        "description": description,
+        "name": meta["name"],
+        "description": meta["description"],
         "path": str(skill_path.resolve()),
-        "source": fm.get("source", ""),
-        "version": fm.get("version", ""),
-        "tags": fm.get("tags", ""),
-        "tools": fm.get("tools", None),
-        "default_model": fm.get("default_model", None),
-        "requires": fm.get("requires", None),
-        "paths": fm.get("paths", None),
-        "when_to_use": fm.get("when_to_use", None),
+        "source": meta.get("metadata", {}).get("source", ""),
+        "version": meta.get("metadata", {}).get("version", ""),
+        "tags": meta.get("tags") or "",
+        "tools": meta.get("allowed_tools") or None,
+        "default_model": meta.get("metadata", {}).get("default_model"),
+        "requires": meta.get("metadata", {}).get("requires"),
+        "paths": meta.get("paths"),
+        "when_to_use": meta.get("when_to_use"),
+        "core": meta.get("core"),
     }
 
 

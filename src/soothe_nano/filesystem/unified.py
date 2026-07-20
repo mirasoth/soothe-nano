@@ -9,11 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from .exceptions import (
-    InvalidPathError,
-    PathTraversalError,
-)
-from .protocol import (
+from soothe_deepagents.backends.protocol import (
     BatchedEditOperation,
     BatchedEditResult,
     DeleteResult,
@@ -25,12 +21,21 @@ from .protocol import (
     WriteResult,
 )
 
+from .exceptions import (
+    InvalidPathError,
+    PathTraversalError,
+)
+
 
 class UnifiedFilesystem(ABC):
-    """Abstract base class for unified filesystem operations.
+    """Product-shaped filesystem façade over deepagents backends.
 
-    This interface provides a consistent API for filesystem operations across
-    all Soothe components. Implementations must handle:
+    Implementations (notably ``LocalFilesystem``) compose
+    ``soothe_deepagents.backends.FilesystemBackend`` for disk safety
+    (atomic write, backup, locks, batch edit, grep) while preserving nano
+    path resolution, workspace isolation, and typed exception APIs.
+
+    Subclasses must handle:
 
     - Path validation and normalization
     - Security checks (traversal, permissions)
@@ -47,7 +52,7 @@ class UnifiedFilesystem(ABC):
         ...         pass
         >>> fs = MyFilesystem(workspace="/workspace")
         >>> result = fs.read("config.json")
-        >>> print(result.content)
+        >>> print(result.file_data["content"])
 
     Attributes:
         workspace: The root workspace directory for this filesystem.

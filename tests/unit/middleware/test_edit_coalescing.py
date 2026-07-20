@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.messages import ToolMessage
+from soothe_deepagents.backends.protocol import BatchedEditOperation
 
-from soothe_nano.filesystem.protocol import BatchedEditOperation
 from soothe_nano.middleware.edit_coalescing import (
     DEFAULT_DETECTION_WINDOW_MS,
     EDIT_TOOL_NAMES,
@@ -463,8 +463,8 @@ class TestEditToolNames:
 class TestBatchedEditOperation:
     """Tests for BatchedEditOperation dataclass."""
 
-    def test_to_dict(self) -> None:
-        """to_dict should return all fields."""
+    def test_fields(self) -> None:
+        """All fields should be accessible on the dataclass."""
         op = BatchedEditOperation(
             operation_type="replace",
             start_line=1,
@@ -473,12 +473,11 @@ class TestBatchedEditOperation:
             original_call_id="call-123",
         )
 
-        d = op.to_dict()
-        assert d["operation_type"] == "replace"
-        assert d["start_line"] == 1
-        assert d["end_line"] == 5
-        assert d["content"] == "new content"
-        assert d["original_call_id"] == "call-123"
+        assert op.operation_type == "replace"
+        assert op.start_line == 1
+        assert op.end_line == 5
+        assert op.content == "new content"
+        assert op.original_call_id == "call-123"
 
     def test_defaults(self) -> None:
         """Default values should be set correctly."""
