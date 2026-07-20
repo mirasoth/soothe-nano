@@ -320,6 +320,13 @@ class TestWorkspaceAwareBackendCompat:
         result = backend.ls(".")
         assert isinstance(result, LsResult)
 
+    def test_is_backend_protocol_instance_not_factory(self, backend: WorkspaceAwareBackend) -> None:
+        """WorkspaceAwareBackend is a BackendProtocol instance, not a factory."""
+        from soothe_deepagents.backends.protocol import BackendProtocol
+
+        assert isinstance(backend, BackendProtocol)
+        assert not callable(backend)
+
     @pytest.mark.asyncio
     async def test_als_returns_ls_result(self, backend: WorkspaceAwareBackend) -> None:
         """Test that als returns LsResult."""

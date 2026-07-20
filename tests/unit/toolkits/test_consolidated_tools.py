@@ -56,7 +56,7 @@ class TestFileOpsToolkit:
         test_file = tmp_path / "to_delete.txt"
         test_file.write_text("delete me")
 
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         middleware = SootheFilesystemMiddleware(backend=backend)
         tool = next(t for t in middleware.tools if t.name == "delete")
         result = tool.func(
@@ -83,7 +83,7 @@ class TestFileOpsToolkit:
         test_file = tmp_path / "info.txt"
         test_file.write_text("some content")
 
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         middleware = SootheFilesystemMiddleware(backend=backend)
         tool = next(t for t in middleware.tools if t.name == "file_info")
         result = tool.func(
@@ -110,7 +110,7 @@ class TestFileOpsToolkit:
         test_file = tmp_path / "edit.txt"
         test_file.write_text("line1\nline2\nline3\n")
 
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         middleware = SootheFilesystemMiddleware(backend=backend)
         tool = next(t for t in middleware.tools if t.name == "edit_lines")
         tool.func(
@@ -139,7 +139,7 @@ class TestFileOpsToolkit:
         test_file = tmp_path / "insert.txt"
         test_file.write_text("before\nafter\n")
 
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         middleware = SootheFilesystemMiddleware(backend=backend)
         tool = next(t for t in middleware.tools if t.name == "insert_lines")
         tool.func(
@@ -167,7 +167,7 @@ class TestFileOpsToolkit:
         test_file = tmp_path / "delete_lines.txt"
         test_file.write_text("keep1\ndelete\nkeep2\n")
 
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         middleware = SootheFilesystemMiddleware(backend=backend)
         tool = next(t for t in middleware.tools if t.name == "delete_lines")
         tool.func(
@@ -198,7 +198,7 @@ class TestFileOpsToolkit:
         test_file = tmp_path / "diff.txt"
         test_file.write_text("old content\n")
 
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         middleware = SootheFilesystemMiddleware(backend=backend)
         # Verify apply_diff tool is registered
         assert any(t.name == "apply_diff" for t in middleware.tools)

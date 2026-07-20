@@ -91,8 +91,8 @@ def test_normalized_path_backend_read_host_absolute_under_workspace(tmp_path: Pa
     assert "hello" in text
 
 
-def test_workspace_aware_backend_ls_info_host_absolute_under_workspace(tmp_path: Path) -> None:
-    """``WorkspaceAwareBackend.ls_info`` accepts host-absolute dirs when ``virtual_mode=True`` (IG-300)."""
+def test_workspace_aware_backend_ls_host_absolute_under_workspace(tmp_path: Path) -> None:
+    """``WorkspaceAwareBackend.ls`` accepts host-absolute dirs when ``virtual_mode=True`` (IG-300)."""
     from soothe_nano.workspace.workspace_filesystem import WorkspaceAwareBackend
 
     ws = tmp_path / "repo"
@@ -100,7 +100,9 @@ def test_workspace_aware_backend_ls_info_host_absolute_under_workspace(tmp_path:
     (ws / "a.txt").write_text("x", encoding="utf-8")
 
     backend = WorkspaceAwareBackend(default_root_dir=ws, virtual_mode=True, max_file_size_mb=10)
-    rows = backend.ls_info(str(ws))
+    result = backend.ls(str(ws))
+    assert result.error is None
+    rows = result.entries or []
     paths = [r.get("path", "") for r in rows]
     assert any("a.txt" in p for p in paths)
 

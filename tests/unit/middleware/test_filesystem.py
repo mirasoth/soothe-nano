@@ -171,7 +171,7 @@ class TestSootheFilesystemMiddlewareToolCreation:
     @pytest.fixture()
     def middleware(self) -> SootheFilesystemMiddleware:
         """Create middleware with temp backend."""
-        backend = FilesystemBackend()
+        backend = FilesystemBackend(virtual_mode=False)
         return SootheFilesystemMiddleware(
             backend=backend,
             backup_enabled=True,
@@ -218,12 +218,12 @@ class TestDeleteTool:
 
     @pytest.fixture()
     def middleware(self, tmp_path: Path) -> SootheFilesystemMiddleware:
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         return SootheFilesystemMiddleware(backend=backend, backup_enabled=True)
 
     @pytest.fixture()
     def middleware_no_backup(self, tmp_path: Path) -> SootheFilesystemMiddleware:
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         return SootheFilesystemMiddleware(backend=backend, backup_enabled=False)
 
     def _get_tool(self, middleware: SootheFilesystemMiddleware, name: str = "delete") -> BaseTool:
@@ -310,7 +310,7 @@ class TestApplyDiffTool:
 
     @pytest.fixture()
     def middleware(self, tmp_path: Path) -> SootheFilesystemMiddleware:
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         return SootheFilesystemMiddleware(backend=backend)
 
     def _get_tool(self, middleware: SootheFilesystemMiddleware) -> BaseTool:
@@ -401,7 +401,7 @@ class TestCustomBackupDir:
 
     def test_custom_backup_dir(self, tmp_path: Path) -> None:
         backup_dir = tmp_path / "custom_backups"
-        backend = FilesystemBackend(root_dir=tmp_path)
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
         middleware = SootheFilesystemMiddleware(
             backend=backend,
             backup_enabled=True,

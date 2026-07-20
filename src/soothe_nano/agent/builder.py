@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
     from langgraph.store.base import BaseStore
     from langgraph.types import Checkpointer
-    from soothe_deepagents.backends.protocol import BackendFactory, BackendProtocol
+    from soothe_deepagents.backends.protocol import BackendProtocol
     from soothe_deepagents.middleware.filesystem import FsToolName
     from soothe_deepagents.middleware.subagents import CompiledSubAgent, SubAgent
     from soothe_sdk.protocols.memory import MemoryProtocol
@@ -71,7 +71,7 @@ class AgentBuilder:
         middleware: Sequence[AgentMiddleware] = (),
         checkpointer: Checkpointer | None = None,
         store: BaseStore | None = None,
-        backend: BackendProtocol | BackendFactory | None = None,
+        backend: BackendProtocol | None = None,
         interrupt_on: dict[str, bool | InterruptOnConfig] | None = None,
         memory_store: MemoryProtocol | None = None,
         planner: PlannerProtocol | None = None,
@@ -390,7 +390,7 @@ class AgentBuilder:
     def _initialize_backend(
         self,
         policy: PolicyProtocol | None,
-    ) -> BackendProtocol | BackendFactory:
+    ) -> BackendProtocol:
         from soothe_nano.workspace import FrameworkFilesystem
 
         return FrameworkFilesystem.initialize(
@@ -408,7 +408,7 @@ def create_nano_agent(
     middleware: Sequence[AgentMiddleware] = (),
     checkpointer: Checkpointer | None = None,
     store: BaseStore | None = None,
-    backend: BackendProtocol | BackendFactory | None = None,
+    backend: BackendProtocol | None = None,
     interrupt_on: dict[str, bool | InterruptOnConfig] | None = None,
     memory_store: MemoryProtocol | None = None,
     planner: PlannerProtocol | None = None,

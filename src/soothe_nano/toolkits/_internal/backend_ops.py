@@ -193,9 +193,7 @@ def backend_file_stat(path: Path, config: Any = None) -> dict[str, Any]:
                 # Backend doesn't have stat method, check existence first
                 if not backend.exists(virtual_path):
                     raise OSError(f"File not found: {virtual_path}")
-                # Use backend.ls_info for metadata
-                # Note: ls_info works on directories, not files directly
-                # Fallback to direct stat for now
+                # Prefer host path.stat for metadata (backends list dirs, not files)
                 pass
             except Exception as e:
                 logger.debug("Backend stat failed for %s, falling back: %s", virtual_path, e)

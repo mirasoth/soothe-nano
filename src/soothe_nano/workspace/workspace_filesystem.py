@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from soothe_deepagents.backends.protocol import (
+    BackendProtocol,
+    DeleteResult,
     EditResult,
     FileData,
     LsResult,
@@ -16,8 +18,6 @@ from soothe_deepagents.backends.protocol import (
 )
 
 if TYPE_CHECKING:
-    from soothe_deepagents.backends.protocol import BackendProtocol
-
     from soothe_nano.config import SootheConfig
 
 logger = logging.getLogger(__name__)
@@ -366,66 +366,6 @@ class NormalizedPathBackend:
             logger.warning("als error for %s: %s", path, e)
             return LsResult(error=str(e), entries=[])
 
-    def ls_info(self, path: str = ".") -> list[dict[str, Any]]:
-        normalized = self._normalize_path(path)
-        result = self._fs.ls(normalized, include_info=True)
-        if not result:
-            return []
-        if isinstance(result[0], str):
-            return [{"path": p, "is_dir": False} for p in result]
-        out: list[dict[str, Any]] = []
-        for item in result:
-            if isinstance(item, dict):
-                out.append(
-                    {
-                        "path": item.get("path", ""),
-                        "is_dir": bool(item.get("is_dir", False)),
-                        "size": item.get("size", 0),
-                        "modified_at": item.get("modified_at"),
-                    }
-                )
-            else:
-                modified = getattr(item, "modified_at", None)
-                out.append(
-                    {
-                        "path": item.path,
-                        "is_dir": item.is_dir,
-                        "size": item.size,
-                        "modified_at": modified.isoformat() if modified else None,
-                    }
-                )
-        return out
-
-    async def als_info(self, path: str = ".") -> list[dict[str, Any]]:
-        normalized = self._normalize_path(path)
-        result = await self._fs.als(normalized, include_info=True)
-        if not result:
-            return []
-        if isinstance(result[0], str):
-            return [{"path": p, "is_dir": False} for p in result]
-        out: list[dict[str, Any]] = []
-        for item in result:
-            if isinstance(item, dict):
-                out.append(
-                    {
-                        "path": item.get("path", ""),
-                        "is_dir": bool(item.get("is_dir", False)),
-                        "size": item.get("size", 0),
-                        "modified_at": item.get("modified_at"),
-                    }
-                )
-            else:
-                modified = getattr(item, "modified_at", None)
-                out.append(
-                    {
-                        "path": item.path,
-                        "is_dir": item.is_dir,
-                        "size": item.size,
-                        "modified_at": modified.isoformat() if modified else None,
-                    }
-                )
-        return out
-
     def glob(self, pattern: str, path: str = "/") -> Any:
         from soothe_deepagents.backends.protocol import GlobResult
 
@@ -496,15 +436,23 @@ class NormalizedPathBackend:
             logger.warning("agrep error for %s: %s", path, e)
             return GrepResult(error=str(e), matches=None)
 
-    def delete(self, path: str) -> str:
+    def delete(self, path: str, *, backup: bool = False) -> DeleteResult:
+        _ = backup
         normalized = self._normalize_path(path)
-        self._fs.delete(normalized)
-        return normalized
+        try:
+            self._fs.delete(normalized)
+        except Exception as exc:
+            return DeleteResult(error=str(exc))
+        return DeleteResult(path=normalized)
 
-    async def adelete(self, path: str) -> str:
+    async def adelete(self, path: str, *, backup: bool = False) -> DeleteResult:
+        _ = backup
         normalized = self._normalize_path(path)
-        await self._fs.adelete(normalized)
-        return normalized
+        try:
+            await self._fs.adelete(normalized)
+        except Exception as exc:
+            return DeleteResult(error=str(exc))
+        return DeleteResult(path=normalized)
 
     def exists(self, path: str) -> bool:
         return self._fs.exists(self._normalize_path(path))
@@ -516,8 +464,13 @@ class NormalizedPathBackend:
         return self._fs.is_dir(self._normalize_path(path))
 
 
-class WorkspaceAwareBackend:
-    """Filesystem backend that resolves workspace from context."""
+class WorkspaceAwareBackend(BackendProtocol):
+    """Filesystem backend that resolves workspace from ContextVar / defaults.
+
+    Pass the instance directly to middleware (`backend=WorkspaceAwareBackend(...)`).
+    Do not use the deprecated callable-factory `backend` form; workspace switching
+    is handled via ContextVar in `_get_backend` and by `SootheFilesystemMiddleware`.
+    """
 
     def __init__(
         self,
@@ -533,22 +486,6 @@ class WorkspaceAwareBackend:
             virtual_mode=virtual_mode,
             max_file_size_mb=max_file_size_mb,
         )
-
-    def __call__(self, runtime: Any) -> NormalizedPathBackend:
-        from soothe_nano.workspace.workspace_api import resolve_workspace_for_tool_execution
-
-        workspace = resolve_workspace_for_tool_execution(
-            runtime=runtime,
-            fallback=self._default_backend._root_dir,
-            use_langgraph_config=True,
-        )
-        if workspace is not None:
-            return get_workspace_backend(
-                workspace=workspace,
-                virtual_mode=self._virtual_mode,
-                max_file_size_mb=self._max_file_size_mb,
-            )
-        return self._default_backend
 
     def _get_backend(self) -> NormalizedPathBackend:
         from soothe_nano.workspace.workspace_runtime import get_workspace_context
@@ -610,12 +547,6 @@ class WorkspaceAwareBackend:
     async def als(self, path: str = ".") -> LsResult:
         return await self._get_backend().als(path)
 
-    def ls_info(self, path: str = ".") -> list[dict[str, Any]]:
-        return self._get_backend().ls_info(path)
-
-    async def als_info(self, path: str = ".") -> list[dict[str, Any]]:
-        return await self._get_backend().als_info(path)
-
     def glob(self, pattern: str, path: str = "/") -> Any:
         return self._get_backend().glob(pattern, path)
 
@@ -640,11 +571,11 @@ class WorkspaceAwareBackend:
     ) -> Any:
         return await self._get_backend().agrep(pattern, path, output_mode, glob)
 
-    def delete(self, path: str) -> str:
-        return self._get_backend().delete(path)
+    def delete(self, path: str, *, backup: bool = False) -> DeleteResult:
+        return self._get_backend().delete(path, backup=backup)
 
-    async def adelete(self, path: str) -> str:
-        return await self._get_backend().adelete(path)
+    async def adelete(self, path: str, *, backup: bool = False) -> DeleteResult:
+        return await self._get_backend().adelete(path, backup=backup)
 
 
 _backend_cache: dict[str, NormalizedPathBackend] = {}

@@ -30,7 +30,7 @@ def test_format_glob_timeout_error_includes_fallback() -> None:
 
 
 def test_soothe_filesystem_middleware_glob_has_discovery_description(tmp_path: Path) -> None:
-    backend = FilesystemBackend(root_dir=str(tmp_path))
+    backend = FilesystemBackend(root_dir=str(tmp_path), virtual_mode=False)
     middleware = SootheFilesystemMiddleware(backend=backend)
     glob_tool = next(t for t in middleware.tools if t.name == "glob")
     assert GLOB_DISCOVERY_FALLBACK_HINT in glob_tool.description

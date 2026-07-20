@@ -33,7 +33,7 @@ def middleware(tmp_path):
 
     from soothe_nano.middleware.filesystem import SootheFilesystemMiddleware
 
-    backend = FilesystemBackend(root_dir=tmp_path)
+    backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
     return SootheFilesystemMiddleware(
         backend=backend,
         backup_enabled=True,
