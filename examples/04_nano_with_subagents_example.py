@@ -6,7 +6,7 @@ This example demonstrates a nano agent with configured subagents:
 - Optional community plugins when installed and configured
 
 Run:
-    python examples/nano_agent/04_nano_with_subagents_example.py
+    python examples/04_nano_with_subagents_example.py
 """
 
 import asyncio

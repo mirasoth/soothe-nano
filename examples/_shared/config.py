@@ -14,10 +14,11 @@ def load_nano_example_config() -> SootheConfig:
         return SootheConfig.from_yaml_file(str(home_config))
 
     # When developing inside the soothe monorepo: .../soothe/packages/soothe-nano/...
+    # Layout: examples/_shared/config.py → package root = parents[2], monorepo = parents[4]
     here = Path(__file__).resolve()
-    candidates = [here.parents[3]]
-    if len(here.parents) > 5:
-        candidates.append(here.parents[5])
+    candidates = [here.parents[2]]
+    if len(here.parents) > 4:
+        candidates.append(here.parents[4])
     for root in candidates:
         dev_config = root / "config" / "develop" / "config.yml"
         if dev_config.is_file():

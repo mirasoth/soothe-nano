@@ -84,7 +84,7 @@ agent = create_nano_agent(SootheConfig())
 # agent.ainvoke / streaming — see examples/
 ```
 
-Examples live in `examples/nano_agent/`:
+Examples live in `examples/`:
 
 1. Pure model (no tools)
 2. With tools
@@ -93,7 +93,7 @@ Examples live in `examples/nano_agent/`:
 5. Full composition
 
 ```bash
-python packages/soothe-nano/examples/nano_agent/01_pure_nano_example.py
+python packages/soothe-nano/examples/01_pure_nano_example.py
 ```
 
 ## Package layout
@@ -120,6 +120,6 @@ make sync-dev          # sync deps
 make format lint       # format + lint
 make test-unit         # unit tests
 make test-integration  # integration tests (--run-integration)
-make examples          # run nano_agent examples
+make examples          # run examples
 make build             # build dist/
 ```

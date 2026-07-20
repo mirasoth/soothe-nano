@@ -31,7 +31,7 @@ help:
 	@echo "  make test-coverage   - Run tests with coverage report"
 	@echo ""
 	@echo "Examples:"
-	@echo "  make examples        - Run all nano_agent examples"
+	@echo "  make examples        - Run all examples"
 	@echo "  make example-01      - Pure model (no tools)"
 	@echo "  make example-02      - With tools"
 	@echo "  make example-03      - With memory"
@@ -109,19 +109,19 @@ examples: example-01 example-02 example-03 example-04 example-05
 	@echo "✓ All examples complete"
 
 example-01:
-	$(UV_RUN) python examples/nano_agent/01_pure_nano_example.py
+	$(UV_RUN) python examples/01_pure_nano_example.py
 
 example-02:
-	$(UV_RUN) python examples/nano_agent/02_nano_with_tools_example.py
+	$(UV_RUN) python examples/02_nano_with_tools_example.py
 
 example-03:
-	$(UV_RUN) python examples/nano_agent/03_nano_with_memory_example.py
+	$(UV_RUN) python examples/03_nano_with_memory_example.py
 
 example-04:
-	$(UV_RUN) python examples/nano_agent/04_nano_with_subagents_example.py
+	$(UV_RUN) python examples/04_nano_with_subagents_example.py
 
 example-05:
-	$(UV_RUN) python examples/nano_agent/05_nano_full_composition_example.py
+	$(UV_RUN) python examples/05_nano_full_composition_example.py
 
 # Build package
 build:

@@ -7,7 +7,7 @@ This example demonstrates a nano agent WITH memory protocol:
 - Memory forget: Removing outdated memories
 
 Run:
-    python examples/nano_agent/03_nano_with_memory_example.py
+    python examples/03_nano_with_memory_example.py
 """
 
 import asyncio

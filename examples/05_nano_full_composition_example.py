@@ -6,7 +6,7 @@ This example demonstrates a nano agent with full composition:
 - Subagents: Delegation to specialized agents
 
 Run:
-    python examples/nano_agent/05_nano_full_composition_example.py
+    python examples/05_nano_full_composition_example.py
 """
 
 import asyncio
