@@ -36,13 +36,18 @@ jobs:
       - name: Sync dependencies
         run: make sync-dev
 
-      - name: Guard — soothe-sdk 1.0.2 must be on PyPI
+      - name: Guard — dependency packages must be on PyPI
         run: |
           if ! curl -sf "https://pypi.org/pypi/soothe-sdk/1.0.2/json" >/dev/null; then
             echo "Publish soothe-sdk 1.0.2 to PyPI before releasing soothe-nano"
             exit 1
           fi
           echo "soothe-sdk 1.0.2 is available on PyPI"
+          if ! curl -sf "https://pypi.org/pypi/soothe-deepagents/0.7.24/json" >/dev/null; then
+            echo "Publish soothe-deepagents 0.7.24 to PyPI before releasing soothe-nano"
+            exit 1
+          fi
+          echo "soothe-deepagents 0.7.24 is available on PyPI"
 
       - name: Read version
         id: version

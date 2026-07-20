@@ -50,6 +50,15 @@ _METHOD_CACHE: WeakKeyDictionary[BaseChatModel, str | None] = WeakKeyDictionary(
 # to avoid classifier-level or full method-chain fallbacks.
 _MAX_METHOD_INVOKE_ATTEMPTS = 2
 
+# Providers' constrained decoding often ignores JSON Schema keywords like ``minimum``
+# / ``maximum`` / ``pattern``. When post-validation fails, one repair turn with the
+# validation error is usually enough to get a schema-valid payload.
+_SCHEMA_REPAIR_HINT = (
+    "Your previous JSON failed schema validation: {error}. "
+    "Return corrected JSON that fully satisfies every schema constraint "
+    "(including numeric bounds, enums, and required fields)."
+)
+
 
 def _ordered_structured_methods(chat: BaseChatModel) -> tuple[str | None, ...]:
     """Return ``_STRUCTURED_METHODS`` with the cached working method moved to the front."""
@@ -221,7 +230,8 @@ async def invoke_structured_chat(
         messages: Message list for ``ainvoke``.
         json_schema: Client JSON Schema dict.
         schema_name: Optional provider schema name override.
-        strict: When True, post-validate with jsonschema after parsing.
+        strict: When True, post-validate with jsonschema after parsing. On
+            validation failure, retry once with a repair hint before raising.
         config: Optional RunnableConfig (Langfuse tracing, etc.).
         normalize: Optional pre-validation dict normalizer (e.g. coerce missing fields).
 
@@ -306,18 +316,45 @@ async def invoke_structured_chat(
                 method_failed = True
                 break
 
-            _remember_structured_method(chat, method)
             data = normalize_structured_result(result)
             if normalize is not None:
                 data = normalize(data)
             if strict:
-                post_validate_structured_dict(data, schema)
+                try:
+                    post_validate_structured_dict(data, schema)
+                except StructuredOutputError as exc:
+                    last_exc = exc
+                    if attempt + 1 < _MAX_METHOD_INVOKE_ATTEMPTS:
+                        logger.debug(
+                            "structured invoke: method=%s attempt=%d schema validation "
+                            "failed, retrying with repair hint",
+                            method,
+                            attempt + 1,
+                        )
+                        prepared_messages = [
+                            *prepared_messages,
+                            HumanMessage(
+                                content=_SCHEMA_REPAIR_HINT.format(error=exc),
+                            ),
+                        ]
+                        continue
+                    if method != last_method:
+                        logger.debug(
+                            "structured invoke: method=%s schema validation failed, falling back",
+                            method,
+                        )
+                        method_failed = True
+                        break
+                    raise
+            _remember_structured_method(chat, method)
             return data
 
         if method_failed:
             continue
 
     if last_exc is not None:
+        if isinstance(last_exc, StructuredOutputError):
+            raise last_exc
         msg = f"structured model invoke failed: {last_exc}"
         raise StructuredOutputError(msg) from last_exc
 

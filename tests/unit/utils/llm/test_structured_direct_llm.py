@@ -109,6 +109,35 @@ async def test_invoke_structured_chat_success() -> None:
 
 
 @pytest.mark.asyncio
+async def test_invoke_structured_chat_repairs_after_schema_validation_failure() -> None:
+    """Post-validate failure retries once with a repair hint (provider may ignore bounds)."""
+    chat = MagicMock()
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(side_effect=[{"count": 1}, {"count": 1000}])
+    chat.with_structured_output = MagicMock(return_value=structured)
+
+    schema = {
+        "type": "object",
+        "properties": {"count": {"type": "integer", "minimum": 1000}},
+        "required": ["count"],
+        "additionalProperties": False,
+    }
+    out = await invoke_structured_chat(
+        chat,
+        [HumanMessage(content='Return JSON {"count": 1} only.')],
+        json_schema=schema,
+        schema_name="StrictCount",
+        strict=True,
+    )
+    assert out == {"count": 1000}
+    assert structured.ainvoke.await_count == 2
+    repair_messages = structured.ainvoke.await_args_list[1].args[0]
+    assert any(
+        "schema validation" in str(getattr(m, "content", "")).lower() for m in repair_messages
+    )
+
+
+@pytest.mark.asyncio
 async def test_invoke_structured_chat_retries_json_schema_after_thinking_tool_choice_error() -> (
     None
 ):
