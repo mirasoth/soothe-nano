@@ -485,6 +485,7 @@ class LocalFilesystem(UnifiedFilesystem):
         old_string: str,
         new_string: str,
         *,
+        replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
         """Replace old_string with new_string via deepagents ``FilesystemBackend``."""
@@ -495,7 +496,11 @@ class LocalFilesystem(UnifiedFilesystem):
 
         backend_path = self._backend_path(path, resolved)
         result = self._backend.edit(
-            backend_path, old_string, new_string, replace_all=False, backup=backup
+            backend_path,
+            old_string,
+            new_string,
+            replace_all=replace_all,
+            backup=backup,
         )
         self._map_backend_error(result.error, path)
         return EditResult(
@@ -510,6 +515,7 @@ class LocalFilesystem(UnifiedFilesystem):
         old_string: str,
         new_string: str,
         *,
+        replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
         """Async replace via deepagents ``FilesystemBackend``."""
@@ -520,7 +526,11 @@ class LocalFilesystem(UnifiedFilesystem):
 
         backend_path = self._backend_path(path, resolved)
         result = await self._backend.aedit(
-            backend_path, old_string, new_string, replace_all=False, backup=backup
+            backend_path,
+            old_string,
+            new_string,
+            replace_all=replace_all,
+            backup=backup,
         )
         self._map_backend_error(result.error, path)
         return EditResult(

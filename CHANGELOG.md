@@ -5,6 +5,14 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] - 2026-07-21
+
+### Fixed
+- Align `WorkspaceAwareBackend` / `NormalizedPathBackend` `edit` with deepagents positional protocol so `edit_file` applies
+- Honor `replace_all` through LocalFilesystem → workspace backends (was always forced off)
+- Align `grep` / `agrep` with BackendProtocol so middleware `content` mode returns line text; keep `output_mode` keyword-only
+- Implement `download_files` / `upload_files` on workspace backends (no longer raise `NotImplementedError`)
+
 ## [0.9.4] - 2026-07-21
 
 ### Fixed

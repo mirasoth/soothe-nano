@@ -344,6 +344,17 @@ class TestWorkspaceAwareBackendCompat:
         assert result.error is None
         assert result.path is not None
 
+    def test_edit_positional_protocol_call(
+        self, backend: WorkspaceAwareBackend, temp_dir: Path
+    ) -> None:
+        """deepagents middleware calls edit(path, old, new, replace_all=...) positionally."""
+        target = temp_dir / "README.md"
+        target.write_text("# Hello\n", encoding="utf-8")
+        result = backend.edit(str(target), "# Hello\n", "# Hi\n", False)
+        assert result.error is None
+        assert result.occurrences == 1
+        assert target.read_text(encoding="utf-8") == "# Hi\n"
+
     @pytest.mark.asyncio
     async def test_aedit_returns_edit_result(
         self, backend: WorkspaceAwareBackend, temp_dir: Path
@@ -355,6 +366,93 @@ class TestWorkspaceAwareBackendCompat:
             new_string="world",
         )
         assert isinstance(result, EditResult)
+
+    @pytest.mark.asyncio
+    async def test_aedit_positional_protocol_call(
+        self, backend: WorkspaceAwareBackend, temp_dir: Path
+    ) -> None:
+        """deepagents middleware calls aedit(path, old, new, replace_all=...) positionally."""
+        target = temp_dir / "notes.md"
+        target.write_text("alpha\n", encoding="utf-8")
+        result = await backend.aedit(str(target), "alpha\n", "beta\n", False)
+        assert result.error is None
+        assert result.occurrences == 1
+        assert target.read_text(encoding="utf-8") == "beta\n"
+
+    def test_edit_signature_matches_backend_protocol(self) -> None:
+        """Positional parameter order must match BackendProtocol.edit."""
+        import inspect
+
+        from soothe_deepagents.backends.protocol import BackendProtocol
+
+        proto = list(inspect.signature(BackendProtocol.edit).parameters)[1:5]
+        wrap = list(inspect.signature(WorkspaceAwareBackend.edit).parameters)[1:5]
+        # Protocol: file_path, old_string, new_string, replace_all
+        # Wrapper: path, old_string, new_string, replace_all
+        assert wrap[1:] == ["old_string", "new_string", "replace_all"]
+        assert proto[1:] == ["old_string", "new_string", "replace_all"]
+        assert wrap[1:] == proto[1:]
+        # edits must be keyword-only so it cannot steal replace_all's slot
+        wrap_params = inspect.signature(WorkspaceAwareBackend.edit).parameters
+        assert wrap_params["edits"].kind is inspect.Parameter.KEYWORD_ONLY
+
+    def test_edit_replace_all_honored(self, backend: WorkspaceAwareBackend, temp_dir: Path) -> None:
+        """Middleware passes replace_all; backend must actually replace all matches."""
+        target = temp_dir / "multi.txt"
+        target.write_text("aa aa aa\n", encoding="utf-8")
+        result = backend.edit(str(target), "aa", "bb", replace_all=True)
+        assert result.error is None
+        assert result.occurrences == 3
+        assert target.read_text(encoding="utf-8") == "bb bb bb\n"
+
+    def test_grep_middleware_call_returns_content_matches(
+        self, backend: WorkspaceAwareBackend, temp_dir: Path
+    ) -> None:
+        """Middleware calls grep(pattern, path=, glob=) and formats output_mode itself."""
+        (temp_dir / "a.py").write_text("hello world\n", encoding="utf-8")
+        (temp_dir / "b.txt").write_text("hello\n", encoding="utf-8")
+        result = backend.grep("hello", path=".", glob=None)
+        assert result.error is None
+        matches = result.matches or []
+        assert len(matches) >= 2
+        assert all(m.get("text") for m in matches)
+
+    def test_grep_positional_glob_not_stolen_by_output_mode(
+        self, backend: WorkspaceAwareBackend, temp_dir: Path
+    ) -> None:
+        """Protocol-style grep(pattern, path, glob) must filter by glob."""
+        (temp_dir / "a.py").write_text("hello world\n", encoding="utf-8")
+        (temp_dir / "b.txt").write_text("hello\n", encoding="utf-8")
+        result = backend.grep("hello", ".", "*.py")
+        assert result.error is None
+        paths = {m.get("path", "") for m in (result.matches or [])}
+        assert any(p.endswith("a.py") or p == "a.py" for p in paths)
+        assert not any(p.endswith("b.txt") or p == "b.txt" for p in paths)
+
+    def test_grep_signature_matches_backend_protocol(self) -> None:
+        import inspect
+
+        from soothe_deepagents.backends.protocol import BackendProtocol
+
+        proto = list(inspect.signature(BackendProtocol.grep).parameters)[1:4]
+        wrap = list(inspect.signature(WorkspaceAwareBackend.grep).parameters)[1:4]
+        assert proto == ["pattern", "path", "glob"]
+        assert wrap == ["pattern", "path", "glob"]
+        wrap_params = inspect.signature(WorkspaceAwareBackend.grep).parameters
+        assert wrap_params["output_mode"].kind is inspect.Parameter.KEYWORD_ONLY
+
+    def test_download_and_upload_files(
+        self, backend: WorkspaceAwareBackend, temp_dir: Path
+    ) -> None:
+        (temp_dir / "src.bin").write_bytes(b"payload")
+        downloaded = backend.download_files([str(temp_dir / "src.bin")])
+        assert len(downloaded) == 1
+        assert downloaded[0].error is None
+        assert downloaded[0].content == b"payload"
+
+        uploaded = backend.upload_files([(str(temp_dir / "dst.bin"), b"uploaded")])
+        assert uploaded[0].error is None
+        assert (temp_dir / "dst.bin").read_bytes() == b"uploaded"
 
 
 class TestDeepagentsMiddlewareIntegration:
@@ -528,3 +626,21 @@ class TestEditResultMultipleEdits:
         result = await backend.aedit(path="multi.txt", edits=edits)
         assert isinstance(result, EditResult)
         assert result.error is None
+
+    def test_edit_rejects_non_dict_edit_item(
+        self, backend: NormalizedPathBackend, temp_file: Path
+    ) -> None:
+        """Non-dict edits items return a clear error instead of AttributeError."""
+        result = backend.edit(path="multi.txt", edits=["not-a-dict"])  # type: ignore[list-item]
+        assert result.error is not None
+        assert "expected dict" in result.error
+        assert "str" in result.error
+
+    def test_edit_rejects_edits_passed_as_str(
+        self, backend: NormalizedPathBackend, temp_file: Path
+    ) -> None:
+        """A mis-bound string in edits= must not iterate characters and call .get."""
+        result = backend.edit(path="multi.txt", edits="oops")  # type: ignore[arg-type]
+        assert result.error is not None
+        assert "got str" in result.error
+        assert temp_file.read_text(encoding="utf-8") == "line1\nline2\nline3\n"

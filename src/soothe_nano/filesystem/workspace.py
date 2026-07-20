@@ -313,10 +313,13 @@ class WorkspaceFilesystem(UnifiedFilesystem):
         old_string: str,
         new_string: str,
         *,
+        replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
         """Replace old_string with new_string in file."""
-        return self._local_fs.edit(path, old_string, new_string, backup=backup)
+        return self._local_fs.edit(
+            path, old_string, new_string, replace_all=replace_all, backup=backup
+        )
 
     async def aedit(
         self,
@@ -324,10 +327,13 @@ class WorkspaceFilesystem(UnifiedFilesystem):
         old_string: str,
         new_string: str,
         *,
+        replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
         """Async replace old_string with new_string in file."""
-        return await self._local_fs.aedit(path, old_string, new_string, backup=backup)
+        return await self._local_fs.aedit(
+            path, old_string, new_string, replace_all=replace_all, backup=backup
+        )
 
     def edit_lines(
         self,

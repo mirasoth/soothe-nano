@@ -256,6 +256,7 @@ class UnifiedFilesystem(ABC):
         old_string: str,
         new_string: str,
         *,
+        replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
         """Replace old_string with new_string in file.
@@ -264,6 +265,7 @@ class UnifiedFilesystem(ABC):
             path: Path to edit.
             old_string: String to find.
             new_string: String to replace with.
+            replace_all: If True, replace all occurrences; if False, require a unique match.
             backup: Whether to create backup before editing.
 
         Returns:
@@ -282,6 +284,7 @@ class UnifiedFilesystem(ABC):
         old_string: str,
         new_string: str,
         *,
+        replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
         """Async replace old_string with new_string in file.

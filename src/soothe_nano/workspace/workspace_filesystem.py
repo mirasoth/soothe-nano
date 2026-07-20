@@ -219,27 +219,47 @@ class NormalizedPathBackend:
         path: str,
         old_string: str | None = None,
         new_string: str | None = None,
-        edits: list[dict[str, Any]] | None = None,
-        *,
         replace_all: bool = False,
+        *,
+        edits: list[dict[str, Any]] | None = None,
     ) -> EditResult:
+        # Positional order matches BackendProtocol:
+        # edit(path, old_string, new_string, replace_all=False).
+        # Batch `edits` is a nano extension and must stay keyword-only.
         normalized = self._normalize_path(path)
         try:
-            if edits:
+            if edits is not None:
+                if isinstance(edits, str):
+                    return EditResult(
+                        error=(
+                            "Invalid edits argument (got str); pass "
+                            "old_string/new_string positionally or edits=[dict, ...]"
+                        )
+                    )
                 total_occurrences = 0
                 for edit_item in edits:
+                    if not isinstance(edit_item, dict):
+                        return EditResult(
+                            error=(
+                                f"Invalid edit item (expected dict, got {type(edit_item).__name__})"
+                            )
+                        )
                     old = edit_item.get("old_string", "")
                     new = edit_item.get("new_string", "")
-                    result = self._fs.edit(normalized, old, new)
+                    item_replace_all = bool(edit_item.get("replace_all", False))
+                    result = self._fs.edit(normalized, old, new, replace_all=item_replace_all)
                     if hasattr(result, "error") and result.error:
                         return EditResult(error=result.error)
-                    total_occurrences += 1
+                    total_occurrences += int(getattr(result, "occurrences", None) or 1)
                 return EditResult(path=normalized, occurrences=total_occurrences)
             if old_string is not None and new_string is not None:
-                result = self._fs.edit(normalized, old_string, new_string)
+                result = self._fs.edit(normalized, old_string, new_string, replace_all=replace_all)
                 if hasattr(result, "error") and result.error:
                     return EditResult(error=result.error)
-                return EditResult(path=normalized, occurrences=1)
+                return EditResult(
+                    path=normalized,
+                    occurrences=int(getattr(result, "occurrences", None) or 1),
+                )
             return EditResult(error="No edits provided")
         except Exception as e:
             logger.warning("edit error for %s: %s", path, e)
@@ -250,27 +270,48 @@ class NormalizedPathBackend:
         path: str,
         old_string: str | None = None,
         new_string: str | None = None,
-        edits: list[dict[str, Any]] | None = None,
-        *,
         replace_all: bool = False,
+        *,
+        edits: list[dict[str, Any]] | None = None,
     ) -> EditResult:
         normalized = self._normalize_path(path)
         try:
-            if edits:
+            if edits is not None:
+                if isinstance(edits, str):
+                    return EditResult(
+                        error=(
+                            "Invalid edits argument (got str); pass "
+                            "old_string/new_string positionally or edits=[dict, ...]"
+                        )
+                    )
                 total_occurrences = 0
                 for edit_item in edits:
+                    if not isinstance(edit_item, dict):
+                        return EditResult(
+                            error=(
+                                f"Invalid edit item (expected dict, got {type(edit_item).__name__})"
+                            )
+                        )
                     old = edit_item.get("old_string", "")
                     new = edit_item.get("new_string", "")
-                    result = await self._fs.aedit(normalized, old, new)
+                    item_replace_all = bool(edit_item.get("replace_all", False))
+                    result = await self._fs.aedit(
+                        normalized, old, new, replace_all=item_replace_all
+                    )
                     if hasattr(result, "error") and result.error:
                         return EditResult(error=result.error)
-                    total_occurrences += 1
+                    total_occurrences += int(getattr(result, "occurrences", None) or 1)
                 return EditResult(path=normalized, occurrences=total_occurrences)
             if old_string is not None and new_string is not None:
-                result = await self._fs.aedit(normalized, old_string, new_string)
+                result = await self._fs.aedit(
+                    normalized, old_string, new_string, replace_all=replace_all
+                )
                 if hasattr(result, "error") and result.error:
                     return EditResult(error=result.error)
-                return EditResult(path=normalized, occurrences=1)
+                return EditResult(
+                    path=normalized,
+                    occurrences=int(getattr(result, "occurrences", None) or 1),
+                )
             return EditResult(error="No edits provided")
         except Exception as e:
             logger.warning("aedit error for %s: %s", path, e)
@@ -399,32 +440,42 @@ class NormalizedPathBackend:
     def grep(
         self,
         pattern: str,
-        path: str = ".",
-        output_mode: str = "files_with_matches",
+        path: str | None = None,
         glob: str | None = None,
+        *,
+        output_mode: str = "content",
     ) -> Any:
+        """Search files; positional order matches BackendProtocol.grep.
+
+        ``output_mode`` is a nano extension and must stay keyword-only so it cannot
+        steal ``glob``. Default is ``content`` because deepagents middleware formats
+        tool output itself and expects line matches with text.
+        """
         from soothe_deepagents.backends.protocol import GrepResult
 
-        normalized = self._normalize_path(path)
+        search_path = "." if path is None else path
+        normalized = self._normalize_path(search_path)
         try:
             result = self._fs.grep(pattern, path=normalized, glob=glob, output_mode=output_mode)
             if isinstance(result, GrepResult):
                 return result
             return GrepResult(error=None, matches=_grep_matches_for_backend(result))
         except Exception as e:
-            logger.warning("grep error for %s: %s", path, e)
+            logger.warning("grep error for %s: %s", search_path, e)
             return GrepResult(error=str(e), matches=None)
 
     async def agrep(
         self,
         pattern: str,
-        path: str = ".",
-        output_mode: str = "files_with_matches",
+        path: str | None = None,
         glob: str | None = None,
+        *,
+        output_mode: str = "content",
     ) -> Any:
         from soothe_deepagents.backends.protocol import GrepResult
 
-        normalized = self._normalize_path(path)
+        search_path = "." if path is None else path
+        normalized = self._normalize_path(search_path)
         try:
             result = await self._fs.agrep(
                 pattern, path=normalized, glob=glob, output_mode=output_mode
@@ -433,7 +484,7 @@ class NormalizedPathBackend:
                 return result
             return GrepResult(error=None, matches=_grep_matches_for_backend(result))
         except Exception as e:
-            logger.warning("agrep error for %s: %s", path, e)
+            logger.warning("agrep error for %s: %s", search_path, e)
             return GrepResult(error=str(e), matches=None)
 
     def delete(self, path: str, *, backup: bool = False) -> DeleteResult:
@@ -453,6 +504,57 @@ class NormalizedPathBackend:
         except Exception as exc:
             return DeleteResult(error=str(exc))
         return DeleteResult(path=normalized)
+
+    def download_files(self, paths: list[str]) -> list[Any]:
+        from soothe_deepagents.backends.protocol import FileDownloadResponse
+
+        responses: list[Any] = []
+        for path in paths:
+            try:
+                resolved = self.resolve_os_path(path)
+                if resolved.is_dir():
+                    responses.append(
+                        FileDownloadResponse(path=path, content=None, error="is_directory")
+                    )
+                    continue
+                if not resolved.exists() or not resolved.is_file():
+                    responses.append(
+                        FileDownloadResponse(path=path, content=None, error="file_not_found")
+                    )
+                    continue
+                responses.append(
+                    FileDownloadResponse(path=path, content=resolved.read_bytes(), error=None)
+                )
+            except OSError as exc:
+                responses.append(FileDownloadResponse(path=path, content=None, error=str(exc)))
+        return responses
+
+    async def adownload_files(self, paths: list[str]) -> list[Any]:
+        import asyncio
+
+        return await asyncio.to_thread(self.download_files, paths)
+
+    def upload_files(self, files: list[tuple[str, bytes]]) -> list[Any]:
+        from soothe_deepagents.backends.protocol import FileUploadResponse
+
+        responses: list[Any] = []
+        for path, content in files:
+            try:
+                resolved = self.resolve_os_path(path)
+                if resolved.exists() and resolved.is_dir():
+                    responses.append(FileUploadResponse(path=path, error="is_directory"))
+                    continue
+                resolved.parent.mkdir(parents=True, exist_ok=True)
+                resolved.write_bytes(content)
+                responses.append(FileUploadResponse(path=path, error=None))
+            except OSError as exc:
+                responses.append(FileUploadResponse(path=path, error=str(exc)))
+        return responses
+
+    async def aupload_files(self, files: list[tuple[str, bytes]]) -> list[Any]:
+        import asyncio
+
+        return await asyncio.to_thread(self.upload_files, files)
 
     def exists(self, path: str) -> bool:
         return self._fs.exists(self._normalize_path(path))
@@ -514,14 +616,17 @@ class WorkspaceAwareBackend(BackendProtocol):
     def edit(
         self,
         path: str,
-        edits: list[dict[str, Any]] | None = None,
         old_string: str | None = None,
         new_string: str | None = None,
-        *,
         replace_all: bool = False,
+        *,
+        edits: list[dict[str, Any]] | None = None,
     ) -> EditResult:
-        if edits:
-            return self._get_backend().edit(path, edits=edits, replace_all=replace_all)
+        # Positional order must match BackendProtocol / deepagents middleware:
+        # edit(path, old_string, new_string, replace_all=...).
+        # Batch `edits` is keyword-only so it cannot steal replace_all's slot.
+        if edits is not None:
+            return self._get_backend().edit(path, replace_all=replace_all, edits=edits)
         return self._get_backend().edit(
             path, old_string=old_string, new_string=new_string, replace_all=replace_all
         )
@@ -529,14 +634,14 @@ class WorkspaceAwareBackend(BackendProtocol):
     async def aedit(
         self,
         path: str,
-        edits: list[dict[str, Any]] | None = None,
         old_string: str | None = None,
         new_string: str | None = None,
-        *,
         replace_all: bool = False,
+        *,
+        edits: list[dict[str, Any]] | None = None,
     ) -> EditResult:
-        if edits:
-            return await self._get_backend().aedit(path, edits=edits, replace_all=replace_all)
+        if edits is not None:
+            return await self._get_backend().aedit(path, replace_all=replace_all, edits=edits)
         return await self._get_backend().aedit(
             path, old_string=old_string, new_string=new_string, replace_all=replace_all
         )
@@ -556,26 +661,40 @@ class WorkspaceAwareBackend(BackendProtocol):
     def grep(
         self,
         pattern: str,
-        path: str = ".",
-        output_mode: str = "files_with_matches",
+        path: str | None = None,
         glob: str | None = None,
+        *,
+        output_mode: str = "content",
     ) -> Any:
-        return self._get_backend().grep(pattern, path, output_mode, glob)
+        return self._get_backend().grep(pattern, path, glob, output_mode=output_mode)
 
     async def agrep(
         self,
         pattern: str,
-        path: str = ".",
-        output_mode: str = "files_with_matches",
+        path: str | None = None,
         glob: str | None = None,
+        *,
+        output_mode: str = "content",
     ) -> Any:
-        return await self._get_backend().agrep(pattern, path, output_mode, glob)
+        return await self._get_backend().agrep(pattern, path, glob, output_mode=output_mode)
 
     def delete(self, path: str, *, backup: bool = False) -> DeleteResult:
         return self._get_backend().delete(path, backup=backup)
 
     async def adelete(self, path: str, *, backup: bool = False) -> DeleteResult:
         return await self._get_backend().adelete(path, backup=backup)
+
+    def download_files(self, paths: list[str]) -> list[Any]:
+        return self._get_backend().download_files(paths)
+
+    async def adownload_files(self, paths: list[str]) -> list[Any]:
+        return await self._get_backend().adownload_files(paths)
+
+    def upload_files(self, files: list[tuple[str, bytes]]) -> list[Any]:
+        return self._get_backend().upload_files(files)
+
+    async def aupload_files(self, files: list[tuple[str, bytes]]) -> list[Any]:
+        return await self._get_backend().aupload_files(files)
 
 
 _backend_cache: dict[str, NormalizedPathBackend] = {}

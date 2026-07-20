@@ -355,6 +355,7 @@ class LangChainAdapter(UnifiedFilesystem):
         old_string: str,
         new_string: str,
         *,
+        replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
         """Replace old_string with new_string in file.
@@ -363,6 +364,7 @@ class LangChainAdapter(UnifiedFilesystem):
             path: Path to edit.
             old_string: String to find.
             new_string: String to replace with.
+            replace_all: If True, replace all occurrences; if False, require a unique match.
             backup: Whether to create backup before editing.
 
         Returns:
@@ -372,7 +374,9 @@ class LangChainAdapter(UnifiedFilesystem):
             PathNotFoundError: If file does not exist.
             FilesystemError: If old_string not found or multiple matches.
         """
-        return self._underlying.edit(path, old_string, new_string, backup=backup)
+        return self._underlying.edit(
+            path, old_string, new_string, replace_all=replace_all, backup=backup
+        )
 
     async def aedit(
         self,
@@ -380,13 +384,16 @@ class LangChainAdapter(UnifiedFilesystem):
         old_string: str,
         new_string: str,
         *,
+        replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
         """Async replace old_string with new_string in file.
 
         See edit() for details.
         """
-        return await self._underlying.aedit(path, old_string, new_string, backup=backup)
+        return await self._underlying.aedit(
+            path, old_string, new_string, replace_all=replace_all, backup=backup
+        )
 
     def edit_lines(
         self,
