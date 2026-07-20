@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # required for PyPI trusted publishing (OIDC)
+  id-token: write  # for PyPI trusted publishing (OIDC) when configured
 
 jobs:
   publish:
@@ -34,19 +34,15 @@ jobs:
           sudo apt-get install -y ripgrep silversearcher-ag
 
       - name: Sync dependencies
-        run: |
-          make sync-dev
-          # Release requires soothe-sdk 1.0.2 on PyPI (guard below); re-sync after guard.
+        run: make sync-dev
 
       - name: Guard — soothe-sdk 1.0.2 must be on PyPI
         run: |
-          # Nano needs CoreAgent protocols published in soothe-sdk 1.0.2.
           if ! curl -sf "https://pypi.org/pypi/soothe-sdk/1.0.2/json" >/dev/null; then
             echo "Publish soothe-sdk 1.0.2 to PyPI before releasing soothe-nano"
             exit 1
           fi
           echo "soothe-sdk 1.0.2 is available on PyPI"
-          uv sync --extra dev
 
       - name: Read version
         id: version
@@ -99,10 +95,12 @@ jobs:
           uv run twine check dist/*
           ls -la dist/
 
+      # Uses UV_PUBLISH_TOKEN when set; otherwise OIDC trusted publishing (id-token).
       - name: Publish to PyPI
         if: steps.check.outputs.exists == 'false'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          password: ${{ secrets.UV_PUBLISH_TOKEN }}
           verbose: true
           print-hash: true

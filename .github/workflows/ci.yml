@@ -10,12 +10,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # Until soothe-sdk 1.0.2 is on PyPI (CoreAgent protocols), install from monorepo.
-  SOOTHE_SDK_GIT: https://github.com/mirasoth/soothe.git
-  SOOTHE_SDK_REF: feat/nano-agent
-  UV_RUN: uv run --no-sync
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -44,17 +38,9 @@ jobs:
       - name: Sync dependencies
         run: make sync-dev
 
-      - name: Install soothe-sdk with CoreAgent protocols
+      - name: Verify soothe-sdk protocols
         run: |
-          if curl -sf "https://pypi.org/pypi/soothe-sdk/1.0.2/json" >/dev/null; then
-            echo "soothe-sdk 1.0.2 on PyPI — re-sync from index"
-            uv sync --extra dev
-          else
-            echo "Installing soothe-sdk from ${SOOTHE_SDK_GIT}@${SOOTHE_SDK_REF}"
-            uv pip install --force-reinstall \
-              "soothe-sdk @ git+${SOOTHE_SDK_GIT}@${SOOTHE_SDK_REF}#subdirectory=packages/soothe-sdk"
-          fi
-          ${{ env.UV_RUN }} python -c "from soothe_sdk.protocols.core_agent import CoreAgentCapabilities; print('soothe-sdk protocols OK')"
+          uv run python -c "from soothe_sdk.protocols.core_agent import CoreAgentCapabilities; print('soothe-sdk protocols OK')"
 
       - name: Format check
         run: make format-check
@@ -68,7 +54,7 @@ jobs:
       - name: Coverage
         if: matrix.python-version == '3.12'
         run: |
-          ${{ env.UV_RUN }} pytest tests/unit/ --cov=soothe_nano --cov-report=xml --cov-report=term-missing
+          uv run pytest tests/unit/ --cov=soothe_nano --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage report
         if: matrix.python-version == '3.12'
@@ -101,5 +87,5 @@ jobs:
 
       - name: Verify package
         run: |
-          uv run --no-sync twine check dist/*
+          uv run twine check dist/*
           echo "Package built and verified"
