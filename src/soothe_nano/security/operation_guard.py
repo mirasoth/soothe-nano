@@ -31,7 +31,6 @@ _BANNED_COMMAND_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"tee\s+/((etc|bin|sbin|usr|System|Library)(/|$))", "command.dangerous.system_path_tee"),
     (r"chmod\s+-R\s+777\s+/", "command.dangerous.chmod_root"),
     (r"chown\s+-R\s+.+\s+/", "command.dangerous.chown_root"),
-    (r"\bgit\s+push(\s|$)", "command.git.remote_push"),
     (r"\bpkill\b[^\n]*\bsoothe", "command.dangerous.pkill_soothe"),
     (r"\bkillall\b[^\n]*\bsoothe", "command.dangerous.killall_soothe"),
     (r"\bsoothed\s+(stop|restart)\b", "command.dangerous.soothed_lifecycle"),

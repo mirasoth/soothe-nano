@@ -212,34 +212,7 @@ def test_sensitive_system_path_denied_even_if_allowed_paths_wildcard(tmp_path: P
     assert "sensitive system pattern" in d.reason
 
 
-def test_git_local_operation_allowed_but_remote_denied() -> None:
-    cfg = SimpleNamespace(security=_security(allow_out=False), workspace_dir="/tmp/ws")
-    policy = ConfigDrivenPolicy(config=cfg)
-    ctx = PolicyContext(
-        active_permissions=PermissionSet(frozenset([Permission("shell", "execute", "*")])),
-        scope_id="t1",
-        workspace="/tmp/ws",
-    )
-
-    local = ActionRequest(
-        action_type="tool_call",
-        tool_name="run_command",
-        tool_args={"command": "git status"},
-    )
-    remote = ActionRequest(
-        action_type="tool_call",
-        tool_name="run_command",
-        tool_args={"command": "git push origin main"},
-    )
-
-    local_decision = policy.check(local, ctx)
-    remote_decision = policy.check(remote, ctx)
-    assert local_decision.verdict == "allow"
-    assert remote_decision.verdict == "deny"
-    assert "security rule" in remote_decision.reason
-
-
-def test_git_remote_read_sync_operations_allowed() -> None:
+def test_git_operations_including_push_allowed() -> None:
     cfg = SimpleNamespace(security=_security(allow_out=False), workspace_dir="/tmp/ws")
     policy = ConfigDrivenPolicy(config=cfg)
     ctx = PolicyContext(
@@ -249,9 +222,11 @@ def test_git_remote_read_sync_operations_allowed() -> None:
     )
 
     commands = [
+        "git status",
         "git fetch origin",
         "git pull origin main",
         "git clone https://example.com/repo.git",
+        "git push origin main",
     ]
     for command in commands:
         decision = policy.check(
@@ -297,7 +272,7 @@ def test_command_whitelist_bypass_overrides_default_deny() -> None:
         security=SimpleNamespace(
             **{
                 **_security(allow_out=False).__dict__,
-                "whitelist_commands_bypass": [r"\bgit\s+push\b"],
+                "whitelist_commands_bypass": [r"rm\s+-rf\s+/"],
             }
         ),
         workspace_dir="/tmp/ws",
@@ -312,7 +287,7 @@ def test_command_whitelist_bypass_overrides_default_deny() -> None:
         ActionRequest(
             action_type="tool_call",
             tool_name="run_command",
-            tool_args={"command": "git push origin main"},
+            tool_args={"command": "rm -rf /"},
         ),
         ctx,
     )
