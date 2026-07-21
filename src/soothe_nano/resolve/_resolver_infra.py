@@ -135,9 +135,10 @@ def resolve_checkpointer(config: SootheConfig) -> tuple[Checkpointer, Any] | Che
 
 
 def _resolve_sqlite_checkpointer(config: SootheConfig) -> tuple[Checkpointer | None, Any] | None:
-    """Initialize SQLite checkpointer via langgraph-checkpoint-sqlite.
+    """Resolve SQLite checkpointer database path.
 
     Defers AsyncSqliteSaver creation to async context (same pattern as PostgreSQL).
+    Callers that construct the saver need ``langgraph-checkpoint-sqlite`` installed.
 
     Returns:
         A tuple of (None, db_path) if successful, None otherwise.

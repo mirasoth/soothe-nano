@@ -5,6 +5,21 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.7] - 2026-07-21
+
+### Removed
+- Unused / host-owned direct dependencies: `aiosqlite`, `anyio`, `pexpect`, `bubus`, `jinja2`, `openai`, `anthropic`, `pyjwt`, `langgraph-checkpoint-sqlite`, `arxiv`, `tavily-python`, `chardet`, `watchdog` (host already declares checkpointer/JWT/jinja/watchdog; `openai` remains via `langchain-openai`)
+
+### Fixed
+- `security.operation_guard` no longer bans remote git operations (e.g. `git push` / `git fetch`); these are gated by the `allow_out` network policy instead. Banned pattern removed; remote git is now permitted for CI and commit workflows.
+
+### Changed
+- `events.catalog` no longer redefines `EventRegistry` / `EventMeta` / `EventPriority` / `register_event` locally; it re-exports the canonical implementations from `soothe_sdk.core.registry` and registers protocol events via the shared `register_event`.
+- `events.constants` keeps only the protocol type strings nano's own models reference; host-owned MCP/plugin/skill/replay constants removed.
+- `plugin.events` corrects type identifiers to `soothe.internal.plugin.*` to match the internal domain classification.
+- `skills.events` removes host-owned `SkillActivatedEvent`.
+- `resolve._resolver_infra._resolve_sqlite_checkpointer` docstring clarified: it resolves the SQLite checkpointer database path and defers `AsyncSqliteSaver` creation to async context (same pattern as PostgreSQL); callers constructing the saver require `langgraph-checkpoint-sqlite`.
+
 ## [0.9.6] - 2026-07-21
 
 ### Removed

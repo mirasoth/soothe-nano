@@ -1,24 +1,22 @@
-"""Centralized event type string constants for CoreAgent protocol events.
+"""Protocol-primitive event type string constants re-exported from the SDK.
 
-A focused subset of the protocol event type strings used by nano's own event
-models (see :mod:`soothe_nano.events.catalog`). The canonical full catalog of
-constants lives in ``soothe.foundation.events.constants``; nano keeps only the
-strings its models reference here so it does not depend on the host package.
+The canonical home for these wire-visible constants is
+:mod:`soothe_sdk.core.events` (the protocol-contracts layer shared with the
+CLI and daemon). nano re-exports them here so its own event models can
+reference them without depending on the host package.
 """
 
 from __future__ import annotations
 
-MEMORY_RECALLED = "soothe.internal.memory.recalled"
-MEMORY_STORED = "soothe.internal.memory.stored"
-
-POLICY_CHECKED = "soothe.internal.policy.checked"
-POLICY_DENIED = "soothe.internal.policy.denied"
-
-ERROR = "soothe.error.general.failed"
-
-STREAM_END = "soothe.stream.end"
-
-LLM_RETRY_ATTEMPT = "soothe.cognition.llm.retry.attempt"
+from soothe_sdk.core.events import (
+    ERROR,
+    LLM_RETRY_ATTEMPT,
+    MEMORY_RECALLED,
+    MEMORY_STORED,
+    POLICY_CHECKED,
+    POLICY_DENIED,
+    STREAM_END,
+)
 
 __all__ = [
     "ERROR",
