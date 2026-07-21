@@ -5,11 +5,9 @@ from __future__ import annotations
 import logging
 import os
 import re
-from pathlib import Path
 from typing import Any
 
-SOOTHE_HOME: Path = Path(os.environ.get("SOOTHE_HOME", str(Path.home() / ".soothe"))).expanduser()
-"""Default Soothe home directory. Overridable via ``SOOTHE_HOME`` env var."""
+from soothe_sdk.paths import SOOTHE_HOME  # noqa: F401
 
 # Matches ${VAR_NAME} anywhere in a string (not anchored)
 _ENV_VAR_RE = re.compile(r"\$\{(\w+)\}")

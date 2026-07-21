@@ -25,7 +25,15 @@ _sync_lock = threading.Lock()
 
 
 class SharedMetadataPool:
-    """Singleton ``AsyncConnectionPool`` for ``soothe_metadata`` durability stores."""
+    """Singleton ``AsyncConnectionPool`` for ``soothe_metadata`` durability stores.
+
+    The ``_REGISTRY_CLS`` class attribute points at the pool-registry class
+    whose singleton the metadata pool binds to. Host packages subclass this
+    and override ``_REGISTRY_CLS`` to their own registry (which may extend
+    nano's with extra databases such as ``checkpoints``).
+    """
+
+    _REGISTRY_CLS = PostgresPoolRegistry
 
     @classmethod
     def _register_pool(cls, pool: AsyncConnectionPool) -> None:
@@ -50,7 +58,7 @@ class SharedMetadataPool:
                 return _shared_metadata_pool
 
             try:
-                registry = PostgresPoolRegistry.get_instance(config)
+                registry = cls._REGISTRY_CLS.get_instance(config)
                 reg_pool = registry.try_get_pool("metadata")
                 if reg_pool is not None:
                     _shared_metadata_pool = reg_pool
@@ -70,7 +78,7 @@ class SharedMetadataPool:
 
             ensure_postgres_databases(config)
             dsn = config.resolve_postgres_dsn_for_database("metadata")
-            max_size = PostgresPoolRegistry.resolve_metadata_pool_size(config)
+            max_size = cls._REGISTRY_CLS.resolve_metadata_pool_size(config)
             timing = postgres_pool_timing_from_config(config, max_size=max_size)
             pool_kwargs: dict[str, Any] = {
                 "max_size": max_size,

@@ -3,13 +3,25 @@
 Centralizing defaults keeps tool timeouts and output caps consistent.
 """
 
+from soothe_sdk.paths import DEFAULT_EXECUTE_TIMEOUT  # noqa: F401
+
+__all__ = [
+    "DEFAULT_CODE_EXEC_MAX_OUTPUT_CHARS",
+    "DEFAULT_EXECUTE_TIMEOUT",
+    "DEFAULT_TASK_TIMEOUT_SECONDS",
+    "DEFAULT_TOOL_OUTPUT_CHARS",
+    "MAX_EXECUTE_TIMEOUT",
+    "clamp_execute_timeout",
+]
+
+
 # ============================================================================
 # Execution Tool Limits
 # ============================================================================
 
 # Default timeout for shell command execution
 # Used by execution tools (run_command) and TUI display logic
-DEFAULT_EXECUTE_TIMEOUT = 60  # seconds
+# Canonical home is ``soothe_sdk.paths`` (shared with host/CLI/daemon).
 
 # Upper bound for per-call run_command timeout (LLM arg and middleware ceiling)
 MAX_EXECUTE_TIMEOUT = 18000  # 5 hours
