@@ -11,7 +11,7 @@ def test_spec_subagent_name_from_dict() -> None:
 
 
 def test_spec_subagent_name_from_object() -> None:
-    assert spec_subagent_name(type("S", (), {"name": "explorer"})()) == "explorer"
+    assert spec_subagent_name(type("S", (), {"name": "planner"})()) == "planner"
     assert spec_subagent_name(type("S", (), {"name": None})()) is None
 
 

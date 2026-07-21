@@ -134,15 +134,18 @@ class PostgresPoolRegistry:
             await ensure_postgres_databases_async(self._config)
             self.validate_budget(self._config)
 
-            await self._open_pool("checkpoints")
+            # IG-678 PR-3: nano does not open a checkpoints pool. The
+            # checkpoints schema is host-owned (applied by
+            # soothe.foundation.persistence.postgres_schema from the host sql
+            # dir). Standalone nano checkpointing uses LangGraph's
+            # AsyncPostgresSaver.setup() via SharedCheckpointerPool.
             await self._open_pool("metadata")
             if self._uses_pgvector():
                 await self._open_pool("vectors")
 
             self._opened = True
             logger.info(
-                "PostgresPoolRegistry opened (checkpoints=%d metadata=%d vectors=%d)",
-                self.resolve_checkpoints_pool_size(self._config),
+                "PostgresPoolRegistry opened (metadata=%d vectors=%d)",
                 self.resolve_metadata_pool_size(self._config),
                 self.resolve_vectors_pool_size(self._config) if self._uses_pgvector() else 0,
             )
@@ -171,13 +174,7 @@ class PostgresPoolRegistry:
         pool = AsyncConnectionPool(dsn, **apply_row_factory(pool_kwargs))
         await pool.open()
 
-        if db_key == "checkpoints":
-            from soothe_nano.persistence.postgres_schema import (
-                initialize_agentloop_postgres_schema,
-            )
-
-            await initialize_agentloop_postgres_schema(pool)
-        elif db_key == "metadata":
+        if db_key == "metadata":
             from soothe_nano.persistence.db_init import initialize_database
 
             await initialize_database(pool, "soothe_metadata")

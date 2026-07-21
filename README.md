@@ -2,7 +2,7 @@
 
 A **ready-to-run coding agent** you can drop into a script or app.
 
-Built on [soothe-deepagents](https://github.com/mirasoth/soothe-deepagents) (filesystem, shell, subagents, skills, MCP). Nano adds the pieces you usually wire yourself: workspace safety, progressive tools/skills, research & explore subagents, and a config-driven factory.
+Built on [soothe-deepagents](https://github.com/mirasoth/soothe-deepagents) (filesystem, shell, subagents, skills, MCP). Nano adds the pieces you usually wire yourself: workspace safety, progressive tools/skills, research subagents, and a config-driven factory.
 
 ## Vision
 
@@ -27,7 +27,7 @@ create_nano_agent(config)
         │
         ├─ model + middleware stack
         ├─ tools (builtin groups + yours)
-        ├─ subagents (explorer, planner, research, browser, …)
+        ├─ subagents (planner, research, browser, …)
         ├─ skills (progressive discovery)
         └─ MCP (on-demand activation)
 ```
@@ -37,7 +37,7 @@ create_nano_agent(config)
 | Area | What nano provides |
 |---|---|
 | Tools | Builtin groups: shell, file ops, HTTP, search, data, … |
-| Subagents | Ready: explore, plan, deep/academic research, browser |
+| Subagents | Ready: plan, deep/academic research, browser |
 | Skills / tools in context | Progressive loading — activate what the turn needs |
 | Workspace | Scoped workspace + security defaults |
 | Config | YAML / `SootheConfig` factory |
@@ -50,7 +50,7 @@ create_nano_agent(config)
 |---|---|---|
 | What you get | Opinionated harness | Harness **plus** coding product defaults |
 | Tools | Bring your own | Builtin groups out of the box |
-| Subagents | You define them | Ready explore / plan / research / browser |
+| Subagents | You define them | Ready plan / research / browser |
 | Skills / tools in context | Base support | Progressive loading |
 | Workspace | Pluggable backends | Scoped workspace + security defaults |
 | Config | Code-first | YAML / `SootheConfig` factory |
@@ -62,7 +62,7 @@ Use **nano** when you want a coding agent that already knows how to work in a re
 
 | Scenario | Fit |
 |---|---|
-| Coding assistant in a repo | ✅ Files, shell, explore/plan out of the box |
+| Coding assistant in a repo | ✅ Files, shell, plan out of the box |
 | Research / browsing agent | ✅ Deep research, academic, browser subagents |
 | Embed in your product | ✅ Library API, no daemon required |
 | Plugin / toolkit author | ✅ Depends on nano only |
@@ -103,7 +103,7 @@ soothe_nano/
   agent/       CodingCoreAgent, create_nano_agent
   config/      SootheConfig
   toolkits/    Builtin tool groups
-  subagents/   explore, plan, research, browser, …
+  subagents/   plan, research, browser, …
   middleware/  Progressive tools/skills, workspace, policy
   skills/      Catalog + progressive search
   mcp/         MCP registry / adapters

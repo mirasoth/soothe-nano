@@ -2,7 +2,7 @@
 
 This example demonstrates a nano agent with configured subagents:
 - Subagent configuration from ``config/develop/config.yml``
-- Delegation to first-party subagents such as explorer, plan, and research when enabled
+- Delegation to first-party subagents such as planner, and research when enabled
 - Optional community plugins when installed and configured
 
 Run:
