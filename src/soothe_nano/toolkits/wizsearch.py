@@ -13,7 +13,7 @@ import logging
 from typing import Any
 
 from langchain_core.tools import BaseTool
-from pydantic import Field
+from pydantic import BaseModel, Field
 from soothe_sdk.plugin import plugin
 
 from soothe_nano.toolkits._internal.wizsearch import (
@@ -40,6 +40,62 @@ def _apply_shared_wizsearch_config(tool: Any, config: dict[str, Any]) -> None:
         tool.debug_mode = bool(config["debug"])
 
 
+class WizsearchSearchInput(BaseModel):
+    """Input schema for wizsearch_search.
+
+    LLMs commonly emit ``limit`` for result count; accept it as the primary
+    public arg and keep ``max_results_per_engine`` as a compatible alias.
+    """
+
+    query: str = Field(description="Search query")
+    limit: int | None = Field(
+        default=None,
+        ge=1,
+        le=50,
+        description="Maximum results per search engine (default: 10)",
+    )
+    max_results_per_engine: int | None = Field(
+        default=None,
+        ge=1,
+        le=50,
+        description="Alias for limit (same meaning)",
+    )
+    timeout_seconds: int | None = Field(
+        default=None,
+        ge=1,
+        description="Request timeout in seconds (default: 30)",
+    )
+
+
+class WizsearchCrawlInput(BaseModel):
+    """Input schema for wizsearch_crawl."""
+
+    url: str = Field(description="URL to crawl")
+    content_format: str | None = Field(
+        default=None,
+        description="Output format: 'markdown', 'html', or 'text' (default: markdown)",
+    )
+    only_text: bool = Field(default=False, description="Extract only text content")
+
+
+def _resolve_max_results_per_engine(
+    *,
+    default: int,
+    limit: int | None = None,
+    max_results_per_engine: int | None = None,
+) -> int:
+    """Resolve result count from limit / max_results_per_engine / default.
+
+    Prefers ``max_results_per_engine`` when both aliases are set (backward
+    compatible with explicit callers), then ``limit``, then ``default``.
+    """
+    if max_results_per_engine is not None:
+        return max_results_per_engine
+    if limit is not None:
+        return limit
+    return default
+
+
 class WizsearchSearchTool(BaseTool):
     """Multi-engine web search powered by wizsearch.
 
@@ -56,11 +112,12 @@ class WizsearchSearchTool(BaseTool):
         "For time-sensitive queries (e.g., 'latest news', 'recent events'), "
         "first use the current_datetime tool to know today's date, then include appropriate "
         "time qualifiers (year, month) in your search query to get the most recent results. "
-        "Inputs: `query` (required), `max_results_per_engine` (default: 10), "
+        "Inputs: `query` (required), `limit` (default: 10 results per engine), "
         "`timeout_seconds` (default: 30). "
         "Returns a text summary of search results with titles, URLs, and content snippets. "
         "Use these results to compose your answer; do NOT echo the raw results to the user."
     )
+    args_schema: type[BaseModel] = WizsearchSearchInput
 
     default_max_results_per_engine: int = Field(default=10)
     default_timeout: int = Field(default=30)
@@ -92,6 +149,7 @@ class WizsearchSearchTool(BaseTool):
         query: str,
         max_results_per_engine: int | None = None,
         timeout_seconds: int | None = None,
+        limit: int | None = None,
     ) -> str:
         """Execute a web search.
 
@@ -99,11 +157,16 @@ class WizsearchSearchTool(BaseTool):
             query: Search query.
             max_results_per_engine: Max results per engine.
             timeout_seconds: Request timeout.
+            limit: Alias for max_results_per_engine (common LLM arg name).
 
         Returns:
             Formatted search results.
         """
-        effective_max = max_results_per_engine or self.default_max_results_per_engine
+        effective_max = _resolve_max_results_per_engine(
+            default=self.default_max_results_per_engine,
+            limit=limit,
+            max_results_per_engine=max_results_per_engine,
+        )
         logger.info(
             "[Wizsearch] wizsearch_search invoke sync query=%r engines=%s max_results=%d timeout=%ds",
             log_preview(query, chars=_LOG_QUERY_CHARS),
@@ -128,6 +191,7 @@ class WizsearchSearchTool(BaseTool):
         query: str,
         max_results_per_engine: int | None = None,
         timeout_seconds: int | None = None,
+        limit: int | None = None,
     ) -> str:
         """Async web search.
 
@@ -135,11 +199,16 @@ class WizsearchSearchTool(BaseTool):
             query: Search query.
             max_results_per_engine: Max results per engine.
             timeout_seconds: Request timeout.
+            limit: Alias for max_results_per_engine (common LLM arg name).
 
         Returns:
             Formatted search results.
         """
-        effective_max = max_results_per_engine or self.default_max_results_per_engine
+        effective_max = _resolve_max_results_per_engine(
+            default=self.default_max_results_per_engine,
+            limit=limit,
+            max_results_per_engine=max_results_per_engine,
+        )
         logger.info(
             "[Wizsearch] wizsearch_search invoke async query=%r engines=%s max_results=%d timeout=%ds",
             log_preview(query, chars=_LOG_QUERY_CHARS),
@@ -174,6 +243,7 @@ class WizsearchCrawlTool(BaseTool):
         "Inputs: `url` (required), `content_format` ('markdown', 'html', 'text'), "
         "`only_text` (default: false)."
     )
+    args_schema: type[BaseModel] = WizsearchCrawlInput
 
     default_content_format: str = Field(default="markdown")
     proxy: str | None = None
