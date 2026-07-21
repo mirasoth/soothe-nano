@@ -19,13 +19,12 @@ def configure_unified_persistence(config: SootheConfig) -> None:
     """Configure process-wide stores that must track ``default_backend``.
 
     Call after PostgreSQL databases are provisioned (when applicable).
+
+    Note: the display card store is daemon-owned (IG-678 PR-2) and is no longer
+    configured here; the daemon calls ``configure_display_card_store`` directly.
     """
     _validate_no_mixed_overrides(config)
     _warn_vector_store_mismatch(config)
-
-    from soothe_nano.backends.persistence.display_store import configure_display_card_store
-
-    configure_display_card_store(config)
     logger.info(
         "Unified persistence configured: default_backend=%s",
         config.persistence.default_backend,
