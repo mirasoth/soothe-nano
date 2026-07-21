@@ -1,4 +1,10 @@
-"""Centralized event type string constants for CoreAgent protocol events."""
+"""Centralized event type string constants for CoreAgent protocol events.
+
+A focused subset of the protocol event type strings used by nano's own event
+models (see :mod:`soothe_nano.events.catalog`). The canonical full catalog of
+constants lives in ``soothe.foundation.events.constants``; nano keeps only the
+strings its models reference here so it does not depend on the host package.
+"""
 
 from __future__ import annotations
 
@@ -14,30 +20,12 @@ STREAM_END = "soothe.stream.end"
 
 LLM_RETRY_ATTEMPT = "soothe.cognition.llm.retry.attempt"
 
-MCP_LIST_CHANGED = "soothe.internal.mcp.list_changed"
-MCP_TOOL_TIMEOUT = "soothe.internal.mcp.tool.timeout"
-
-PLUGIN_LOADED = "soothe.internal.plugin.loaded"
-PLUGIN_FAILED = "soothe.internal.plugin.failed"
-PLUGIN_UNLOADED = "soothe.internal.plugin.unloaded"
-
-SKILL_BODY_LOADED = "soothe.internal.skill.body.loaded"
-
-REPLAY_COMPLETE = "replay_complete"
-
 __all__ = [
     "ERROR",
     "LLM_RETRY_ATTEMPT",
-    "MCP_LIST_CHANGED",
-    "MCP_TOOL_TIMEOUT",
     "MEMORY_RECALLED",
     "MEMORY_STORED",
-    "PLUGIN_FAILED",
-    "PLUGIN_LOADED",
-    "PLUGIN_UNLOADED",
     "POLICY_CHECKED",
     "POLICY_DENIED",
-    "REPLAY_COMPLETE",
-    "SKILL_BODY_LOADED",
     "STREAM_END",
 ]

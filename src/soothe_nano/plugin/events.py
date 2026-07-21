@@ -18,7 +18,7 @@ class PluginLoadedEvent(SootheEvent):
     and is ready to provide tools and/or subagents.
 
     Attributes:
-        type: Event type identifier ("soothe.plugin.loaded").
+        type: Event type identifier ("soothe.internal.plugin.loaded").
         name: Plugin name.
         version: Plugin version.
         source: Discovery source (built-in, entry_point, config, filesystem).
@@ -37,7 +37,7 @@ class PluginFailedEvent(SootheEvent):
     The plugin will not be available for use.
 
     Attributes:
-        type: Event type identifier ("soothe.plugin.failed").
+        type: Event type identifier ("soothe.internal.plugin.failed").
         name: Plugin name (may be empty if failure occurred before manifest parsing).
         error: Error message describing the failure.
         phase: Loading phase where the failure occurred (discovery, validation, dependency, initialization).
@@ -56,7 +56,7 @@ class PluginHealthCheckedEvent(SootheEvent):
     called and reports the plugin's current health status.
 
     Attributes:
-        type: Event type identifier ("soothe.plugin.health_checked").
+        type: Event type identifier ("soothe.internal.plugin.health_checked").
         name: Plugin name.
         status: Health status ("healthy", "degraded", "unhealthy").
         details: Optional details about the health check result.
@@ -75,7 +75,7 @@ class PluginUnloadedEvent(SootheEvent):
     and the plugin is no longer available.
 
     Attributes:
-        type: Event type identifier ("soothe.plugin.unloaded").
+        type: Event type identifier ("soothe.internal.plugin.unloaded").
         name: Plugin name.
     """
 
