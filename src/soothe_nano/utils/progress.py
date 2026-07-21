@@ -10,11 +10,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import logging
 
-# Context variable for current step ID
-_current_step_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "current_step_id", default=None
-)
-
 # Intake-only / outer bridges when LangGraph ``get_stream_writer`` is unavailable
 # (e.g. long single-node browser_use runs). Sync callback; may schedule onto a loop.
 _wire_bridge: contextvars.ContextVar[Callable[[dict[str, Any]], None] | None] = (
@@ -28,36 +23,6 @@ _loop_wire_bridge_lock = threading.Lock()
 
 # Constants for formatting
 _MAX_FIELD_LEN = 50
-
-
-def set_step_context(step_id: str | None) -> contextvars.Token:
-    """Set the current step ID in context.
-
-    Args:
-        step_id: Step ID to set, or None to clear.
-
-    Returns:
-        Token for resetting context to previous value.
-    """
-    return _current_step_id.set(step_id)
-
-
-def reset_step_context(token: contextvars.Token) -> None:
-    """Reset step context to previous value.
-
-    Args:
-        token: Token returned by set_step_context().
-    """
-    _current_step_id.reset(token)
-
-
-def get_step_id() -> str | None:
-    """Get current step ID from context.
-
-    Returns:
-        Current step ID or None if not in a step context.
-    """
-    return _current_step_id.get()
 
 
 def set_wire_bridge(callback: Callable[[dict[str, Any]], None] | None) -> contextvars.Token:
@@ -194,11 +159,6 @@ def emit_progress(event: dict[str, Any], logger: logging.Logger) -> None:
     """
     # Always log to file first for audit trail (compact format)
     logger.debug(_format_event_compact(event))
-
-    # Inject step_id if available in context
-    step_id = get_step_id()
-    if step_id and "step_id" not in event:
-        event = {**event, "step_id": step_id}
 
     bridge = get_wire_bridge()
     if bridge is not None:

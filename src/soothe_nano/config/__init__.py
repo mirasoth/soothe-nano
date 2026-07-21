@@ -39,16 +39,6 @@ from soothe_nano.config.models import (
     VectorStoreRouter,
     WebSearchConfig,
 )
-from soothe_nano.config.reload import (
-    DEFAULT_CONFIG_PATH,
-    DEFAULT_NANO_CONFIG_PATH,
-    ConfigReloadCallback,
-    ConfigReloadEvent,
-    ConfigWatcher,
-    get_config_watcher,
-    start_config_watcher,
-    stop_config_watcher,
-)
 from soothe_nano.config.settings import SootheConfig
 from soothe_nano.prompts.system_templates import (
     _DEFAULT_SYSTEM_PROMPT,
@@ -60,8 +50,6 @@ from soothe_nano.prompts.system_templates import (
 NanoConfig = SootheConfig
 
 __all__ = [
-    "DEFAULT_CONFIG_PATH",
-    "DEFAULT_NANO_CONFIG_PATH",
     "DEFAULT_EXECUTE_TIMEOUT",
     "SOOTHE_HOME",
     "_DEFAULT_SYSTEM_PROMPT",
@@ -70,12 +58,6 @@ __all__ = [
     "_SIMPLE_SYSTEM_PROMPT",
     "_TOOL_ORCHESTRATION_GUIDE",
     "AgentConfig",
-    "ConfigReloadCallback",
-    "ConfigReloadEvent",
-    "ConfigWatcher",
-    "get_config_watcher",
-    "start_config_watcher",
-    "stop_config_watcher",
     "CoreAgentMiddlewareConfig",
     "ConsoleLoggingConfig",
     "DurabilityProtocolConfig",

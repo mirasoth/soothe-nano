@@ -131,41 +131,6 @@ def _simplify_error_message(error_type: str, error_msg: str) -> str:
     return log_preview(error_msg, _MAX_ERROR_MSG_LENGTH)
 
 
-def log_exception_simplified(
-    logger: logging.Logger,
-    error: Exception,
-    *,
-    message: str = "Operation failed",
-    context: str | None = None,
-) -> None:
-    """Log full exception traceback to logs, return simplified CLI message.
-
-    This is a convenience function that logs the full exception with traceback
-    using logger.exception() while returning a simplified message for CLI display.
-
-    Args:
-        logger: Logger instance to use.
-        error: Exception that occurred.
-        message: Log message prefix.
-        context: Optional context for CLI message.
-
-    Returns:
-        Simplified error message for CLI display.
-
-    Example:
-        >>> try:
-        ...     await risky_operation()
-        ... except Exception as e:
-        ...     cli_msg = log_exception_simplified(logger, e, context="browser launch")
-        ...     print(f"Error: {cli_msg}")
-    """
-    # Log full traceback to file
-    logger.exception(message)
-
-    # Return simplified message for CLI
-    return format_cli_error(error, context=context)
-
-
 def emit_error_event(
     error: Exception | str,
     *,
