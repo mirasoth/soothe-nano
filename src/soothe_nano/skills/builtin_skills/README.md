@@ -25,13 +25,31 @@ skill-name/
 
 ## Discovery
 
-Builtin skills are automatically discovered by `get_built_in_skills_paths()` in `__init__.py`. User skills can be added via `SootheConfig.skills`:
+Builtin skills are automatically discovered via ``iter_skill_roots()`` /
+``get_built_in_skills_paths()``. Host packages (e.g. fj) can register extra
+roots:
 
 ```python
-from soothe.config import SootheConfig
+from pathlib import Path
+from soothe_nano.skills import register_builtin_skill_root
+
+register_builtin_skill_root(Path(__file__).parent / "builtin_skills")
+```
+
+Or via config:
+
+```yaml
+builtin_skill_roots:
+  - /path/to/package/builtin_skills
+```
+
+User skills can also be added via ``SootheConfig.skills`` / ``skills:`` in YAML:
+
+```python
+from soothe_nano.config import SootheConfig
 
 config = SootheConfig(
-    skills=["~/.soothe/skills/", "/path/to/custom/skills/"]
+    skills=["~/.soothe/skills/my-reviewer", "/path/to/custom/skills/deploy"]
 )
 ```
 

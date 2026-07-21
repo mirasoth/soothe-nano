@@ -1,7 +1,7 @@
 """Mtime-based skill index for fast process-level skill discovery.
 
 Indexes skills under ``~/.agents/skills``, package-bundled
-``skills/builtin_skills/``, and ``~/.soothe/skills``.
+``skills/builtin_skills/``, host-registered roots, and ``~/.soothe/skills``.
 Uses stat-only invalidation: re-parses SKILL.md only when mtime changes.
 Persists cache to ~/.soothe/cache/skill_index.json for fast restarts.
 """
@@ -15,19 +15,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from soothe_nano.skills.builtins import iter_skill_roots
+
 logger = logging.getLogger(__name__)
 
 _CACHE_FILE = Path.home() / ".soothe" / "cache" / "skill_index.json"
 
-# Package-bundled built-in skills directory
+# Package-bundled built-in skills directory (kept for tests / introspection)
 _BUILTIN_SKILLS_DIR = Path(__file__).resolve().parent / "builtin_skills"
-
-# (root_path, source_label) — order matters: later roots win on name collision
-_SKILL_ROOTS: tuple[tuple[Path, str], ...] = (
-    (Path.home() / ".agents" / "skills", "user"),
-    (_BUILTIN_SKILLS_DIR, "builtin"),
-    (Path.home() / ".soothe" / "skills", "user"),
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,9 +44,9 @@ class SkillIndexEntry:
 class SkillIndex:
     """Mtime-aware skill index that avoids re-parsing unchanged SKILL.md files.
 
-    The index scans community, built-in, and user skill directories.
+    The index scans community, built-in, host-registered, and user skill directories.
     When a skill name appears in multiple roots, the later root wins
-    (``~/.soothe/skills`` > built-ins > ``~/.agents/skills``).
+    (``~/.soothe/skills`` > host builtins > nano builtins > ``~/.agents/skills``).
     Workspace/project skills are resolved by the loop at runtime.
     """
 
@@ -129,11 +124,11 @@ class SkillIndex:
         """Stat SKILL.md in each candidate dir; return name key → (path, mtime, source).
 
         When the same skill name exists in multiple roots, the later root wins
-        (last-wins dedup). ``~/.soothe/skills`` overrides built-ins which
+        (last-wins dedup). ``~/.soothe/skills`` overrides host/nano built-ins which
         override ``~/.agents/skills``.
         """
         by_name: dict[str, tuple[Path, float, str]] = {}
-        for root, source in _SKILL_ROOTS:
+        for root, source in iter_skill_roots():
             if not root.is_dir():
                 continue
             try:

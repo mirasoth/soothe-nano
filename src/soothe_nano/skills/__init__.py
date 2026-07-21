@@ -1,6 +1,11 @@
 """Skills discovery and invocation for Soothe agent runtime."""
 
-from soothe_nano.skills.builtins import get_built_in_skills_paths, is_builtin_skill_directory
+from soothe_nano.skills.builtins import (
+    get_built_in_skills_paths,
+    is_builtin_skill_directory,
+    iter_skill_roots,
+    register_builtin_skill_root,
+)
 from soothe_nano.skills.catalog import (
     SkillInvocationEnvelope,
     build_skill_context_text,
@@ -20,8 +25,10 @@ __all__ = [
     "format_slash_skill_invoke_line",
     "get_built_in_skills_paths",
     "is_builtin_skill_directory",
+    "iter_skill_roots",
     "parse_slash_skill_user_line",
     "read_skill_markdown",
+    "register_builtin_skill_root",
     "resolve_skill_directory",
     "try_expand_slash_skill_user_line",
     "wire_entries_for_agent_config",

@@ -11,6 +11,7 @@ from soothe_nano.mcp.mcp_config import (
     builtin_mcp_server_names,
     get_builtin_mcp_server,
     get_builtin_mcp_servers,
+    register_builtin_mcp_server,
     resolve_mcp_builtins,
 )
 from soothe_nano.mcp.mcp_utils import (
@@ -26,5 +27,6 @@ __all__ = [
     "get_builtin_mcp_server",
     "get_builtin_mcp_servers",
     "parse_mcp_tool_name",
+    "register_builtin_mcp_server",
     "resolve_mcp_builtins",
 ]

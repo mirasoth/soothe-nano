@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any, Protocol
 
@@ -145,23 +147,72 @@ _BUILTIN_MCP_SERVERS: tuple[MCPServerConfig, ...] = (
     ),
 )
 
+# Host packages (e.g. fj) register extra catalog entries here. Process-local.
+_EXTRA_BUILTIN_MCP: dict[str, MCPServerConfig] = {}
+_EXTRA_BUILTIN_MCP_LOCK = threading.Lock()
+
+
+def register_builtin_mcp_server(
+    server: MCPServerConfig,
+    *,
+    replace: bool = False,
+) -> Callable[[], None]:
+    """Register a host-packaged builtin MCP server into the catalog.
+
+    Registration alone does not connect anything — callers still opt in via
+    ``mcp_builtins: [name]`` or explicit ``mcp_servers``.
+
+    Args:
+        server: Server configuration (prefer ``defer=True``).
+        replace: When True, overwrite an existing catalog entry with the same name.
+
+    Returns:
+        Unregister callback.
+
+    Raises:
+        ValueError: Duplicate name when ``replace`` is False.
+    """
+    cfg = server.model_copy(deep=True)
+    name = cfg.name
+    static_names = {s.name for s in _BUILTIN_MCP_SERVERS}
+    with _EXTRA_BUILTIN_MCP_LOCK:
+        if not replace:
+            if name in static_names:
+                raise ValueError(f"conflicts with nano builtin MCP: {name}")
+            if name in _EXTRA_BUILTIN_MCP:
+                raise ValueError(f"builtin MCP already registered: {name}")
+        _EXTRA_BUILTIN_MCP[name] = cfg
+
+    def _unregister() -> None:
+        with _EXTRA_BUILTIN_MCP_LOCK:
+            _EXTRA_BUILTIN_MCP.pop(name, None)
+
+    return _unregister
+
+
+def _all_builtin_servers() -> list[MCPServerConfig]:
+    """Static nano builtins followed by host-registered catalog entries."""
+    with _EXTRA_BUILTIN_MCP_LOCK:
+        extras = [cfg.model_copy(deep=True) for cfg in _EXTRA_BUILTIN_MCP.values()]
+    return [server.model_copy(deep=True) for server in _BUILTIN_MCP_SERVERS] + extras
+
 
 def get_builtin_mcp_servers() -> list[MCPServerConfig]:
-    """Return curated builtin MCP server configurations."""
-    return [server.model_copy(deep=True) for server in _BUILTIN_MCP_SERVERS]
+    """Return curated builtin MCP server configurations (static + registered)."""
+    return _all_builtin_servers()
 
 
 def get_builtin_mcp_server(name: str) -> MCPServerConfig | None:
     """Get a specific builtin MCP server by name."""
-    for server in _BUILTIN_MCP_SERVERS:
+    for server in _all_builtin_servers():
         if server.name == name:
-            return server.model_copy(deep=True)
+            return server
     return None
 
 
 def builtin_mcp_server_names() -> frozenset[str]:
     """Return the set of valid mcp_builtins names."""
-    return frozenset(server.name for server in _BUILTIN_MCP_SERVERS)
+    return frozenset(server.name for server in _all_builtin_servers())
 
 
 def resolve_mcp_builtins(names: list[str]) -> list[MCPServerConfig]:

@@ -402,6 +402,18 @@ class SootheConfig(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _register_builtin_skill_roots(self) -> SootheConfig:
+        """Register config ``builtin_skill_roots`` into the process skill catalog."""
+        if not self.builtin_skill_roots:
+            return self
+
+        from soothe_nano.skills.builtins import register_builtin_skill_root
+
+        for root in self.builtin_skill_roots:
+            register_builtin_skill_root(root, source="builtin")
+        return self
+
+    @model_validator(mode="after")
     def _resolve_mcp_builtins(self) -> SootheConfig:
         """Merge opt-in ``mcp_builtins`` names into ``mcp_servers``."""
         if not self.mcp_builtins:
@@ -484,6 +496,13 @@ class SootheConfig(BaseSettings):
 
     skills: list[str] = Field(default_factory=list)
     """SKILL.md source paths passed to SkillsMiddleware."""
+
+    builtin_skill_roots: list[str] = Field(default_factory=list)
+    """Extra package skill roots (dirs of ``<name>/SKILL.md`` folders).
+
+    Registered as builtin via :func:`soothe_nano.skills.register_builtin_skill_root`
+    at config load. Host packages may also call that API directly.
+    """
 
     progressive_skills: ProgressiveSkillsConfig = Field(default_factory=ProgressiveSkillsConfig)
     """Progressive skill listing budget and per-entry caps."""
