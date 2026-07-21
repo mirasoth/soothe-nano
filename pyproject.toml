@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soothe-nano"
-version = "0.9.7"
+version = "0.9.8"
 description = "Soothe Nano — batteries-included Coding CoreAgent on deepagents"
 readme = "README.md"
 license = { text = "MIT" }
@@ -45,6 +45,7 @@ dependencies = [
     "langgraph>=1.1.1,<2.0.0",
     "langgraph-checkpoint>=4.0.0,<5.0.0",
     "langgraph-checkpoint-postgres>=3.1.0,<4.0.0",
+    "langgraph-checkpoint-sqlite>=3.0.3",
     "sqlite-vec>=0.1.0",
     "langchain-tavily>=0.2.17",
     "wizsearch>=1.1.8,<2.0.0",
