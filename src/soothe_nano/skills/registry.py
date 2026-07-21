@@ -49,14 +49,19 @@ def _is_unconditional(entry: SkillIndexEntry) -> bool:
 
 
 def is_core_skill(entry: SkillIndexEntry, core_names: frozenset[str]) -> bool:
-    """Return True when *entry* belongs to the always-listed core tier."""
+    """Return True when *entry* belongs to the always-listed core tier.
+
+    Precedence: frontmatter ``core: false`` demotes; ``core: true`` promotes;
+    names in ``core_names`` are core. ``core_names`` defaults to
+    :data:`DEFAULT_CORE_SKILL_NAMES` (nano's shipped builtins) when
+    ``progressive_skills.core_skills`` is unset — host-registered builtins are
+    deferred unless named there or marked ``core: true``.
+    """
     if entry.core is False:
         return False
-    if entry.name.lower() in core_names:
-        return True
     if entry.core is True:
         return True
-    return entry.source == "builtin"
+    return entry.name.lower() in core_names
 
 
 class ProgressiveSkillRegistry:

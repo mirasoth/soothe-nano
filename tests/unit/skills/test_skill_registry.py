@@ -66,6 +66,25 @@ class TestPartitionCoreDeferred:
         entry = _entry("weather", source="builtin", core=False)
         assert not is_core_skill(entry, DEFAULT_CORE_SKILL_NAMES)
 
+    def test_explicit_core_skills_disables_builtin_autopromote(self) -> None:
+        """Extra builtins not named in core_skills stay deferred."""
+        reg = ProgressiveSkillRegistry()
+        entries = [
+            _entry("weather", source="builtin"),
+            _entry("brainstorming", source="builtin"),
+            _entry("xlsx", source="builtin"),
+        ]
+        core_names = frozenset({"weather", "brainstorming"})
+        core, deferred = reg.partition_core_deferred(entries, core_names)
+        assert sorted(e.name for e in core) == ["brainstorming", "weather"]
+        assert [e.name for e in deferred] == ["xlsx"]
+
+    def test_unnamed_builtin_deferred_under_default_core_names(self) -> None:
+        """Host builtins outside DEFAULT_CORE_SKILL_NAMES are deferred."""
+        entry = _entry("xlsx", source="builtin")
+        assert not is_core_skill(entry, DEFAULT_CORE_SKILL_NAMES)
+        assert is_core_skill(_entry("weather", source="builtin"), DEFAULT_CORE_SKILL_NAMES)
+
 
 class TestSearchDeferred:
     def test_finds_by_description(self) -> None:
