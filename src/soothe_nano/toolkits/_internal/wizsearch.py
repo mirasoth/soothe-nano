@@ -177,7 +177,7 @@ def _save_raw_results(query: str, result: object) -> None:
     """Persist the full search result JSON to the current thread's run dir.
 
     Writes to ``$SOOTHE_HOME/data/threads/{thread_id}/search_results/{ts}_{slug}.json``.
-    In virtual mode (IG-405), writes to ``/.soothe/data/threads/{thread_id}/search_results/``.
+    In virtual mode, writes to ``/.soothe/data/threads/{thread_id}/search_results/``.
     Fails silently if no run directory is active.
     """
     from soothe_nano.utils.runtime import current_run_dir
@@ -205,7 +205,7 @@ def _save_raw_results(query: str, result: object) -> None:
         }
         content = json.dumps(payload, ensure_ascii=False, indent=2)
 
-        # IG-405: Use backend when virtual mode
+        # Use backend when virtual mode
         if get_virtual_mode():
             backend = FrameworkFilesystem.get()
             if backend is not None:

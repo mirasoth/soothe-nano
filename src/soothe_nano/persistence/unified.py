@@ -1,4 +1,4 @@
-"""Unified persistence configuration (AGENTS.md §10).
+"""Unified persistence configuration.
 
 Ensures process-owned durable stores follow ``persistence.default_backend``
 as a single mode — postgresql XOR sqlite — never mixed.
@@ -20,8 +20,8 @@ def configure_unified_persistence(config: SootheConfig) -> None:
 
     Call after PostgreSQL databases are provisioned (when applicable).
 
-    Note: the display card store is daemon-owned (IG-678 PR-2) and is no longer
-    configured here; the daemon calls ``configure_display_card_store`` directly.
+    Note: the display card store is owned by the host process and is no longer
+    configured here; the host calls ``configure_display_card_store`` directly.
     """
     _validate_no_mixed_overrides(config)
     _warn_vector_store_mismatch(config)

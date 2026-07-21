@@ -1,4 +1,4 @@
-"""Planner-facing outcome preview helpers (RFC-211).
+"""Planner-facing outcome preview helpers.
 
 Canonical helper lives with plan DTOs in ``soothe_sdk.protocols.planner``.
 """

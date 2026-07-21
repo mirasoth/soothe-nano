@@ -1,4 +1,4 @@
-"""Resolve local toolkit paths using the same rules as filesystem tools (IG-316)."""
+"""Resolve local toolkit paths using the same rules as filesystem tools."""
 
 from __future__ import annotations
 

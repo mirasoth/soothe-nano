@@ -134,11 +134,10 @@ class PostgresPoolRegistry:
             await ensure_postgres_databases_async(self._config)
             self.validate_budget(self._config)
 
-            # IG-678 PR-3: nano does not open a checkpoints pool. The
-            # checkpoints schema is host-owned (applied by
-            # soothe.foundation.persistence.postgres_schema from the host sql
-            # dir). Standalone nano checkpointing uses LangGraph's
-            # AsyncPostgresSaver.setup() via SharedCheckpointerPool.
+            # Nano does not open a checkpoints pool. The checkpoints schema is
+            # host-owned (applied by the host schema bootstrap). Standalone nano
+            # checkpointing uses LangGraph's AsyncPostgresSaver.setup() via
+            # SharedCheckpointerPool.
             await self._open_pool("metadata")
             if self._uses_pgvector():
                 await self._open_pool("vectors")

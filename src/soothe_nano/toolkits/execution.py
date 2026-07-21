@@ -1,4 +1,4 @@
-"""Execution tools (RFC-0016 consolidation).
+"""Execution tools.
 
 Consolidates single-purpose execution tools into one module:
 - run_command: Synchronous shell (waits for completion; honors per-call timeout)
@@ -78,7 +78,7 @@ _VIRTUAL_PATH_TOKEN_RE = re.compile(
 
 
 def _resolve_workspace(workspace_root: str, tool_runtime: Any = None) -> str | None:
-    """Resolve effective workspace for shell tools (RFC-103, IG-300)."""
+    """Resolve effective workspace for shell tools."""
     from soothe_nano.workspace.workspace_api import resolve_workspace_for_tool_execution
 
     resolved = resolve_workspace_for_tool_execution(
@@ -343,7 +343,7 @@ def _kill_process_tree(pid: int, *, sig: int = signal.SIGKILL) -> None:
     """Terminate ``pid`` and its descendants (process group on Unix).
 
     Never ``killpg`` the caller's own process group — that would take down the
-    in-process daemon when a child somehow shares the agent PGID.
+    agent process when a child somehow shares the agent PGID.
     """
     if pid <= 0:
         return
@@ -518,7 +518,7 @@ class RunCommandShellTool(ShellTool):
     """LangChain :class:`~langchain_community.tools.ShellTool` as ``run_command``.
 
     Adds operation security, workspace-aware ``cwd``, LangGraph ``ToolRuntime``
-    injection, and subprocess execution (IG-336).
+    injection, and subprocess execution.
     """
 
     process: Any = Field(default_factory=lambda: _UnusedShellProcess())
@@ -541,7 +541,7 @@ class RunCommandShellTool(ShellTool):
     security_config: Any = Field(default=None, description="Security configuration object")
 
     def _get_effective_workspace(self, tool_runtime: Any = None) -> str | None:
-        """Expose workspace resolution for tests (RFC-103)."""
+        """Expose workspace resolution for tests."""
         return _resolve_workspace(self.workspace_root, tool_runtime)
 
     def _security_decision(
@@ -642,7 +642,7 @@ class RunPythonREPLTool(PythonREPLTool):
     """LangChain :class:`~langchain_experimental.tools.python.PythonREPLTool` as ``run_python``.
 
     Uses ``PythonREPL`` with an isolated namespace; state persists for the lifetime
-    of this tool instance (IG-338).
+    of this tool instance.
     """
 
     name: str = "run_python"

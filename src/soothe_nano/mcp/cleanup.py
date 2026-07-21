@@ -1,4 +1,4 @@
-"""Subprocess cleanup ladder for stdio MCP servers (RFC-412).
+"""Subprocess cleanup ladder for stdio MCP servers.
 
 Mirrors Claude Code's client.ts:1404-1500 cleanup sequence:
 SIGINT → poll every 50ms for 100ms → SIGTERM → 600ms failsafe → kill -9.

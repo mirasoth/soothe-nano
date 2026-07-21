@@ -3,7 +3,7 @@
 Ported from noesium's document_toolkit.py.
 Uses PyMuPDF for PDF parsing and docx2txt for DOCX.
 
-IG-405: Uses backend_ops for virtual mode file operations.
+Uses backend_ops for virtual mode file operations.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ _NANO_INSTALL_HINT = "pip install -U soothe-nano"
 
 
 def _get_cache_path(document_path: str, cache_dir: str = "", config: Any = None) -> Path | None:
-    """Get cache file path for parsed document (IG-405: virtual-aware)."""
+    """Get cache file path for parsed document (virtual-aware)."""
     if not cache_dir:
         return None
 
@@ -253,7 +253,7 @@ def document_qa(
     Parses PDF, Office documents, and text files.
     Supports PyMuPDF (default) for fast extraction.
 
-    IG-405: Uses backend file operations for cache when virtual mode.
+    Uses backend file operations for cache when virtual mode.
 
     Args:
         document_path: Path or URL to document.
@@ -266,7 +266,7 @@ def document_qa(
     Returns:
         Summary or answer to question.
     """
-    # Check cache (IG-405: pass config for virtual-aware path)
+    # Check cache (pass config for virtual-aware path)
     cache_path = _get_cache_path(document_path, cache_dir, config=config)
     if cache_path and backend_file_exists(cache_path, config=config):
         logger.info("Using cached document: %s", document_path)
@@ -283,7 +283,7 @@ def document_qa(
         try:
             text = _parse_document(local_path)
 
-            # Cache parsed text (IG-405: use backend write)
+            # Cache parsed text (use backend write)
             if cache_path:
                 backend_write_file(cache_path, text, config=config)
 
@@ -331,7 +331,7 @@ def extract_text(document_path: str, text_limit: int = 100000) -> str:
 def get_document_info(document_path: str, config: Any = None) -> dict[str, Any]:
     """Get metadata about a document.
 
-    IG-405: Uses backend file operations when virtual mode.
+    Uses backend file operations when virtual mode.
 
     Args:
         document_path: Path to document.
@@ -345,7 +345,7 @@ def get_document_info(document_path: str, config: Any = None) -> dict[str, Any]:
     if not backend_file_exists(path, config=config):
         return {"error": f"Document not found: {document_path}"}
 
-    # IG-405: Use backend for stat when virtual mode
+    # Use backend for stat when virtual mode
     stat_info = backend_file_stat(path, config=config)
     if not stat_info.get("is_file", True):
         return {"error": f"Not a file: {document_path}"}

@@ -1,4 +1,4 @@
-"""RFC-105 / IG-543: Stateless helpers for progressive skill disclosure."""
+"""Stateless helpers for progressive skill disclosure."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _normalize_patterns(patterns: Sequence[str]) -> list[str]:
 
 
 def _is_unconditional(entry: SkillIndexEntry) -> bool:
-    """Legacy: skill has no path patterns (pre-IG-543 partition)."""
+    """Legacy: skill has no path patterns (pre-partition)."""
     if entry.paths is None:
         return True
     normalized = _normalize_patterns(entry.paths)

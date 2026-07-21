@@ -1,4 +1,4 @@
-"""Plan subagent factory (RFC-618)."""
+"""Plan subagent factory."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Base class for durability backends using AsyncPersistStore (IG-258 Phase 2: async methods)."""
+"""Base class for durability backends using AsyncPersistStore (async methods)."""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ class BasePersistStoreDurability:
     """Base implementation of DurabilityProtocol using AsyncPersistStore.
 
     Provides thread lifecycle management.  State persistence (checkpoints,
-    artifacts) is handled by ``RunArtifactStore`` (RFC-0010).
+    artifacts) is handled by ``RunArtifactStore``.
     Subclasses only need to provide an AsyncPersistStore instance.
 
-    IG-258 Phase 2: All PersistStore methods are now async.
+    All PersistStore methods are async.
     """
 
     def __init__(self, persist_store: AsyncPersistStore) -> None:
@@ -199,7 +199,7 @@ class BasePersistStoreDurability:
         return results
 
     async def _update_thread_index(self, thread_id: str, action: str = "add") -> None:
-        """Update the thread index for list_threads() (async, IG-258 Phase 2).
+        """Update the thread index for list_threads() (async).
 
         Args:
             thread_id: Thread ID to add/remove from index.
@@ -216,7 +216,7 @@ class BasePersistStoreDurability:
         await self._store.save(self._thread_index_key, list(thread_ids))
 
     async def _find_threads_by_prefix(self, prefix: str) -> list[ThreadInfo]:
-        """Find threads whose IDs start with the given prefix (async, IG-258 Phase 2).
+        """Find threads whose IDs start with the given prefix (async).
 
         Args:
             prefix: Thread ID prefix to search for.

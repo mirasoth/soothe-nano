@@ -1,4 +1,4 @@
-"""Plan subagent package (RFC-618).
+"""Plan subagent package.
 
 Structured planning delegate for markdown execution plans.
 """

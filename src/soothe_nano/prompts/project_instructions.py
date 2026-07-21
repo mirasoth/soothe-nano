@@ -1,4 +1,4 @@
-"""Load workspace AGENTS.md (preferred) or CLAUDE.md for system-message AGENT_INSTRUCTIONS (RFC-214).
+"""Load workspace AGENTS.md (preferred) or CLAUDE.md for system-message AGENT_INSTRUCTIONS.
 
 Progressive disclosure: small files inline verbatim; larger files emit a
 paragraph-clean headline plus a ``<NOTE>`` hint that points the LLM at

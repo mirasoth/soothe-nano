@@ -1,6 +1,6 @@
 """SQLite-backed key-value store implementing PersistStore protocol.
 
-IG-258 Phase 2: Async operations to eliminate sync blocking.
+Async operations to eliminate sync blocking.
 """
 
 from __future__ import annotations
@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 class SQLitePersistStore:
-    """SQLite-backed key-value persistence with async operations (IG-258 Phase 2).
+    """SQLite-backed key-value persistence with async operations.
 
-    Phase 2 improvements:
+    Async improvements:
     - Async methods (no blocking event loop)
     - asyncio.Lock instead of threading.Lock
     - Connection pool for concurrent reads
@@ -36,14 +36,14 @@ class SQLitePersistStore:
         self,
         db_path: str | None = None,
         namespace: str = "default",
-        reader_pool_size: int = 5,  # IG-258 Phase 2
+        reader_pool_size: int = 5,
     ) -> None:
-        """Initialize SQLite persist store with async support (Phase 2).
+        """Initialize SQLite persist store with async support.
 
         Args:
             db_path: Path to SQLite database file. Defaults to $SOOTHE_HOME/soothe.db.
             namespace: Namespace for key isolation.
-            reader_pool_size: Number of reader connections for concurrent reads (Phase 2).
+            reader_pool_size: Number of reader connections for concurrent reads.
         """
         self._namespace = namespace
         self._db_path = db_path or str(Path(SOOTHE_HOME) / "soothe.db")
@@ -56,7 +56,7 @@ class SQLitePersistStore:
         self._reader_pool: list[sqlite3.Connection] = []
         self._pool_semaphore = asyncio.Semaphore(reader_pool_size)
 
-        # Async lock (doesn't block event loop) - IG-258 Phase 2
+        # Async lock (doesn't block event loop)
         self._lock = asyncio.Lock()
 
         # Writer connection must not be used concurrently across thread-pool workers.
@@ -70,7 +70,7 @@ class SQLitePersistStore:
         )
 
     async def _ensure_writer_connection(self) -> sqlite3.Connection:
-        """Lazy writer connection initialization with WAL mode (Phase 2).
+        """Lazy writer connection initialization with WAL mode.
 
         Returns:
             Active SQLite writer connection.
@@ -105,7 +105,7 @@ class SQLitePersistStore:
         logger.info("SQLite writer connection initialized at %s", self._db_path)
 
     async def _get_reader_connection(self) -> sqlite3.Connection:
-        """Get reader connection from pool (Phase 2).
+        """Get reader connection from pool.
 
         Uses semaphore to limit concurrent reads to pool size.
 
@@ -169,7 +169,7 @@ class SQLitePersistStore:
         conn.commit()
 
     async def save(self, key: str, data: Any) -> None:
-        """Persist data under the given key (async, IG-258 Phase 2).
+        """Persist data under the given key (async).
 
         Args:
             key: Storage key.
@@ -204,7 +204,7 @@ class SQLitePersistStore:
         conn.commit()
 
     async def load(self, key: str) -> Any | None:
-        """Load data for the given key (async, IG-258 Phase 2).
+        """Load data for the given key (async).
 
         Args:
             key: Storage key.
@@ -246,7 +246,7 @@ class SQLitePersistStore:
         return row["data"]
 
     async def delete(self, key: str) -> None:
-        """Delete data for the given key (async, IG-258 Phase 2).
+        """Delete data for the given key (async).
 
         Args:
             key: Storage key.
@@ -271,7 +271,7 @@ class SQLitePersistStore:
         conn.commit()
 
     async def list_keys(self, namespace: str | None = None) -> list[str]:
-        """List all keys in the given namespace (async, IG-258 Phase 2).
+        """List all keys in the given namespace (async).
 
         Args:
             namespace: Namespace to list keys from. Defaults to store namespace.
@@ -305,7 +305,7 @@ class SQLitePersistStore:
         return [row["key"] for row in rows]
 
     async def close(self) -> None:
-        """Commit pending changes and close all connections (async, Phase 2)."""
+        """Commit pending changes and close all connections (async)."""
         async with self._writer_lock:
             async with self._lock:
                 # Close writer connection

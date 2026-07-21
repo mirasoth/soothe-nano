@@ -1,4 +1,4 @@
-"""RFC-105: Budgeted skill-listing formatter (Claude Code parity)."""
+"""Budgeted skill-listing formatter (Claude Code parity)."""
 
 from __future__ import annotations
 

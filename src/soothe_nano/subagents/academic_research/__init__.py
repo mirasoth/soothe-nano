@@ -1,11 +1,11 @@
-"""academic_research subagent — iterative academic literature research (RFC-619)."""
+"""academic_research subagent — iterative academic literature research."""
 
 from typing import Any
 
 from soothe_sdk.plugin import plugin, subagent
 
 from . import (
-    events as _events,  # noqa: F401 — register soothe.subagent.academic_research.* wire types
+    events as _events,  # noqa: F401 — register academic_research wire event types
 )
 from .implementation import create_academic_research_subagent
 from .protocol import AcademicResearchConfig, GatherContext, SourceResult

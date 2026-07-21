@@ -96,7 +96,7 @@ ModelRole = Literal["default", "fast", "think", "image", "ocr", "embedding"]
 - ``fast``: Cheap/fast operations (intent classification, routing, scenario classification,
   deep_research subagents, memory extraction, document/audio tooling).
 - ``think``: Stronger reasoning (planning, consensus validation, backoff reasoning).
-- ``image``: Vision-capable model (image analysis, daemon vision preflight).
+- ``image``: Vision-capable model (image analysis, vision preflight).
 - ``ocr``: Dedicated OCR / document text extraction model.
 - ``embedding``: Embedding model (MemU vector search, semantic memory).
 """
@@ -137,7 +137,7 @@ class ModelRouter(BaseModel):
 class RouterProfile(BaseModel):
     """Named preset combining a :class:`ModelRouter`.
 
-    Use with ``active_router_profile`` on :class:`~soothe.config.settings.SootheConfig`
+    Use with ``active_router_profile`` on :class:`SootheConfig`
     to switch between deployment targets (cloud vs local) without editing role mappings.
 
     Args:
@@ -282,7 +282,7 @@ class MCPAuthHeaders(BaseModel):
 
 
 class MCPServerConfig(BaseModel):
-    """Configuration for a single MCP server (RFC-412).
+    """Configuration for a single MCP server.
 
     Supports four transports via MCPTransport enum. Compatible with
     `langchain_mcp_adapters` connection types.
@@ -462,14 +462,14 @@ class ToolsConfig(BaseModel):
 class PersistenceConfig(BaseModel):
     """Unified persistence settings for protocol backends.
 
-    RFC-612: Multi-database PostgreSQL architecture for lifecycle isolation,
+    Multi-database PostgreSQL architecture for lifecycle isolation,
     backup granularity, and pgvector extension requirements.
 
     Args:
-        postgres_base_dsn: Base PostgreSQL DSN without database name (RFC-612).
+        postgres_base_dsn: Base PostgreSQL DSN without database name.
             Example: "postgresql://user:pass@host:port"
             Used with postgres_databases to construct full DSNs for each component.
-        postgres_databases: Named database mapping for each component (RFC-612).
+        postgres_databases: Named database mapping for each component.
             Maps component names to database names.
             Default: {"checkpoints": "soothe_checkpoints", "metadata": "soothe_metadata",
                       "vectors": "soothe_vectors", "memory": "soothe_memory"}
@@ -477,9 +477,9 @@ class PersistenceConfig(BaseModel):
         default_backend: Default backend for new protocols (can be overridden).
     """
 
-    # RFC-612: Multi-database architecture
+    # Multi-database PostgreSQL architecture
     postgres_base_dsn: str | None = None
-    """Base PostgreSQL DSN without database name (RFC-612)."""
+    """Base PostgreSQL DSN without database name."""
 
     postgres_databases: dict[str, str] = {
         "checkpoints": "soothe_checkpoints",
@@ -487,7 +487,7 @@ class PersistenceConfig(BaseModel):
         "vectors": "soothe_vectors",
         "memory": "soothe_memory",
     }
-    """Named database mapping for each component (RFC-612).
+    """Named database mapping for each component.
 
     Note: LangGraph checkpoints share the process checkpoints database
     with separate table names for schema isolation.
@@ -574,7 +574,7 @@ class PersistenceConfig(BaseModel):
         ),
     )
 
-    # IG-500: Loop archival configuration
+    # Loop archival configuration
     archive_enabled: bool = Field(
         default=True,
         description="Enable loop checkpoint archival on /clear command.",
@@ -637,7 +637,7 @@ class PlannerProtocolConfig(BaseModel):
 
     model: str = "think"
 
-    # Config fields (IG-150 Phase 4)
+    # Config fields
     routing: Literal["auto", "always_direct", "always_planner"] = "auto"
 
     @field_validator("routing", mode="before")
@@ -755,14 +755,14 @@ class LLMRateLimitConfig(BaseModel):
         concurrent_limit: Max concurrent in-flight LLM calls per thread.
         call_timeout_seconds: Per-LLM-call timeout.
         call_timeout_max_seconds: Upper bound for retry timeout escalation.
-        retry_on_timeout: Enable retry with timeout escalation (IG-295).
-        max_timeout_retries: Max retry attempts after timeout (IG-295).
-        timeout_retry_multiplier: Timeout multiplier on retry (IG-295).
-        retry_on_rate_limit: Enable retry on HTTP 429 rate limit errors (IG-499).
-        max_rate_limit_retries: Max retry attempts after 429 error (IG-499).
-        rate_limit_backoff_base: Exponential backoff base in seconds (IG-499).
-        rate_limit_backoff_max: Maximum backoff wait in seconds (IG-499).
-        respect_retry_after_header: Use retry-after header from API when present (IG-499).
+        retry_on_timeout: Enable retry with timeout escalation.
+        max_timeout_retries: Max retry attempts after timeout.
+        timeout_retry_multiplier: Timeout multiplier on retry.
+        retry_on_rate_limit: Enable retry on HTTP 429 rate limit errors.
+        max_rate_limit_retries: Max retry attempts after 429 error.
+        rate_limit_backoff_base: Exponential backoff base in seconds.
+        rate_limit_backoff_max: Maximum backoff wait in seconds.
+        respect_retry_after_header: Use retry-after header from API when present.
         rate_limit_retry_timeout_seconds: Per-attempt timeout after a 429 (shorter than normal calls).
     """
 
@@ -772,15 +772,15 @@ class LLMRateLimitConfig(BaseModel):
     )
     rpm_limit: int = Field(default=60, ge=1, le=10_000)
     concurrent_limit: int = Field(default=8, ge=1, le=500)
-    # IG-504: Increased timeouts for robust step execution (600s default)
+    # Increased timeouts for robust step execution (600s default)
     call_timeout_seconds: int = Field(default=600, ge=30, le=3600)
     call_timeout_max_seconds: int = Field(default=900, ge=60, le=3600)
     retry_on_timeout: bool = True
-    # IG-504: Increased retries for robust step execution (10 default)
+    # Increased retries for robust step execution (10 default)
     max_timeout_retries: int = Field(default=10, ge=0, le=15)
     timeout_retry_multiplier: float = Field(default=1.2, ge=1.0, le=5.0)
 
-    # IG-499: HTTP 429 rate limit retry configuration
+    # HTTP 429 rate limit retry configuration
     retry_on_rate_limit: bool = Field(
         default=True,
         description="Retry LLM calls on HTTP 429 rate limit errors",
@@ -838,7 +838,7 @@ class LoopToolOutputConfig(BaseModel):
 
 
 class ToolTimeoutConfig(BaseModel):
-    """Tool timeout middleware configuration (IG-511).
+    """Tool timeout middleware configuration.
 
     Wraps tool invocations with configurable timeouts, preventing indefinite hangs
     from tools that lack internal timeout guards.
@@ -1047,7 +1047,7 @@ class ObservabilityConfig(BaseModel):
 
     console: ConsoleLoggingConfig = Field(
         default_factory=ConsoleLoggingConfig,
-        description="Console logging for daemon foreground and optional stderr/stdout logging",
+        description="Console logging for foreground runs and optional stderr/stdout logging",
     )
 
     global_history: GlobalHistoryConfig = Field(
@@ -1093,7 +1093,7 @@ class ObservabilityConfig(BaseModel):
 
 
 class FailureIntentConfig(BaseModel):
-    """Failure intent classification for reflection (IG-433)."""
+    """Failure intent classification for reflection."""
 
     enabled: bool = True
     llm_confidence_threshold: float = Field(
@@ -1105,13 +1105,13 @@ class FailureIntentConfig(BaseModel):
 
 
 class StructuredPlanConfig(BaseModel):
-    """Structured LLM plan parsing (IG-433)."""
+    """Structured LLM plan parsing."""
 
     enabled: bool = True
 
 
 class OptimizationConfig(BaseModel):
-    """Keyword/heuristic optimization settings (IG-433)."""
+    """Keyword/heuristic optimization settings."""
 
     failure_intent: FailureIntentConfig = Field(default_factory=FailureIntentConfig)
     structured_plan: StructuredPlanConfig = Field(default_factory=StructuredPlanConfig)
@@ -1148,9 +1148,9 @@ class FilesystemMiddlewareConfig(BaseModel):
 
 
 class WorkspaceMountConfig(BaseModel):
-    """Path mapping for containerized daemon deployments (RFC-621).
+    """Path mapping for containerized deployments.
 
-    When the daemon runs inside a Docker container, client workspace paths
+    When the agent runs inside a Docker container, client workspace paths
     must be translated to container paths. Set both host_root and
     container_root to enable; leave both unset for local runs.
     """
@@ -1181,7 +1181,7 @@ class WorkspaceMountConfig(BaseModel):
 
 
 class CodeInterpreterConfig(BaseModel):
-    """Configuration for CodeInterpreterMiddleware (IG-423).
+    """Configuration for CodeInterpreterMiddleware.
 
     Enables embedded QuickJS interpreter for programmatic tool calling and
     stateful code execution within the agent loop.
@@ -1230,7 +1230,7 @@ class CodeInterpreterConfig(BaseModel):
 
 
 class ProgressiveSkillsConfig(BaseModel):
-    """RFC-105 / IG-543: Tunables for progressive skill listing and discovery."""
+    """Tunables for progressive skill listing and discovery."""
 
     budget_pct: float = Field(
         default=0.01,
@@ -1338,7 +1338,7 @@ class ProgressiveToolsConfig(BaseModel):
 
 
 class ProgressiveMCPConfig(BaseModel):
-    """RFC-412: Tunables for progressive MCP tool listing budget."""
+    """Tunables for progressive MCP tool listing budget."""
 
     budget_pct: float = Field(
         default=0.01,
@@ -1362,7 +1362,7 @@ class ProgressiveMCPConfig(BaseModel):
 
 
 class RoleRoutingConfig(BaseModel):
-    """Per-hop model role routing for CoreAgent ReAct loop (IG-545).
+    """Per-hop model role routing for CoreAgent ReAct loop.
 
     Args:
         enabled: When true, ``RoleRoutingMiddleware`` swaps the chat model per hop.
@@ -1393,13 +1393,13 @@ class RoleRoutingConfig(BaseModel):
 
 
 class AgentRuntimeConfig(BaseModel):
-    """CoreAgent startup and materialization tuning (IG-506).
+    """CoreAgent startup and materialization tuning.
 
     Args:
         lazy_core_agent: Defer ``create_deep_agent`` until first Layer-1 execution.
         general_purpose_subagent: Expose soothe_deepagents ``general-purpose`` delegate via ``task``.
         recursion_limit: LangGraph recursion limit for CoreAgent graph execution.
-        role_routing: Per-hop orchestration vs generation model roles (IG-545).
+        role_routing: Per-hop orchestration vs generation model roles.
     """
 
     lazy_core_agent: bool = Field(
@@ -1611,7 +1611,7 @@ class SecurityConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Model Knowledge Cutoff Constants (RFC-104)
+# Model Knowledge Cutoff Constants
 # ---------------------------------------------------------------------------
 
 MODEL_KNOWLEDGE_CUTOFFS: dict[str, str] = {

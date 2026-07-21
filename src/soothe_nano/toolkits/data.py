@@ -1,6 +1,6 @@
-"""Data inspection tools for tabular and document files (RFC-0016).
+"""Data inspection tools for tabular and document files.
 
-Provides single-purpose tools for data/document inspection following RFC-0016:
+Provides single-purpose tools for data/document inspection:
 - inspect_data: Inspect data file structure
 - summarize_data: Get statistical summary
 - check_data_quality: Validate data quality

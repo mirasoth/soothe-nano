@@ -24,7 +24,7 @@ class PostgreSQLPersistStore:
     - Async-safe lazy initialization with asyncio.Lock
     - Concurrent operation support (10 connections by default)
 
-    IG-258 Phase 2: Async methods with connection pooling matching PostgreSQL checkpointer pattern.
+    Async methods with connection pooling matching the PostgreSQL checkpointer pattern.
     """
 
     def __init__(

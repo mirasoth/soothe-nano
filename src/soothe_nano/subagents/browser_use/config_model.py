@@ -1,4 +1,4 @@
-"""Typed YAML for the browser_use community subagent (IG-415)."""
+"""Typed YAML for the browser_use community subagent."""
 
 from __future__ import annotations
 

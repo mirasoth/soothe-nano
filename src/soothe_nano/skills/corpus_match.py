@@ -1,4 +1,4 @@
-"""Corpus matching helpers for skill name/tag prefetch (RFC-105)."""
+"""Corpus matching helpers for skill name/tag prefetch."""
 
 from __future__ import annotations
 

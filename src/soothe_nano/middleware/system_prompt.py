@@ -16,7 +16,7 @@ from soothe_nano.utils.text_preview import preview_first
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from soothe_sdk.intention.models import RoutingClassification  # IG-226
+    from soothe_sdk.intention.models import RoutingClassification
     from soothe_sdk.protocols.memory import MemoryItem
 
     from soothe_nano.config import SootheConfig
@@ -48,7 +48,7 @@ class _SystemPromptState(TypedDict):
     them survive across nodes.
 
     Declares:
-      - ``routing_classification`` so task complexity reaches the prompt builder.
+      - the injected task classification so task complexity reaches the prompt builder.
       - ``workspace`` so the executor's ``_execute_graph_input``
         and ``WorkspaceContextMiddleware.abefore_agent`` writes propagate to
         ``modify_request``. Without this declaration, ``state.get("workspace")``
@@ -84,8 +84,8 @@ class SystemPromptMiddleware(AgentMiddleware):
     - medium: Standard prompt with guidelines
     - complex: Full prompt with all context
 
-    This middleware expects ``routing_classification`` in agent state before the
-    first model call (host inject).
+    This middleware expects the injected task classification in agent state
+    before the first model call.
 
     Args:
         config: Soothe configuration for resolving prompt templates.
@@ -123,7 +123,7 @@ class SystemPromptMiddleware(AgentMiddleware):
 
     @staticmethod
     def _langfuse_system_hint_push(request: ModelRequest[ContextT]) -> Token | None:
-        """Push effective system prompt for Langfuse generation input (IG-385).
+        """Push effective system prompt for Langfuse generation input.
 
         Returns:
             ContextVar reset token from :func:`publish_langfuse_system_prompt_hint`, or None.
@@ -250,7 +250,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         *,
         env_section: str,
     ) -> list[str]:
-        """Workspace-stable blocks appended at the system-prompt tail (RFC-214).
+        """Workspace-stable blocks appended at the system-prompt tail.
 
         Order: ENVIRONMENT → WORKSPACE_RULES → WORKSPACE → AGENT_INSTRUCTIONS.
         """
@@ -307,7 +307,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         return len(messages) > 1
 
     def _get_base_prompt_core(self, complexity: str) -> str:
-        """Behavioral system prompt for complexity (no volatile date line; RFC-104 cache order)."""
+        """Behavioral system prompt for complexity (no volatile date line; cache order)."""
         from soothe_nano.prompts import (
             _MEDIUM_SYSTEM_PROMPT,
             _SIMPLE_SYSTEM_PROMPT,
@@ -333,7 +333,7 @@ class SystemPromptMiddleware(AgentMiddleware):
     def _get_prompt_for_complexity(
         self, complexity: str, state: dict[str, Any] | None = None
     ) -> str:
-        """Build volatility-tiered system prompt (RFC-214).
+        """Build volatility-tiered system prompt.
 
         Static Tier (session-stable, maximum cache hits):
         - Base behavioral prompt + tool orchestration guide
@@ -416,7 +416,7 @@ class SystemPromptMiddleware(AgentMiddleware):
 
         # ── Gated static blocks ─────────────────────────────────────────
 
-        # Memory summary — long-term persona/preferences only (RFC-214)
+        # Memory summary — long-term persona/preferences only
         if state and self._tool_trigger_registry:
             messages = state.get("messages", [])
             recent_tools = self._extract_recent_tool_calls(messages)
@@ -476,7 +476,7 @@ class SystemPromptMiddleware(AgentMiddleware):
                 if tool_section:
                     semi_static_sections.append(tool_section.strip())
 
-        # RFC-105: Progressive skill loading blocks
+        # Progressive skill loading blocks
         avail_block = state.get("_available_skills_block") if state else None
         skill_ctx_blocks = (state.get("_skill_context_blocks") or []) if state else []
         if avail_block:
@@ -489,7 +489,7 @@ class SystemPromptMiddleware(AgentMiddleware):
             semi_static_sections.append(SKILL_CONTEXT_ACTIVE_GUIDE)
         semi_static_sections.extend(skill_ctx_blocks)
 
-        # RFC-412: MCP deferred tool listing
+        # MCP deferred tool listing
         mcp_block = state.get("_available_mcp_tools_block") if state else None
         if mcp_block:
             static_sections.append(mcp_block)
@@ -520,7 +520,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         """Build a prompt for the given classification.
 
         Falls back to complexity-only optimization since capability_domains
-        were removed in RFC-0016 (unified planning).
+        were removed in unified planning.
 
         Args:
             classification: LLM classification with task_complexity.
@@ -546,7 +546,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         )
 
     def _build_memory_section(self, memories: list[MemoryItem]) -> str:
-        """Build <MEMORY_SUMMARY> XML for long-term memories (RFC-214).
+        """Build <MEMORY_SUMMARY> XML for long-term memories.
 
         Only long-term persona/preferences go here (semi-static, goal-stable).
         Per-turn situational recall belongs in the user message envelope
@@ -595,7 +595,7 @@ class SystemPromptMiddleware(AgentMiddleware):
 
     @staticmethod
     def _extract_execution_hints_from_state(state: Any) -> str | None:
-        """Extract execution hints text from state for user message envelope (RFC-214).
+        """Extract execution hints text from state for user message envelope.
 
         The executor builds hints directly into the user message envelope
         (UserMessageBuilder.build_execute_step_message), not via middleware.
@@ -613,7 +613,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         return raw[idx + len(_EXECUTION_HINTS_MARKER) :].strip()
 
     def modify_request(self, request: ModelRequest[ContextT]) -> ModelRequest[ContextT]:
-        """Replace system prompt based on LLM classification (RFC-214 volatility tiers).
+        """Replace system prompt based on LLM classification (volatility tiers).
 
         Builds the system prompt using static + semi-static tiers only.
         Execution hints are extracted from state and stored in
@@ -673,7 +673,7 @@ class SystemPromptMiddleware(AgentMiddleware):
 
         optimized_prompt = self._get_prompt_for_complexity(complexity, state_dict)
 
-        # Extract execution hints from state for user message envelope (RFC-214)
+        # Extract execution hints from state for user message envelope
         hints_text = self._extract_execution_hints_from_state(request.state)
         if hints_text:
             request.state["_soothe_execution_hints"] = hints_text

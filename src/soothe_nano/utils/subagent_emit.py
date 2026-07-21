@@ -1,4 +1,4 @@
-"""Emit curated ``soothe.subagent.*`` wire events with truncation (IG-338)."""
+"""Emit curated ``soothe.subagent.*`` wire events with truncation."""
 
 from __future__ import annotations
 

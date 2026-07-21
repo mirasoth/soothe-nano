@@ -1,4 +1,4 @@
-"""Plan subagent LangGraph (RFC-618).
+"""Plan subagent LangGraph.
 
 Agentic plan design loops, then a single delegate final message.
 Readonly workspace recon runs on execute-step threads (file tools), not a separate subagent.

@@ -334,7 +334,7 @@ class LocalFilesystem(UnifiedFilesystem):
         limit: int | None = None,
         encoding: str = "utf-8",
     ) -> ReadResult:
-        """Async read file contents using aiofiles (IG-517)."""
+        """Async read file contents using aiofiles."""
         resolved = self._resolve_path(path, allow_host_absolute=True)
 
         if not resolved.exists():

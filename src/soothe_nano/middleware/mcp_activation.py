@@ -1,4 +1,4 @@
-"""RFC-412: MCP progressive tool activation (search, promote, bind)."""
+"""MCP progressive tool activation (search, promote, bind)."""
 
 from __future__ import annotations
 

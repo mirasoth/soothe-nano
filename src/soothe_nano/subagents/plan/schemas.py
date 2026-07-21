@@ -1,4 +1,4 @@
-"""Pydantic schemas for the plan subagent (RFC-618)."""
+"""Pydantic schemas for the plan subagent."""
 
 from __future__ import annotations
 

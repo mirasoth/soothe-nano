@@ -248,7 +248,7 @@ class PluginRegistry:
         ]
 
     def get_tool_metadata(self, tool_name: str) -> dict[str, Any] | None:
-        """Return RFC-210 metadata for a plugin-registered tool by invoke name.
+        """Return trigger/context metadata for a plugin-registered tool by invoke name.
 
         Used by ``ToolTriggerRegistry`` / ``ToolContextRegistry``. Resolves metadata
         from ``@tool``-decorated callables and from LangChain ``BaseTool`` instances
@@ -268,7 +268,7 @@ class PluginRegistry:
         return None
 
     def get_subagent_metadata(self, subagent_name: str) -> dict[str, Any] | None:
-        """Return RFC-210 metadata for a plugin subagent factory by name.
+        """Return trigger/context metadata for a plugin subagent factory by name.
 
         Args:
             subagent_name: Subagent name (e.g. ``claude``).

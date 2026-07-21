@@ -1,4 +1,4 @@
-"""BrowserUse subagent wire events (curated ``soothe.subagent.*``, IG-338)."""
+"""BrowserUse subagent wire events (curated subagent event types)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from soothe_sdk.core.verbosity import VerbosityTier
 
 from soothe_nano.events.catalog import register_event
 
-# Event type constants defined locally (self-contained pattern, RFC-0018)
+# Event type constants defined locally (self-contained pattern)
 SUBAGENT_BROWSER_USE_STARTED = "soothe.subagent.browser_use.started"
 SUBAGENT_BROWSER_USE_COMPLETED = "soothe.subagent.browser_use.completed"
 SUBAGENT_BROWSER_USE_STEP_COMPLETED = "soothe.subagent.browser_use.step.completed"

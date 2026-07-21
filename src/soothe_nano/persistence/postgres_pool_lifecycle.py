@@ -1,4 +1,4 @@
-"""Shared helpers for psycopg AsyncConnectionPool lifecycle (IG-406)."""
+"""Shared helpers for psycopg AsyncConnectionPool lifecycle."""
 
 from __future__ import annotations
 

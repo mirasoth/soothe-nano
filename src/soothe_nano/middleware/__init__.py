@@ -5,11 +5,11 @@ This package provides middleware implementations:
 - SystemPromptMiddleware: Dynamic prompt adjustment based on classification
 - LLMRateLimitMiddleware: Rate limiting at LLM level, not thread level
 - WorkspaceContextMiddleware: Thread-aware workspace ContextVar management
-- PerTurnModelMiddleware: Per-stream model override for daemon/TUI
+- PerTurnModelMiddleware: Per-stream model override for foreground/TUI
 - SootheFilesystemMiddleware: Extended filesystem tools middleware
-- CodeInterpreterMiddleware: Embedded QuickJS interpreter for programmatic tool calling (IG-423)
-- MCPActivationMiddleware: MCP progressive disclosure search, promote, bind (RFC-412)
-- ToolTimeoutMiddleware: Wrap tool calls with configurable timeout (IG-511)
+- CodeInterpreterMiddleware: Embedded QuickJS interpreter for programmatic tool calling
+- MCPActivationMiddleware: MCP progressive disclosure search, promote, bind
+- ToolTimeoutMiddleware: Wrap tool calls with configurable timeout
 - ToolEnforcementMiddleware: Request-time tool narrowing policies
 - ToolOptimizationMiddleware: Deterministic lookup reuse/dedup/search-consolidation policy
 - ProgressiveListingMiddleware: Prepare deferred listing blocks for system prompt

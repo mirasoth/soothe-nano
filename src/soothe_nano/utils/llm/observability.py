@@ -1,7 +1,7 @@
 """LLM token usage extraction, Langfuse-friendly ``llm_output`` enrichment, and debug logging.
 
 Moved from ``utils/observability/llm_token_observability.py`` to consolidate
-all LLM-related utilities under ``utils/llm/`` per RFC-627.
+all LLM-related utilities under ``utils/llm/``.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Per-hop model role routing for CoreAgent ReAct loop (IG-545)."""
+"""Per-hop model role routing for CoreAgent ReAct loop."""
 
 from __future__ import annotations
 

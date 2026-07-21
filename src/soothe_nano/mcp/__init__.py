@@ -1,4 +1,4 @@
-"""MCP Management package (RFC-412).
+"""MCP Management package.
 
 Provides per-agent MCP subsystem with:
 - Per-server connection sharing via langchain_mcp_adapters.MultiServerMCPClient

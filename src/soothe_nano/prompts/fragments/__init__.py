@@ -1,4 +1,4 @@
-"""Prefetched static CoreAgent prompt fragments for cache optimization (IG-183).
+"""Prefetched static CoreAgent prompt fragments for cache optimization.
 
 This module loads static XML fragments at import time to maximize prompt cache hit rate.
 All fragments are read once and cached as module constants.

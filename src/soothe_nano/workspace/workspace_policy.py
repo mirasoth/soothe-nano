@@ -3,10 +3,10 @@
 The multi-tenant / container-translation workspace policy helpers
 (``normalize_user_id``, ``user_id_for_hash``, ``compute_scoped_workspace_dir_name``,
 ``validate_client_workspace``, ``translate_client_path_to_container``,
-``translate_container_path_to_client``) were removed in IG-678 PR-4 — the host
-owns canonical copies in ``soothe.foundation.workspace.scoped`` /
-``.resolution``. This module keeps only ``resolve_workspace_for_tool_execution``
-and its private helpers, which have real in-nano callers.
+``translate_container_path_to_client``) were removed — the host owns canonical
+copies in its own workspace-scoped / resolution modules. This module keeps only
+``resolve_workspace_for_tool_execution`` and its private helpers, which have
+real in-nano callers.
 """
 
 from __future__ import annotations

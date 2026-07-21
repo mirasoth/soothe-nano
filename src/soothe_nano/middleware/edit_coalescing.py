@@ -1,4 +1,4 @@
-"""Edit coalescing middleware for batched file operations (IG-517).
+"""Edit coalescing middleware for batched file operations.
 
 Collects parallel edit tool calls within a detection window, groups them by file,
 and merges same-file edits into a single batched operation. This eliminates:

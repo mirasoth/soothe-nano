@@ -1,4 +1,4 @@
-"""Tool call args recording middleware (IG-519).
+"""Tool call args recording middleware.
 
 Lightweight middleware that captures tool-call kwargs for display purposes.
 Optimization logic (reuse/dedup/search policy) is owned by
@@ -28,7 +28,7 @@ class ToolCallArgsMiddleware(AgentMiddleware):
     stream code can attach them to unified wire ids (subagent display).
 
     This is a lightweight replacement for ToolConcurrencyMiddleware's
-    registry functionality, without the ineffective semaphore (IG-519).
+    registry functionality, without the ineffective semaphore.
     """
 
     name = "ToolCallArgsMiddleware"
@@ -47,7 +47,7 @@ class ToolCallArgsMiddleware(AgentMiddleware):
         Returns:
             Tool execution result.
         """
-        # Fast path: skip recording for batched operations (IG-517)
+        # Fast path: skip recording for batched operations
         metadata = getattr(request, "metadata", None) or {}
         if metadata.get("_batched"):
             return await handler(request)

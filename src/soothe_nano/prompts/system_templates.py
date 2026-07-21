@@ -14,7 +14,7 @@ from soothe_nano.prompts.fragments import (
 )
 
 # ---------------------------------------------------------------------------
-# Domain-scoped tool guides (RFC-0016)
+# Domain-scoped tool guides.
 # Updated to use single-purpose tools instead of unified dispatch tools.
 # Tool/subagent guides stay inline so tool surface changes ship in the same
 # module as the runtime tool registration.
@@ -165,7 +165,7 @@ def build_response_language_hint(language: object | None) -> str:
     )
 
 
-# Execute-step workspace path semantics (RFC-214 cache-stable tail).
+# Execute-step workspace path semantics (cache-stable tail).
 EXECUTE_WORKSPACE_RULES_FRAGMENT = (
     "<WORKSPACE_RULES>\n"
     "Project root is under <WORKSPACE><root>. Filesystem tools: workspace-relative "
@@ -190,7 +190,7 @@ def build_timestamp_xml_footer() -> str:
     """Append volatile clock to system prompts (bottom-right XML tag).
 
     User/ledger messages must not carry timestamps — they break prompt-cache
-    prefixes when replayed from the RFC-214 ledger.
+    prefixes when replayed from the ledger.
     """
     return f"<TIMESTAMP>\n{current_timestamp_iso()}\n</TIMESTAMP>"
 

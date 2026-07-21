@@ -6,7 +6,7 @@ This module consolidates all LLM calling and adaptation logic with:
 - Provider wrappers: Compatibility for limited OpenAI providers
 - Token observability: Langfuse-compatible token tracking
 
-Architecture (RFC-627):
+Architecture:
 - `types.py`: ProviderType enum, ModelRole alias
 - `registry.py`: Provider lookup and credential resolution
 - `factory.py`: LLMFactory class (model creation + caching)

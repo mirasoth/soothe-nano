@@ -434,7 +434,7 @@ class WorkspaceFilesystem(UnifiedFilesystem):
     ) -> BatchedEditResult:
         """Async apply multiple edit operations to a file in one read/modify/write cycle.
 
-        IG-517: Batched edit for coalescing middleware.
+        Batched edit for coalescing middleware.
         """
         return await self._local_fs.aedit_batched(path, operations, backup=backup)
 

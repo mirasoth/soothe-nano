@@ -1,4 +1,4 @@
-"""HTTP client tools via LangChain Community RequestsToolkit (IG-339).
+"""HTTP client tools via LangChain Community RequestsToolkit.
 
 Wraps ``langchain_community.agent_toolkits.openapi.toolkit.RequestsToolkit`` with
 Soothe configuration and safe defaults (disabled unless explicitly enabled).
@@ -47,7 +47,7 @@ class HttpRequestsToolkit:
             logger.warning(
                 "HttpRequestsToolkit: tools.http_requests.allow_dangerous_requests is false; "
                 "no HTTP tools will be registered. Set both enabled and "
-                "allow_dangerous_requests to true to opt in (see IG-339)."
+                "allow_dangerous_requests to true to opt in."
             )
             return []
 

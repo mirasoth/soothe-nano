@@ -1,4 +1,4 @@
-"""One-line summary for browser_use subagent completion display (IG-344)."""
+"""One-line summary for browser_use subagent completion display."""
 
 from __future__ import annotations
 

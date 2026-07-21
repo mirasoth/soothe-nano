@@ -3,7 +3,7 @@
 Ported from noesium's tabular_data toolkit. langchain has `create_csv_agent`
 but no direct equivalent for column inspection or data quality validation.
 
-IG-405: Uses backend_ops for virtual mode file operations.
+Uses backend_ops for virtual mode file operations.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def _load_dataframe(file_path: str, config: Any = None) -> Any:
 
     Supports CSV, TSV, Excel (.xlsx/.xls), JSON, and Parquet.
 
-    IG-405: Uses backend file operations for existence/size checks.
+    Uses backend file operations for existence/size checks.
 
     Args:
         file_path: Path to the data file.
@@ -48,7 +48,7 @@ def _load_dataframe(file_path: str, config: Any = None) -> Any:
 
     path = Path(file_path)
 
-    # IG-405: Use backend for existence/size check
+    # Use backend for existence/size check
     if not backend_file_exists(path, config=config):
         msg = f"File not found: {file_path}"
         raise FileNotFoundError(msg)

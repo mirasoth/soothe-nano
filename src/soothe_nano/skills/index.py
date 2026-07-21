@@ -40,9 +40,9 @@ class SkillIndexEntry:
     source: str  # "user"
     path: str
     mtime: float
-    paths: tuple[str, ...] | None = None  # RFC-105: conditional activation patterns
-    when_to_use: str | None = None  # RFC-105: multi-line guidance for listing
-    core: bool | None = None  # IG-543: True=core tier, False=deferred, None=inherit
+    paths: tuple[str, ...] | None = None  # conditional activation patterns
+    when_to_use: str | None = None  # multi-line guidance for listing
+    core: bool | None = None  # True=core tier, False=deferred, None=inherit
 
 
 @dataclass
@@ -215,7 +215,7 @@ class SkillIndex:
 
         for raw in data:
             try:
-                # Tolerate old cache rows missing RFC-105 fields
+                # Tolerate old cache rows missing newer fields
                 raw.setdefault("paths", None)
                 raw.setdefault("when_to_use", None)
                 raw.setdefault("core", None)

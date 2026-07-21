@@ -158,7 +158,7 @@ class SootheConfig(BaseSettings):
     def llm_factory(self) -> Any:
         """Lazy-initialized LLM factory.
 
-        Decouples model creation logic from config schema per RFC-627.
+        Decouples model creation logic from config schema.
         Returns an LLMFactory instance that handles model creation,
         caching, and provider-specific wrapper application.
 
@@ -403,7 +403,7 @@ class SootheConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _resolve_mcp_builtins(self) -> SootheConfig:
-        """Merge opt-in ``mcp_builtins`` names into ``mcp_servers`` (RFC-412)."""
+        """Merge opt-in ``mcp_builtins`` names into ``mcp_servers``."""
         if not self.mcp_builtins:
             return self
 
@@ -421,7 +421,7 @@ class SootheConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_mcp_server_names(self) -> SootheConfig:
-        """Ensure MCP server names are unique (RFC-412)."""
+        """Ensure MCP server names are unique."""
         if self.mcp_servers:
             names = [s.name for s in self.mcp_servers]
             duplicates = [n for n in names if names.count(n) > 1]
@@ -466,7 +466,7 @@ class SootheConfig(BaseSettings):
     """Tool group configurations. Each tool can be enabled/disabled and configured."""
 
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
-    """MCP server configurations (RFC-412). Server names must be unique."""
+    """MCP server configurations. Server names must be unique."""
 
     mcp_builtins: list[str] = Field(default_factory=list)
     """Opt-in builtin MCP server names (playwright, github, slack, postgres, gdrive).
@@ -477,7 +477,7 @@ class SootheConfig(BaseSettings):
     """
 
     progressive_mcp: ProgressiveMCPConfig = Field(default_factory=ProgressiveMCPConfig)
-    """RFC-412: Progressive MCP tool listing budget tunables."""
+    """Progressive MCP tool listing budget tunables."""
 
     plugins: list[PluginConfig] = Field(default_factory=list)
     """Plugin configurations. Third-party plugins can be loaded via entry points, config, or filesystem."""
@@ -486,7 +486,7 @@ class SootheConfig(BaseSettings):
     """SKILL.md source paths passed to SkillsMiddleware."""
 
     progressive_skills: ProgressiveSkillsConfig = Field(default_factory=ProgressiveSkillsConfig)
-    """RFC-105: Progressive skill listing budget and per-entry caps."""
+    """Progressive skill listing budget and per-entry caps."""
 
     progressive_tools: ProgressiveToolsConfig = Field(default_factory=ProgressiveToolsConfig)
     """Progressive builtin-tool loading: core tier bound, deferred tools listed."""
@@ -528,10 +528,10 @@ class SootheConfig(BaseSettings):
     """Filesystem middleware configuration."""
 
     workspace_mount: WorkspaceMountConfig = Field(default_factory=WorkspaceMountConfig)
-    """Container workspace path mapping (RFC-621)."""
+    """Container workspace path mapping."""
 
     optimization: OptimizationConfig = Field(default_factory=OptimizationConfig)
-    """Semantic optimization for risk and relationship heuristics (IG-433)."""
+    """Semantic optimization for risk and relationship heuristics."""
 
     # --- Vector store config ---
 
@@ -552,7 +552,7 @@ class SootheConfig(BaseSettings):
     # --- Persistence helpers ---
 
     def resolve_postgres_dsn_for_database(self, db_key: str) -> str:
-        """Resolve PostgreSQL DSN for a specific database component (RFC-612).
+        """Resolve PostgreSQL DSN for a specific database component.
 
         Constructs full DSN from base_dsn + database name, with environment
         variable resolution.
@@ -566,7 +566,7 @@ class SootheConfig(BaseSettings):
         Raises:
             ValueError: If db_key is not in postgres_databases mapping.
         """
-        # Check for RFC-612 multi-database configuration
+        # Check for multi-database configuration
         if self.persistence.postgres_base_dsn:
             base_dsn = _resolve_env(self.persistence.postgres_base_dsn)
 
@@ -586,13 +586,13 @@ class SootheConfig(BaseSettings):
     def resolve_persistence_postgres_dsn(self) -> str:
         """Resolve the effective PostgreSQL DSN for persistence components.
 
-        Uses RFC-612 multi-database architecture when ``postgres_base_dsn`` is set;
+        Uses the multi-database PostgreSQL architecture when ``postgres_base_dsn`` is set;
         otherwise uses ``soothe_postgres_dsn``.
 
         Returns:
             The configured DSN for context/memory/durability/checkpointer.
         """
-        # Prefer RFC-612 multi-database configuration
+        # Prefer multi-database configuration
         if self.persistence.postgres_base_dsn:
             # Use checkpoints database as default for checkpointer
             return self.resolve_postgres_dsn_for_database("checkpoints")
@@ -666,7 +666,7 @@ class SootheConfig(BaseSettings):
                 )
                 if resolved:
                     kwargs["dsn"] = resolved
-            # RFC-612: Auto-resolve vectors database if no explicit DSN
+            # Auto-resolve vectors database if no explicit DSN
             elif self.persistence.postgres_base_dsn:
                 kwargs["dsn"] = self.resolve_postgres_dsn_for_database("vectors")
 
@@ -885,7 +885,7 @@ class SootheConfig(BaseSettings):
         """Create a chat model from an explicit ``provider:model`` string (per-turn overrides).
 
         Delegates to ``llm_factory.create_chat_model_for_spec``. All model creation logic
-        is handled by LLMFactory per RFC-627.
+        is handled by LLMFactory.
 
         Args:
             model_spec: Resolved model string, e.g. ``anthropic:claude-sonnet-4-5``.
@@ -903,7 +903,7 @@ class SootheConfig(BaseSettings):
         """Create an ``Embeddings`` instance for the requested role with caching.
 
         Delegates to ``llm_factory.create_embedding_model``. All embedding creation logic
-        (DashScope special handling, caching) is handled by LLMFactory per RFC-627.
+        (DashScope special handling, caching) is handled by LLMFactory.
 
         Returns:
             A configured langchain ``Embeddings`` instance.

@@ -1,4 +1,4 @@
-"""Exponential-backoff reconnect scheduler for remote transports (RFC-412).
+"""Exponential-backoff reconnect scheduler for remote transports.
 
 Remote transports (SSE, streamable_http, websocket) auto-reconnect on disconnect.
 Stdio servers do NOT auto-reconnect (parity with Claude Code).

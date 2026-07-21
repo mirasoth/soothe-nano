@@ -30,7 +30,7 @@ def resolve_durability(config: SootheConfig) -> DurabilityProtocol:
     """Instantiate the DurabilityProtocol implementation from config.
 
     Supports: postgresql, sqlite backends (binary choice).
-    Uses RFC-612 multi-database architecture for PostgreSQL (metadata database).
+    Uses multi-database PostgreSQL architecture (metadata database).
     """
     backend = config.resolve_durability_backend()  # Resolve inheritance
     if backend == "postgresql":
@@ -39,7 +39,7 @@ def resolve_durability(config: SootheConfig) -> DurabilityProtocol:
             from soothe_nano.backends.persistence import create_persist_store
             from soothe_nano.persistence.shared_metadata_pool import SharedMetadataPool
 
-            # RFC-612: Use dedicated metadata database
+            # Use dedicated metadata database.
             dsn = config.resolve_postgres_dsn_for_database("metadata")
             shared_pool = SharedMetadataPool.get_or_create_pool(config)
             persist_store = create_persist_store(
@@ -94,7 +94,7 @@ def resolve_checkpointer(config: SootheConfig) -> tuple[Checkpointer, Any] | Che
     """Resolve a LangGraph checkpointer from config.
 
     Uses persistence configuration for PostgreSQL or SQLite connection.
-    RFC-612: Uses dedicated checkpoints database for PostgreSQL.
+    Uses dedicated checkpoints database for PostgreSQL.
     No fallback to in-memory storage - persistent storage required.
 
     Returns:

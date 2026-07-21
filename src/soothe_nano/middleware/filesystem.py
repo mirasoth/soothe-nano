@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 def __getattr__(name: str) -> Any:
     """Lazy-export `ApplyDiffSchema` so module import does not hard-fail early.
 
-    Daemon startup imports `SootheFilesystemMiddleware` only. Requiring
+    Startup imports `SootheFilesystemMiddleware` only. Requiring
     `ApplyDiffSchema` at import time crashed environments that still had
     older soothe-deepagents installed even when the class was unused.
     """
@@ -152,7 +152,7 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
     - Path validation with validate_path()
     - StructuredTool.from_function() with infer_schema=False
 
-    IG-328: Supports thread workspace resolution via runtime.state["workspace"]
+    Supports thread workspace resolution via runtime.state["workspace"]
     without using deprecated callable backend pattern.
 
     Args:

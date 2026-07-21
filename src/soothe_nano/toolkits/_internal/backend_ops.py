@@ -1,4 +1,4 @@
-"""Backend-aware file operations for internal toolkits (IG-405).
+"""Backend-aware file operations for internal toolkits.
 
 Provides helper functions for file operations under SOOTHE_HOME (virtual home).
 

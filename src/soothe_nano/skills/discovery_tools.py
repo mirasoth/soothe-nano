@@ -1,4 +1,4 @@
-"""Model-facing skill discovery and invocation tools (RFC-105 / IG-543)."""
+"""Model-facing skill discovery and invocation tools."""
 
 from __future__ import annotations
 

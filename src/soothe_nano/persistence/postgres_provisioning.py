@@ -1,4 +1,4 @@
-"""Auto-provision PostgreSQL databases for RFC-612 multi-database layout.
+"""Auto-provision PostgreSQL databases for multi-database layout.
 
 Creates missing logical databases on first connect, then applies each database's
 ``sql/<database>/init.sql`` bootstrap script. Collection-specific vector tables and
@@ -42,7 +42,7 @@ def postgres_admin_dsn(base_dsn: str) -> str:
     """Return a DSN connected to the maintenance ``postgres`` database.
 
     Args:
-        base_dsn: Base DSN without database segment (RFC-612).
+        base_dsn: Base DSN without database segment.
 
     Returns:
         DSN targeting the ``postgres`` maintenance database.

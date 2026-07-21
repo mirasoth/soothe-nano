@@ -1,10 +1,10 @@
-"""deep_research subagent — iterative public web research (RFC-619)."""
+"""deep_research subagent — iterative public web research."""
 
 from typing import Any
 
 from soothe_sdk.plugin import plugin, subagent
 
-from . import events as _events  # noqa: F401 — register soothe.subagent.deep_research.* wire types
+from . import events as _events  # noqa: F401 — register deep_research wire event types
 from .implementation import create_deep_research_subagent
 from .protocol import DeepResearchConfig, GatherContext, SourceResult
 

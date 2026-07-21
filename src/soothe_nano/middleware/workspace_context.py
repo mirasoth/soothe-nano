@@ -1,4 +1,4 @@
-"""WorkspaceContextMiddleware for thread-aware workspace (RFC-103, IG-405)."""
+"""WorkspaceContextMiddleware for thread-aware workspace."""
 
 from __future__ import annotations
 
@@ -121,5 +121,5 @@ class WorkspaceContextMiddleware(AgentMiddleware):
 
         FrameworkFilesystem.clear_current_workspace(self._workspace_token)
         self._workspace_token = None
-        clear_virtual_mode_context()  # IG-405
+        clear_virtual_mode_context()
         return None

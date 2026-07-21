@@ -1,4 +1,4 @@
-"""RFC-104 dynamic context as nested XML (shared cache-aligned prefix)."""
+"""Dynamic context as nested XML (shared cache-aligned prefix)."""
 
 from __future__ import annotations
 
@@ -26,9 +26,9 @@ def _xml_attr(value: object) -> str:
 
 
 def build_soothe_environment_section(*, model: str) -> str:
-    """Build nested ENVIRONMENT XML block (RFC-207: removed SOOTHE_ prefix).
+    """Build nested ENVIRONMENT XML block (no SOOTHE_ prefix).
 
-    IG-183: Optimized for prompt caching - removed version attribute.
+    Optimized for prompt caching - removed version attribute.
 
     Args:
         model: Resolved default model id (e.g. from ``config.resolve_model`` for the default role).
@@ -51,7 +51,7 @@ def build_soothe_environment_section(*, model: str) -> str:
             f"<knowledge_cutoff>{_xml_text(cutoff)}</knowledge_cutoff>",
         ]
     )
-    # IG-183: Removed version attribute for cache optimization
+    # Removed version attribute for cache optimization.
     return f"<ENVIRONMENT>\n{inner}\n</ENVIRONMENT>"
 
 
@@ -90,9 +90,9 @@ def build_soothe_workspace_section(
     include_readme_excerpt: bool = False,
     readme_max_chars: int = 500,
 ) -> str:
-    """Build nested WORKSPACE XML block (RFC-207: removed SOOTHE_ prefix).
+    """Build nested WORKSPACE XML block (no SOOTHE_ prefix).
 
-    IG-183: Optimized for prompt caching - omits ``recent_commits`` in this section.
+    Optimized for prompt caching - omits ``recent_commits`` in this section.
 
     Args:
         workspace: Project root; when None, the process current working directory is used.
@@ -127,14 +127,14 @@ def build_soothe_workspace_section(
             lines.append(f"<readme_excerpt>{_xml_text(excerpt)}</readme_excerpt>")
 
     inner = "\n".join(lines)
-    # IG-183: Removed version attribute for cache optimization
+    # Removed version attribute for cache optimization.
     return f"<WORKSPACE>\n{inner}\n</WORKSPACE>"
 
 
 def build_soothe_thread_section(thread_context: dict[str, Any]) -> str:
     """Build SOOTHE_THREAD XML block from runner thread dict.
 
-    IG-183: Optimized for prompt caching - removed version attribute.
+    Optimized for prompt caching - removed version attribute.
     """
     thread_id = thread_context.get("thread_id", "unknown")
     goals = thread_context.get("active_goals", [])
@@ -151,14 +151,14 @@ def build_soothe_thread_section(thread_context: dict[str, Any]) -> str:
     if plan:
         parts.append(f"<current_plan>{_xml_text(preview_first(str(plan), 100))}</current_plan>")
     inner = "\n".join(parts)
-    # IG-183: Removed version attribute for cache optimization
+    # Removed version attribute for cache optimization.
     return f"<SOOTHE_THREAD>\n{inner}\n</SOOTHE_THREAD>"
 
 
 def build_soothe_protocols_section(protocol_summary: dict[str, Any]) -> str:
     """Build SOOTHE_PROTOCOLS XML block, or empty string when nothing is active.
 
-    IG-183: Optimized for prompt caching - removed version attribute.
+    Optimized for prompt caching - removed version attribute.
     """
     entries: list[str] = []
     proto_names = ["memory", "planner", "policy"]
@@ -175,7 +175,7 @@ def build_soothe_protocols_section(protocol_summary: dict[str, Any]) -> str:
     if not entries:
         return ""
     inner = "\n".join(entries)
-    # IG-183: Removed version attribute for cache optimization
+    # Removed version attribute for cache optimization.
     return f"<SOOTHE_PROTOCOLS>\n{inner}\n</SOOTHE_PROTOCOLS>"
 
 

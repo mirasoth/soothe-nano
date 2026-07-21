@@ -1,4 +1,4 @@
-"""RFC-105 / IG-543: Skill discovery, path activation, and body load."""
+"""Skill discovery, path activation, and body load."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ _PATH_KEYS: tuple[str, ...] = ("file_path", "path", "filepath", "file")
 
 
 class SkillActivationState(AgentState[Any]):
-    """Graph state channel for progressive skill disclosure (RFC-105)."""
+    """Graph state channel for progressive skill disclosure."""
 
     skill_activation: NotRequired[Annotated[dict[str, Any], merge_skill_activation]]
 

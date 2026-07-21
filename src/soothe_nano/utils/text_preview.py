@@ -196,7 +196,7 @@ def log_preview(text: str, chars: int = DEFAULT_PREVIEW_CHARS) -> str:
     return preview(text, mode="chars", first=chars, marker=_ELLIPSIS)
 
 
-# Hosts (e.g. Triarch) may append extracted file bodies after these markers.
+# Hosts may append extracted file bodies after these markers.
 # Logs should keep the user ask + attachment metadata, and omit the dump.
 _ATTACHMENT_BODY_MARKERS: tuple[str, ...] = ("--- Triarch attachments (extracted content) ---",)
 
@@ -326,7 +326,7 @@ def _preview_lines(
 
 
 # ---------------------------------------------------------------------------
-# Evidence-specific utilities (IG-148)
+# Evidence-specific utilities
 # ---------------------------------------------------------------------------
 
 
@@ -335,7 +335,7 @@ def create_output_summary(
     first_chars: int = 300,
     last_chars: int = 200,
 ) -> dict[str, str]:
-    """Create truncated output summary for Reason phase evidence (IG-148).
+    """Create truncated output summary for Reason phase evidence.
 
     Captures initial findings and final results without full output bloat.
     Used for CoreAgent execution evidence in Layer 2 Reason phase.

@@ -1,6 +1,6 @@
 """Runtime directory management for Soothe subagents.
 
-IG-405: Uses virtual home when virtual_mode=True for workspace isolation.
+Uses virtual home when virtual_mode=True for workspace isolation.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ _stream_router_profile: contextvars.ContextVar[str | None] = contextvars.Context
 
 
 def _get_virtual_home() -> Path:
-    """Get virtual home or host SOOTHE_HOME based on current context (IG-405).
+    """Get virtual home or host SOOTHE_HOME based on current context.
 
     Returns:
         Path to virtual /.soothe when virtual_mode=True, else host SOOTHE_HOME.
@@ -99,7 +99,7 @@ def stream_turn_overrides(
 
 
 def _ensure_dir_with_backend(path: Path) -> Path:
-    """Ensure directory exists, using backend when virtual mode (IG-405).
+    """Ensure directory exists, using backend when virtual mode.
 
     Args:
         path: Path to directory to create.

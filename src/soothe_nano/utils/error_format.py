@@ -65,7 +65,7 @@ def format_cli_error(
 def _simplify_error_message(error_type: str, error_msg: str) -> str:
     """Simplify verbose error messages for CLI display.
 
-    IG-295: Enhanced timeout errors provide actionable suggestions.
+    Enhanced timeout errors provide actionable suggestions.
 
     Args:
         error_type: Exception type name.
@@ -74,7 +74,7 @@ def _simplify_error_message(error_type: str, error_msg: str) -> str:
     Returns:
         Simplified error message.
     """
-    # IG-295: EnhancedTimeoutError simplifications with actionable suggestions
+    # EnhancedTimeoutError simplifications with actionable suggestions
     if error_type == "EnhancedTimeoutError":
         # Provide actionable suggestions for timeout errors
         if "large prompt" in error_msg:
@@ -90,7 +90,7 @@ def _simplify_error_message(error_type: str, error_msg: str) -> str:
         if "Event handler" in error_msg and "timed out" in error_msg:
             # Extract just the core issue, not the full event chain
             return "Operation timed out"
-        # Generic timeout (IG-295: may be initial attempt)
+        # Generic timeout (may be initial attempt)
         return "Operation timed out - retrying automatically"
 
     # Worker pool: subprocess exited while handling a request (dispatch race or crash).

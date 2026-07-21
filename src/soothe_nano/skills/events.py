@@ -1,4 +1,4 @@
-"""RFC-105: Progressive skill loading events (self-registered per IG-052)."""
+"""Progressive skill loading events (self-registered)."""
 
 from __future__ import annotations
 
