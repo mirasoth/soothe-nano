@@ -240,15 +240,6 @@ class SubagentConfig(BaseModel):
             data["endpoint"] = data.get("url")
         return data
 
-    @property
-    def url(self) -> str | None:
-        """Backward-compatible alias for ``endpoint``."""
-        return self.endpoint
-
-    @url.setter
-    def url(self, value: str | None) -> None:
-        self.endpoint = value
-
 
 class PluginConfig(BaseModel):
     """Configuration for a single plugin.

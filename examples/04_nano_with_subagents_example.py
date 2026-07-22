@@ -1,7 +1,7 @@
 """Nano agent with subagents example.
 
 This example demonstrates a nano agent with configured subagents:
-- Subagent configuration from ``config/develop/config.yml``
+- Subagent configuration from ``config/develop/nano.yml``
 - Delegation to first-party subagents such as planner, and research when enabled
 - Optional community plugins when installed and configured
 
