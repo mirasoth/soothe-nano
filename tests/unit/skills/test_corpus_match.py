@@ -22,6 +22,11 @@ class TestEarliestCorpusMatch:
             pos = earliest_corpus_match(goal, "skill-creator", skill_name="skill-creator")
             assert pos is not None, goal
 
+    def test_mcp_builder_matches_natural_phrasing(self) -> None:
+        goal = "help me build an mcp server for github issues"
+        pos = earliest_corpus_match(goal, "mcp-builder", skill_name="mcp-builder")
+        assert pos is not None
+
     def test_github_matches_git_hub(self) -> None:
         goal = "check ci on git hub for soothe repo"
         pos = earliest_corpus_match(goal, "github", skill_name="github")
@@ -72,8 +77,33 @@ class TestBuiltinSkillCorpusPrefetch:
         cases = {
             "clawhub": "is there skill of drawio on claw hub",
             "github": "list open prs on git hub for soothe",
-            "skill-creator": "help me create a skill for linting",
             "weather": "北京今天的天气",
+        }
+        for name, goal in cases.items():
+            matches = reg.match_deferred_in_corpus(
+                goal,
+                [by_name[name]],
+                discovered=set(),
+                limit=1,
+            )
+            assert [entry.name for entry in matches] == [name], goal
+
+    def test_deferred_builtins_match_natural_queries(self) -> None:
+        from soothe_nano.skills.index import SkillIndex
+        from soothe_nano.skills.registry import (
+            DEFAULT_CORE_SKILL_NAMES,
+            ProgressiveSkillRegistry,
+        )
+
+        idx = SkillIndex()
+        entries = idx.rebuild_if_stale()
+        reg = ProgressiveSkillRegistry()
+        _, deferred = reg.partition_core_deferred(entries, DEFAULT_CORE_SKILL_NAMES)
+        by_name = {entry.name: entry for entry in deferred}
+
+        cases = {
+            "skill-creator": "help me create a skill for linting",
+            "mcp-builder": "help me build an mcp server for our api",
         }
         for name, goal in cases.items():
             matches = reg.match_deferred_in_corpus(

@@ -9,7 +9,8 @@ This directory contains builtin skills that ship with Soothe. Skills are self-co
 | **weather** | Get current weather and forecasts (no API key required) | curl |
 | **github** | Interact with GitHub via `gh` CLI | gh |
 | **clawhub** | Search and install skills from ClawHub registry | Node.js/npx |
-| **skill-creator** | Create and package new AgentSkills | None |
+| **skill-creator** | Create and package new AgentSkills (deferred) | None |
+| **mcp-builder** | Build MCP servers in Python or Node/TypeScript (deferred) | None |
 
 ## Skill Format
 

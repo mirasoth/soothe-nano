@@ -85,6 +85,11 @@ class TestPartitionCoreDeferred:
         assert not is_core_skill(entry, DEFAULT_CORE_SKILL_NAMES)
         assert is_core_skill(_entry("weather", source="builtin"), DEFAULT_CORE_SKILL_NAMES)
 
+    def test_skill_creator_and_mcp_builder_are_deferred(self) -> None:
+        """Authoring builtins load on demand, not at cold start."""
+        for name in ("skill-creator", "mcp-builder"):
+            assert not is_core_skill(_entry(name, source="builtin"), DEFAULT_CORE_SKILL_NAMES)
+
 
 class TestSearchDeferred:
     def test_finds_by_description(self) -> None:

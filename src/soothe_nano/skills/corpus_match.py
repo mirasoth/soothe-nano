@@ -32,6 +32,15 @@ BUILTIN_SKILL_ALIASES: dict[str, frozenset[str]] = {
             "skill authoring",
         }
     ),
+    "mcp-builder": frozenset(
+        {
+            "mcp builder",
+            "mcp server",
+            "model context protocol",
+            "build mcp",
+            "create mcp",
+        }
+    ),
     "weather": frozenset(
         {
             "wttr",

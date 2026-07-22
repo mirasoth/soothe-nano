@@ -18,6 +18,14 @@ def test_get_built_in_skills_paths_non_empty() -> None:
     assert len(paths) > 0, "Expected at least one built-in skill to be found"
 
 
+def test_mcp_builder_builtin_discovered() -> None:
+    """mcp-builder ships as a package builtin skill."""
+    paths = get_built_in_skills_paths()
+    mcp_paths = [p for p in paths if Path(p).name == "mcp-builder"]
+    assert len(mcp_paths) == 1
+    assert (Path(mcp_paths[0]) / "SKILL.md").is_file()
+
+
 def test_built_in_skills_contain_skill_md() -> None:
     """Test that each discovered path contains a SKILL.md file."""
     paths = get_built_in_skills_paths()

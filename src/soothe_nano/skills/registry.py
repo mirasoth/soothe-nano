@@ -13,9 +13,7 @@ from soothe_nano.skills.index import SkillIndexEntry
 
 DiscoverVia = Literal["path", "search", "explicit"]
 
-DEFAULT_CORE_SKILL_NAMES: frozenset[str] = frozenset(
-    {"weather", "github", "clawhub", "skill-creator"}
-)
+DEFAULT_CORE_SKILL_NAMES: frozenset[str] = frozenset({"weather", "github", "clawhub"})
 
 
 def resolve_core_skill_names(core_skills: Sequence[str] | None) -> frozenset[str]:
