@@ -1,5 +1,7 @@
 # soothe-nano
 
+[![PyPI version](https://img.shields.io/pypi/v/soothe-nano.svg?label=PyPI&color=blue)](https://pypi.org/project/soothe-nano/)
+
 A **ready-to-run coding agent** you can drop into a script or app.
 
 Built on [soothe-deepagents](https://github.com/mirasoth/soothe-deepagents) (filesystem, shell, subagents, skills, MCP). Nano adds the pieces you usually wire yourself: workspace safety, progressive tools/skills, research subagents, and a config-driven factory.
