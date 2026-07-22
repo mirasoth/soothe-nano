@@ -269,10 +269,10 @@ def test_effective_timeout_uses_shorter_cap_after_429(
 def test_executor_error_classification_enhanced_timeout() -> None:
     """Test executor classifies EnhancedTimeoutError as execution (retryable)."""
     pytest.importorskip("soothe")
-    from soothe.foundation.coreagent import CodingCoreAgent as CoreAgent
+    from soothe.coreagent import CodingCoreAgent as CoreAgent
 
     pytest.importorskip("soothe")
-    from soothe.foundation.sloop.engine.executor import Executor
+    from soothe.sloop.engine.executor import Executor
 
     exc = EnhancedTimeoutError(
         timeout_seconds=480,
@@ -295,10 +295,10 @@ def test_executor_error_classification_enhanced_timeout() -> None:
 def test_executor_error_extraction_enhanced_timeout() -> None:
     """Test executor extracts EnhancedTimeoutError metadata."""
     pytest.importorskip("soothe")
-    from soothe.foundation.coreagent import CodingCoreAgent as CoreAgent
+    from soothe.coreagent import CodingCoreAgent as CoreAgent
 
     pytest.importorskip("soothe")
-    from soothe.foundation.sloop.engine.executor import Executor
+    from soothe.sloop.engine.executor import Executor
 
     exc = EnhancedTimeoutError(
         timeout_seconds=480,
@@ -371,10 +371,10 @@ def test_executor_timeout_not_misclassified_as_rate_limit() -> None:
     circuit breaker threshold, stopping the loop prematurely.
     """
     pytest.importorskip("soothe")
-    from soothe.foundation.coreagent import CodingCoreAgent as CoreAgent
+    from soothe.coreagent import CodingCoreAgent as CoreAgent
 
     pytest.importorskip("soothe")
-    from soothe.foundation.sloop.engine.executor import Executor
+    from soothe.sloop.engine.executor import Executor
 
     # This is the exact TimeoutError message from graph_interrupt.py
     exc = TimeoutError(
@@ -394,7 +394,7 @@ def test_executor_timeout_not_misclassified_as_rate_limit() -> None:
 
     # Verify the orchestrator's _is_rate_limit_error does NOT match this message
     pytest.importorskip("soothe")
-    from soothe.foundation.sloop.orchestrator.nodes.execute_steps import _is_rate_limit_error
+    from soothe.sloop.nodes.execute_steps import _is_rate_limit_error
 
     assert _is_rate_limit_error(msg) is False, (
         "Timeout should not be classified as rate limit error"

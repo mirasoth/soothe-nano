@@ -25,10 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `logging.thread_logger.ThreadLogger` (host-owned at `soothe.logging.thread_logger`)
 - `config.reload.ConfigWatcher` / `ConfigReloadEvent` / `start_config_watcher` / `stop_config_watcher` / `get_config_watcher` / `DEFAULT_NANO_CONFIG_PATH` / `DEFAULT_CONFIG_PATH` / `ConfigReloadCallback` (host-owned at `soothe.config.reload`)
-- `paths.thread_paths.THREADS_DATA_DIR` / `PersistenceDirectoryManager` (host-owned at `soothe.foundation.sloop.state.persistence.directory_manager`)
-- `workspace.workspace_policy.normalize_user_id` / `user_id_for_hash` / `compute_scoped_workspace_dir_name` / `validate_client_workspace` / `translate_client_path_to_container` / `translate_container_path_to_client` (host-owned at `soothe.foundation.workspace.scoped` / `.resolution`)
+- `paths.thread_paths.THREADS_DATA_DIR` / `PersistenceDirectoryManager` (host-owned at `soothe.sloop.checkpoints.directory_manager`)
+- `workspace.workspace_policy.normalize_user_id` / `user_id_for_hash` / `compute_scoped_workspace_dir_name` / `validate_client_workspace` / `translate_client_path_to_container` / `translate_container_path_to_client` (host-owned at `soothe.workspace.scoped` / `.resolution`)
 - `backends.persistence.display_store.DisplayCardStore` / `configure_display_card_store` / `get_display_card_store` (moved to daemon `soothe_daemon.display.display_store`)
-- `persistence.sql.soothe_checkpoints.init.sql` (host-owned at `soothe.foundation.persistence.sql.soothe_checkpoints`); `cron_jobs` + `identity_*` DDL removed from `soothe_metadata/init.sql` (host applies at runtime)
+- `persistence.sql.soothe_checkpoints.init.sql` (host-owned at `soothe.persistence.sql.soothe_checkpoints`); `cron_jobs` + `identity_*` DDL removed from `soothe_metadata/init.sql` (host applies at runtime)
 - `utils.progress.set_step_context` / `reset_step_context` / `get_step_id` (dead — zero callers)
 - `utils.error_format.log_exception_simplified` (dead — only its own docstring referenced it)
 

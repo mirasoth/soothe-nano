@@ -17,7 +17,7 @@ with:
 ## Quick Start
 
 ```python
-from soothe.foundation.filesystem import LocalFilesystem
+from soothe.filesystem import LocalFilesystem
 
 # Create a filesystem instance
 fs = LocalFilesystem(
@@ -147,7 +147,7 @@ fs.read("")                  # Empty path
 All methods raise typed exceptions:
 
 ```python
-from soothe.foundation.filesystem import (
+from soothe.filesystem import (
     PathNotFoundError,
     PermissionDeniedError,
     PathTraversalError,
@@ -268,8 +268,8 @@ fs = LocalFilesystem(
 The UnifiedFilesystem can be combined with the security layer:
 
 ```python
-from soothe.foundation.security import SecurityEnforcer
-from soothe.foundation.filesystem import LocalFilesystem
+from soothe.security import SecurityEnforcer
+from soothe.filesystem import LocalFilesystem
 
 # Create filesystem
 fs = LocalFilesystem(workspace="/workspace")
