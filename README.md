@@ -1,6 +1,7 @@
 # soothe-nano
 
 [![PyPI version](https://img.shields.io/pypi/v/soothe-nano.svg?label=PyPI&color=blue)](https://pypi.org/project/soothe-nano/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/mirasoth/soothe-nano)
 
 A **ready-to-run coding agent** you can drop into a script or app.
 
