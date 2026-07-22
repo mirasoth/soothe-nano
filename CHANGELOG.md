@@ -5,6 +5,37 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-07-22
+
+### Added
+- `ErrorGeneralEvent` registered in the shared `REGISTRY` — canonical `soothe.error.general.failed` model for stream/wire error payloads.
+- `mcp-builder` builtin skill for MCP server development, loaded on demand with `skill-creator` instead of at cold start.
+
+### Changed
+- Raise `AgentRuntimeConfig.recursion_limit` default from 200 to 9_999 to reduce spurious recursion caps during deep agent runs.
+- Decouple nano from the host package: fix import paths from `soothe` to `soothe_nano` in filesystem README, browser-use preview docstring, and toolkits internal docstring.
+- Add host extension points in `PostgresPoolRegistry`: template methods `_databases_to_open()` and `_initialize_pool_schema()` let host subclasses prepend checkpoints DB and add schema bootstrap.
+- Add injectable pool class params (`metadata_pool_cls`, `checkpointer_pool_cls`) to `resolve_durability`/`resolve_checkpointer` so the host can inject registry-bound subclasses.
+- Add `_REGISTRY_CLS` class attribute to `SharedCheckpointerPool` for host subclass override of the backing registry.
+- Update resolver and test imports from `soothe.runner.resolver` to `soothe_nano.resolve` (module path migration).
+- Point docs and tests at `soothe.coreagent` / `soothe.sloop` instead of the removed `soothe.foundation` namespace.
+- Require `soothe-sdk>=1.0.5` for the updated wire constants.
+
+### Removed
+- `pytest.importorskip("soothe")` guards from tests; replaced host Veritas schema import with inline schema; dropped Executor tests that depended on host `soothe.sloop`.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v0.9.9...v1.0.0
+
+## [0.9.9] - 2026-07-21
+
+### Added
+- Extensible builtin skill roots and MCP server catalog — `skill-creator` and `mcp-builder` load on demand; the builtin skill index discovers skill roots without cold-start cost.
+
+## [0.9.8] - 2026-07-21
+
+### Changed
+- Share paths via `soothe_sdk` and make the metadata pool extensible — nano no longer hard-codes workspace path resolution; path contracts come from the SDK.
+
 ## [0.9.7] - 2026-07-21
 
 ### Removed
