@@ -42,7 +42,14 @@ def _checkpointer_setup_lock_key() -> int:
 
 
 class SharedCheckpointerPool:
-    """Singleton ``AsyncConnectionPool`` for LangGraph ``AsyncPostgresSaver``."""
+    """Singleton ``AsyncConnectionPool`` for LangGraph ``AsyncPostgresSaver``.
+
+    ``_REGISTRY_CLS`` points at the pool-registry class whose singleton this
+    pool binds to. Host packages subclass and override ``_REGISTRY_CLS`` to
+    their own registry (which may open the host-owned ``checkpoints`` pool).
+    """
+
+    _REGISTRY_CLS = PostgresPoolRegistry
 
     @classmethod
     def _register_pool(cls, pool: AsyncConnectionPool) -> None:
@@ -67,7 +74,7 @@ class SharedCheckpointerPool:
                 return _shared_checkpointer_pool
 
             try:
-                registry = PostgresPoolRegistry.get_instance(config)
+                registry = cls._REGISTRY_CLS.get_instance(config)
                 reg_pool = registry.try_get_pool("checkpoints")
                 if reg_pool is not None:
                     _shared_checkpointer_pool = reg_pool
@@ -95,7 +102,7 @@ class SharedCheckpointerPool:
 
             ensure_postgres_databases(config)
             dsn = config.resolve_postgres_dsn_for_database("checkpoints")
-            max_size = PostgresPoolRegistry.resolve_checkpoints_pool_size(config)
+            max_size = cls._REGISTRY_CLS.resolve_checkpoints_pool_size(config)
             timing = postgres_pool_timing_from_config(config, max_size=max_size)
             pool_kwargs: dict[str, Any] = {
                 "max_size": max_size,

@@ -272,14 +272,34 @@ async def test_json_schema_wrapper_dict_schema() -> None:
 
 @pytest.mark.asyncio
 async def test_invoke_structured_chat_applies_normalize_before_validation() -> None:
-    """Answers-only provider payloads reach normalize before jsonschema validation."""
-    pytest.importorskip("soothe")
-    from soothe.subagents.veritas.schemas import (
-        build_veritas_response_schema,
-        coerce_veritas_response,
-    )
+    """Partial provider payloads reach normalize before jsonschema validation."""
+    # Inline schema (host Veritas must not be imported from nano tests).
+    schema = {
+        "type": "object",
+        "properties": {
+            "defer": {"type": "boolean"},
+            "answers": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "confidence": {"type": "number"},
+        },
+        "required": ["defer", "answers", "confidence"],
+        "additionalProperties": False,
+    }
 
-    schema = build_veritas_response_schema(1)
+    def _normalize(data: object) -> dict:
+        if not isinstance(data, dict):
+            return {"defer": False, "answers": [""], "confidence": 0.0}
+        answers = data.get("answers")
+        if not isinstance(answers, list) or not answers:
+            answers = [""]
+        conf = data.get("confidence")
+        if not isinstance(conf, (int, float)):
+            conf = 0.7
+        return {
+            "defer": bool(data.get("defer", False)),
+            "answers": [str(a) for a in answers],
+            "confidence": float(conf),
+        }
+
     inner = MagicMock()
     inner.ainvoke = AsyncMock(
         return_value=AIMessage(content='{"answers": ["pushed commit to origin"]}'),
@@ -311,9 +331,9 @@ async def test_invoke_structured_chat_applies_normalize_before_validation() -> N
         chat,
         [HumanMessage(content="Respond in JSON format")],
         json_schema=schema,
-        schema_name="VeritasAnswer",
+        schema_name="NormalizedAnswer",
         strict=True,
-        normalize=lambda data: coerce_veritas_response(data, 1),
+        normalize=_normalize,
     )
     assert out["defer"] is False
     assert out["answers"] == ["pushed commit to origin"]

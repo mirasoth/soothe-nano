@@ -134,20 +134,25 @@ class PostgresPoolRegistry:
             await ensure_postgres_databases_async(self._config)
             self.validate_budget(self._config)
 
-            # Nano does not open a checkpoints pool. The checkpoints schema is
-            # host-owned (applied by the host schema bootstrap). Standalone nano
-            # checkpointing uses LangGraph's AsyncPostgresSaver.setup() via
-            # SharedCheckpointerPool.
-            await self._open_pool("metadata")
-            if self._uses_pgvector():
-                await self._open_pool("vectors")
+            for db_key in self._databases_to_open():
+                await self._open_pool(db_key)
 
             self._opened = True
-            logger.info(
-                "PostgresPoolRegistry opened (metadata=%d vectors=%d)",
-                self.resolve_metadata_pool_size(self._config),
-                self.resolve_vectors_pool_size(self._config) if self._uses_pgvector() else 0,
+            opened = ", ".join(
+                f"{key}={self._max_size_for(key)}" for key in self._databases_to_open()
             )
+            logger.info("PostgresPoolRegistry opened (%s)", opened)
+
+    def _databases_to_open(self) -> list[DbKey]:
+        """Return database keys to open for this registry variant.
+
+        Nano opens metadata (+ vectors when pgvector is configured). Host
+        subclasses prepend ``checkpoints`` for host loop schema bootstrap.
+        """
+        keys: list[DbKey] = ["metadata"]
+        if self._uses_pgvector():
+            keys.append("vectors")
+        return keys
 
     def _uses_pgvector(self) -> bool:
         for provider in self._config.vector_stores:
@@ -172,11 +177,7 @@ class PostgresPoolRegistry:
         }
         pool = AsyncConnectionPool(dsn, **apply_row_factory(pool_kwargs))
         await pool.open()
-
-        if db_key == "metadata":
-            from soothe_nano.persistence.db_init import initialize_database
-
-            await initialize_database(pool, "soothe_metadata")
+        await self._initialize_pool_schema(db_key, pool)
 
         self._pools[db_key] = pool
         logger.info(
@@ -185,6 +186,16 @@ class PostgresPoolRegistry:
             max_size,
         )
         return pool
+
+    async def _initialize_pool_schema(self, db_key: DbKey, pool: AsyncConnectionPool) -> None:
+        """Run schema bootstrap for *db_key* after the pool is opened.
+
+        Nano initializes metadata only. Host subclasses add checkpoints schema.
+        """
+        if db_key == "metadata":
+            from soothe_nano.persistence.db_init import initialize_database
+
+            await initialize_database(pool, "soothe_metadata")
 
     def _max_size_for(self, db_key: DbKey) -> int:
         if db_key == "checkpoints":

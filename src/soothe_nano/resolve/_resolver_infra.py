@@ -26,11 +26,20 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def resolve_durability(config: SootheConfig) -> DurabilityProtocol:
+def resolve_durability(
+    config: SootheConfig,
+    *,
+    metadata_pool_cls: type | None = None,
+) -> DurabilityProtocol:
     """Instantiate the DurabilityProtocol implementation from config.
 
     Supports: postgresql, sqlite backends (binary choice).
     Uses multi-database PostgreSQL architecture (metadata database).
+
+    Args:
+        config: Soothe configuration.
+        metadata_pool_cls: Optional metadata pool class (host injects its
+            registry-bound subclass). Defaults to nano ``SharedMetadataPool``.
     """
     backend = config.resolve_durability_backend()  # Resolve inheritance
     if backend == "postgresql":
@@ -39,9 +48,10 @@ def resolve_durability(config: SootheConfig) -> DurabilityProtocol:
             from soothe_nano.backends.persistence import create_persist_store
             from soothe_nano.persistence.shared_metadata_pool import SharedMetadataPool
 
+            pool_cls = metadata_pool_cls or SharedMetadataPool
             # Use dedicated metadata database.
             dsn = config.resolve_postgres_dsn_for_database("metadata")
-            shared_pool = SharedMetadataPool.get_or_create_pool(config)
+            shared_pool = pool_cls.get_or_create_pool(config)
             persist_store = create_persist_store(
                 backend="postgresql",
                 dsn=dsn,
@@ -90,12 +100,22 @@ def resolve_durability(config: SootheConfig) -> DurabilityProtocol:
 # ---------------------------------------------------------------------------
 
 
-def resolve_checkpointer(config: SootheConfig) -> tuple[Checkpointer, Any] | Checkpointer:
+def resolve_checkpointer(
+    config: SootheConfig,
+    *,
+    checkpointer_pool_cls: type | None = None,
+) -> tuple[Checkpointer, Any] | Checkpointer:
     """Resolve a LangGraph checkpointer from config.
 
     Uses persistence configuration for PostgreSQL or SQLite connection.
     Uses dedicated checkpoints database for PostgreSQL.
     No fallback to in-memory storage - persistent storage required.
+
+    Args:
+        config: Soothe configuration.
+        checkpointer_pool_cls: Optional checkpointer pool class (host injects
+            its registry-bound subclass). Defaults to nano
+            ``SharedCheckpointerPool``.
 
     Returns:
         A tuple of (checkpointer, connection_resource) for PostgreSQL, or just the checkpointer for SQLite.
@@ -105,7 +125,8 @@ def resolve_checkpointer(config: SootheConfig) -> tuple[Checkpointer, Any] | Che
     if backend == "postgresql":
         from soothe_nano.resolve.shared_checkpointer_pool import SharedCheckpointerPool
 
-        pool = SharedCheckpointerPool.get_or_create_pool(config)
+        pool_cls = checkpointer_pool_cls or SharedCheckpointerPool
+        pool = pool_cls.get_or_create_pool(config)
         if pool is not None:
             return (None, pool)
         logger.error("PostgreSQL checkpointer unavailable")

@@ -266,60 +266,6 @@ def test_effective_timeout_uses_shorter_cap_after_429(
     )
 
 
-def test_executor_error_classification_enhanced_timeout() -> None:
-    """Test executor classifies EnhancedTimeoutError as execution (retryable)."""
-    pytest.importorskip("soothe")
-    from soothe.coreagent import CodingCoreAgent as CoreAgent
-
-    pytest.importorskip("soothe")
-    from soothe.sloop.engine.executor import Executor
-
-    exc = EnhancedTimeoutError(
-        timeout_seconds=480,
-        retries=2,
-        prompt_chars=96000,
-        thread_id="test",
-    )
-
-    # Executor should classify as "execution" (not fatal)
-    core_agent = MagicMock(spec=CoreAgent)
-    executor = Executor(
-        core_agent=core_agent,
-        max_parallel_steps=16,
-    )
-
-    severity = executor._classify_error_severity(exc)
-    assert severity == "execution"
-
-
-def test_executor_error_extraction_enhanced_timeout() -> None:
-    """Test executor extracts EnhancedTimeoutError metadata."""
-    pytest.importorskip("soothe")
-    from soothe.coreagent import CodingCoreAgent as CoreAgent
-
-    pytest.importorskip("soothe")
-    from soothe.sloop.engine.executor import Executor
-
-    exc = EnhancedTimeoutError(
-        timeout_seconds=480,
-        retries=2,
-        prompt_chars=96000,
-        thread_id="test",
-    )
-
-    core_agent = MagicMock(spec=CoreAgent)
-    executor = Executor(
-        core_agent=core_agent,
-        max_parallel_steps=16,
-    )
-
-    msg = executor._extract_error_message(exc, "fallback")
-    assert "2 retries" in msg
-    assert "480s timeout" in msg
-    assert "large prompt" in msg
-    assert "96,000 chars" in msg
-
-
 def test_error_format_enhanced_timeout_large_prompt() -> None:
     """Test error format provides actionable suggestions for large prompt timeouts."""
     from soothe_nano.utils.error_format import format_cli_error
@@ -360,45 +306,6 @@ def test_error_format_generic_timeout() -> None:
 
     msg = format_cli_error(exc)
     assert "retrying automatically" in msg or "timed out" in msg
-
-
-def test_executor_timeout_not_misclassified_as_rate_limit() -> None:
-    """IG-504: TimeoutError with 'llm_rate_limit middleware' text must NOT be classified as rate limit.
-
-    The TimeoutError message from graph_interrupt.py includes a suggestion to enable
-    llm_rate_limit middleware. This 'rate_limit' substring was incorrectly triggering
-    rate limit detection, causing timeouts to be counted towards the rate limit
-    circuit breaker threshold, stopping the loop prematurely.
-    """
-    pytest.importorskip("soothe")
-    from soothe.coreagent import CodingCoreAgent as CoreAgent
-
-    pytest.importorskip("soothe")
-    from soothe.sloop.engine.executor import Executor
-
-    # This is the exact TimeoutError message from graph_interrupt.py
-    exc = TimeoutError(
-        "LLM stream chunk timeout after 120s - no response received. "
-        "Check LLM API connectivity or enable llm_rate_limit middleware for configurable timeouts."
-    )
-
-    core_agent = MagicMock(spec=CoreAgent)
-    executor = Executor(
-        core_agent=core_agent,
-        max_parallel_steps=16,
-    )
-
-    # The extracted message should be "Request timed out", NOT "Rate limited"
-    msg = executor._extract_error_message(exc, "fallback")
-    assert msg == "Request timed out", f"Expected 'Request timed out' but got '{msg}'"
-
-    # Verify the orchestrator's _is_rate_limit_error does NOT match this message
-    pytest.importorskip("soothe")
-    from soothe.sloop.nodes.execute_steps import _is_rate_limit_error
-
-    assert _is_rate_limit_error(msg) is False, (
-        "Timeout should not be classified as rate limit error"
-    )
 
 
 def test_error_format_worker_subprocess_lost() -> None:

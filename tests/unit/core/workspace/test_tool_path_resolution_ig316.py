@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from langchain.tools import ToolRuntime
 
 from soothe_nano.workspace.workspace_paths import (
@@ -143,7 +142,6 @@ def test_filesystem_virtual_mode_from_soothe_config() -> None:
 
 def test_resolve_file_ops_file_info_virtual_path_with_soothe_config(tmp_path: Path) -> None:
     """Resolver-built file_ops tools use ``virtual_mode`` from ``SootheConfig``."""
-    pytest.importorskip("soothe")
     from soothe_nano.config.settings import SootheConfig
     from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
 

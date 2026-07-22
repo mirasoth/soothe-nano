@@ -1,4 +1,4 @@
-"""Lightweight text preview for logging (subset of ``soothe.utils.text_preview``)."""
+"""Lightweight text preview for logging (subset of ``soothe_nano.utils.text_preview``)."""
 
 from __future__ import annotations
 
