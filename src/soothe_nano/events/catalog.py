@@ -11,6 +11,8 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from soothe_sdk.core.events import (
+    ERROR,
+    ErrorEvent,
     LifecycleEvent,
     ProtocolEvent,
 )
@@ -77,6 +79,14 @@ class PolicyDeniedEvent(ProtocolEvent):
     profile: str | None = None
 
 
+class ErrorGeneralEvent(ErrorEvent):
+    """General failure event for stream/wire error payloads."""
+
+    type: Literal["soothe.error.general.failed"] = ERROR  # type: ignore[assignment]
+    error: str = ""
+    code: str | None = None
+
+
 register_event(
     StreamEndEvent,
     verbosity=VerbosityTier.NORMAL,
@@ -93,10 +103,17 @@ register_event(MemoryRecalledEvent, summary_template="{count} items recalled")
 register_event(MemoryStoredEvent, summary_template="Stored memory: {id}")
 register_event(PolicyCheckedEvent, summary_template="Policy: {verdict}")
 register_event(PolicyDeniedEvent, summary_template="Denied: {reason}")
+register_event(
+    ErrorGeneralEvent,
+    verbosity=VerbosityTier.NORMAL,
+    summary_template="Error: {error}",
+    priority=EventPriority.CRITICAL,
+)
 
 
 __all__ = [
     "REGISTRY",
+    "ErrorGeneralEvent",
     "EventMeta",
     "EventPriority",
     "EventRegistry",

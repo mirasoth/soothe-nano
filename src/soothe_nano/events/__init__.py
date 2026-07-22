@@ -6,6 +6,7 @@ from soothe_sdk.core.verbosity import VerbosityTier
 
 from .catalog import (
     REGISTRY,
+    ErrorGeneralEvent,
     EventMeta,
     EventPriority,
     EventRegistry,
@@ -41,6 +42,7 @@ __all__ = [
     "EventMeta",
     "EventPriority",
     "EventRegistry",
+    "ErrorGeneralEvent",
     "LLMRetryAttemptEvent",
     "MemoryRecalledEvent",
     "MemoryStoredEvent",
