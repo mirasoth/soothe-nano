@@ -40,6 +40,14 @@ _CACHE_INVALIDATING_TOOLS = frozenset(
     }
 )
 _NATIVE_SEARCH_TOOLS = frozenset({"glob", "grep"})
+_DEFAULT_READ_FILE_THRASH_THRESHOLD = 3
+
+
+@dataclass(slots=True)
+class _ReadFileWindow:
+    """Normalized read_file path for consecutive-slice thrash detection."""
+
+    path: str
 
 
 @dataclass(slots=True)
@@ -55,6 +63,9 @@ class _ToolReuseState:
     duplicate_signature_blocked: int = 0
     native_search_calls: int = 0
     shell_search_fallback_blocked: int = 0
+    empty_write_todos_short_circuited: int = 0
+    read_file_thrash_guided: int = 0
+    recent_read_windows: list[_ReadFileWindow] = field(default_factory=list)
 
 
 _tool_reuse_state: ContextVar[_ToolReuseState | None] = ContextVar(
@@ -118,6 +129,24 @@ def _tool_result_has_actionable_output(result: Any) -> bool:
     return True
 
 
+def _empty_write_todos_payload(args: dict[str, Any]) -> bool:
+    """True when write_todos args carry an empty todo list."""
+    todos = args.get("todos")
+    if todos is None:
+        return True
+    if isinstance(todos, (list, tuple)):
+        return len(todos) == 0
+    return False
+
+
+def _read_file_window(args: dict[str, Any]) -> _ReadFileWindow | None:
+    """Build a normalized window from read_file args, or None if path missing."""
+    path = str(args.get("file_path") or args.get("path") or "").strip()
+    if not path:
+        return None
+    return _ReadFileWindow(path=path)
+
+
 def _scope_metrics(state: _ToolReuseState) -> dict[str, int]:
     """Expose current deterministic reuse metrics for executor telemetry."""
     return {
@@ -127,6 +156,8 @@ def _scope_metrics(state: _ToolReuseState) -> dict[str, int]:
         "duplicate_signature_blocked": int(state.duplicate_signature_blocked),
         "native_search_calls": int(state.native_search_calls),
         "shell_search_fallback_blocked": int(state.shell_search_fallback_blocked),
+        "empty_write_todos_short_circuited": int(state.empty_write_todos_short_circuited),
+        "read_file_thrash_guided": int(state.read_file_thrash_guided),
     }
 
 
@@ -141,8 +172,25 @@ def get_tool_reuse_metrics_snapshot() -> dict[str, int]:
             "duplicate_signature_blocked": 0,
             "native_search_calls": 0,
             "shell_search_fallback_blocked": 0,
+            "empty_write_todos_short_circuited": 0,
+            "read_file_thrash_guided": 0,
         }
     return _scope_metrics(state)
+
+
+def _reset_scope_counters(state: _ToolReuseState, scope_id: str) -> None:
+    state.scope_id = scope_id
+    state.cache.clear()
+    state.last_signature = None
+    state.repeated_signature_calls = 0
+    state.cache_hits = 0
+    state.cache_misses = 0
+    state.duplicate_signature_blocked = 0
+    state.native_search_calls = 0
+    state.shell_search_fallback_blocked = 0
+    state.empty_write_todos_short_circuited = 0
+    state.read_file_thrash_guided = 0
+    state.recent_read_windows.clear()
 
 
 class ToolOptimizationMiddleware(AgentMiddleware):
@@ -152,9 +200,13 @@ class ToolOptimizationMiddleware(AgentMiddleware):
     - Lookup cache for deterministic same-args reuse.
     - Duplicate empty-result replay blocking.
     - Native-search-first policy before shell grep fallback.
+    - Empty write_todos short-circuit.
+    - Same-path read_file thrash guidance.
     """
 
     name = "ToolOptimizationMiddleware"
+    # Opt into general-purpose subagent inheritance (deepagents generic flag).
+    propagate_to_general_purpose = True
 
     async def awrap_tool_call(
         self,
@@ -176,15 +228,60 @@ class ToolOptimizationMiddleware(AgentMiddleware):
             _tool_reuse_state.set(state)
         scope_id = _scope_id_for_request(request)
         if state.scope_id != scope_id:
-            state.scope_id = scope_id
-            state.cache.clear()
-            state.last_signature = None
-            state.repeated_signature_calls = 0
-            state.cache_hits = 0
-            state.cache_misses = 0
-            state.duplicate_signature_blocked = 0
-            state.native_search_calls = 0
-            state.shell_search_fallback_blocked = 0
+            _reset_scope_counters(state, scope_id)
+
+        if tool_name == "write_todos" and _empty_write_todos_payload(tool_args):
+            state.empty_write_todos_short_circuited += 1
+            logger.debug(
+                "[ToolOptimization] empty write_todos short-circuit scope=%s count=%d",
+                scope_id,
+                state.empty_write_todos_short_circuited,
+            )
+            return ToolMessage(
+                content="Todo list unchanged (empty write_todos skipped).",
+                tool_call_id=tool_call_id,
+                name=tool_name,
+                status="success",
+            )
+
+        if tool_name == "read_file":
+            window = _read_file_window(tool_args)
+            if window is not None:
+                threshold = _DEFAULT_READ_FILE_THRASH_THRESHOLD
+                streak = state.recent_read_windows
+                if streak and streak[-1].path == window.path:
+                    streak.append(window)
+                else:
+                    streak.clear()
+                    streak.append(window)
+                if len(streak) >= threshold:
+                    thrash_count = len(streak)
+                    state.read_file_thrash_guided += 1
+                    logger.debug(
+                        "[ToolOptimization] read_file thrash guidance scope=%s path=%s count=%d",
+                        scope_id,
+                        window.path,
+                        state.read_file_thrash_guided,
+                    )
+                    # Clear streak so a subsequent wider read_file can proceed.
+                    state.recent_read_windows.clear()
+                    return ToolMessage(
+                        content=(
+                            f"Read thrash guidance: {thrash_count} consecutive read_file "
+                            f"calls on the same path ({window.path}). Prefer one wider "
+                            "read_file (larger limit/range or full file) instead of many "
+                            "tiny offset/limit slices. Previous slice results remain in "
+                            "context — do not invent file contents."
+                        ),
+                        tool_call_id=tool_call_id,
+                        name=tool_name,
+                        status="error",
+                    )
+            else:
+                state.recent_read_windows.clear()
+        elif tool_name:
+            # Other tools break the consecutive read_file streak.
+            state.recent_read_windows.clear()
 
         if tool_name in _NATIVE_SEARCH_TOOLS:
             state.native_search_calls += 1

@@ -13,11 +13,29 @@ if TYPE_CHECKING:
     from langgraph.runtime import Runtime
 
 
+def _virtual_mode_without_soothe_config() -> bool:
+    """Resolve virtual_mode from the live backend/context — never soothe_config."""
+    from soothe_nano.workspace.workspace_runtime import get_workspace_context
+
+    ctx = get_workspace_context()
+    # Prefer the filesystem backend's construction-time sandbox mode when available.
+    try:
+        from soothe_nano.workspace.workspace_filesystem import FrameworkFilesystem
+
+        backend = FrameworkFilesystem.get()
+        backend_mode = getattr(backend, "virtual_mode", None)
+        if isinstance(backend_mode, bool):
+            return backend_mode
+    except Exception:  # noqa: BLE001 — backend may be uninitialized in unit tests
+        pass
+    return bool(ctx.virtual_mode)
+
+
 class WorkspaceContextMiddleware(AgentMiddleware):
     """Set workspace context for tool execution.
 
-    Reads workspace from config.configurable and sets ContextVar for FrameworkFilesystem.
-    Ensures ContextVar is available during tool execution for path resolution.
+    Reads workspace from config.configurable / state and sets ContextVar for
+    FrameworkFilesystem. Does **not** depend on injecting ``soothe_config``.
 
     Thread Safety:
         Python's contextvars.ContextVar provides async-safe context isolation.
@@ -30,13 +48,16 @@ class WorkspaceContextMiddleware(AgentMiddleware):
             "workspace": "/home/user/project-a"
         }
 
-        → FrameworkFilesystem.set_current_workspace("/home/user/project-a")
+        → set_workspace_context("/home/user/project-a", virtual_mode=...)
         → Tools resolve paths against /home/user/project-a
-        → FrameworkFilesystem.clear_current_workspace(token) after execution
+        → reset_workspace_context(token) after execution
     """
 
+    # Opt into general-purpose subagent inheritance (deepagents generic flag).
+    propagate_to_general_purpose = True
+
     def __init__(self) -> None:
-        self._workspace_token: Token[Path | None] | None = None
+        self._workspace_token: Token[Any] | None = None
 
     async def abefore_agent(
         self,
@@ -52,14 +73,12 @@ class WorkspaceContextMiddleware(AgentMiddleware):
         Returns:
             State updates (workspace mirrored in state).
         """
-        from pathlib import Path
-
         from langgraph.config import get_config
 
-        from soothe_nano.workspace import FrameworkFilesystem, set_virtual_mode_context
         from soothe_nano.workspace.workspace_api import (
             resolve_workspace_for_tool_execution,
         )
+        from soothe_nano.workspace.workspace_runtime import set_workspace_context
 
         config: dict[str, Any] = {}
         try:
@@ -85,22 +104,11 @@ class WorkspaceContextMiddleware(AgentMiddleware):
         if workspace_path is None:
             return None
 
-        soothe_config = configurable.get("soothe_config")
-        if soothe_config is None and isinstance(state, dict):
-            soothe_config = state.get("soothe_config")
+        self._workspace_token = set_workspace_context(
+            workspace=Path(workspace_path),
+            virtual_mode=_virtual_mode_without_soothe_config(),
+        )
 
-        self._workspace_token = FrameworkFilesystem.set_current_workspace(workspace_path)
-
-        virtual_mode = False
-        if soothe_config is not None and hasattr(soothe_config, "security"):
-            virtual_mode = not soothe_config.security.allow_paths_outside_workspace
-
-        set_virtual_mode_context(virtual_mode, Path(workspace_path))
-
-        if config_workspace is not None:
-            return {"workspace": str(workspace_path)}
-        if state_workspace is not None:
-            return None
         return {"workspace": str(workspace_path)}
 
     async def aafter_agent(
@@ -117,9 +125,8 @@ class WorkspaceContextMiddleware(AgentMiddleware):
         Returns:
             None.
         """
-        from soothe_nano.workspace import FrameworkFilesystem, clear_virtual_mode_context
+        from soothe_nano.workspace.workspace_runtime import reset_workspace_context
 
-        FrameworkFilesystem.clear_current_workspace(self._workspace_token)
+        reset_workspace_context(self._workspace_token)
         self._workspace_token = None
-        clear_virtual_mode_context()
         return None

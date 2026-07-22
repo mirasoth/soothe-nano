@@ -43,11 +43,11 @@ jobs:
             exit 1
           fi
           echo "soothe-sdk 1.0.2 is available on PyPI"
-          if ! curl -sf "https://pypi.org/pypi/soothe-deepagents/0.8.0/json" >/dev/null; then
-            echo "Publish soothe-deepagents 0.8.0 to PyPI before releasing soothe-nano"
+          if ! curl -sf "https://pypi.org/pypi/soothe-deepagents/0.8.2/json" >/dev/null; then
+            echo "Publish soothe-deepagents 0.8.2 to PyPI before releasing soothe-nano"
             exit 1
           fi
-          echo "soothe-deepagents 0.8.0 is available on PyPI"
+          echo "soothe-deepagents 0.8.2 is available on PyPI"
 
       - name: Read version
         id: version

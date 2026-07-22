@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soothe-nano"
-version = "1.0.0"
+version = "1.0.1"
 description = "Soothe Nano — batteries-included Coding CoreAgent on deepagents"
 readme = "README.md"
 license = { text = "MIT" }
@@ -24,7 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "soothe-sdk>=1.0.5,<2.0.0",
-    "soothe-deepagents>=0.8.0,<1.0.0",
+    "soothe-deepagents>=0.8.2,<1.0.0",
     "aiohttp>=3.9.0,<4.0.0",
     "pydantic-settings>=2.0.0,<3.0.0",
     "pydantic>=2.0.0,<3.0.0",

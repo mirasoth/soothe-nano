@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Raise `AgentRuntimeConfig.recursion_limit` default from 200 to 9_999 to reduce spurious recursion caps during deep agent runs.
+- Require `soothe-deepagents>=0.8.2` for workspace bind / GP middleware propagate support.
 - Decouple nano from the host package: fix import paths from `soothe` to `soothe_nano` in filesystem README, browser-use preview docstring, and toolkits internal docstring.
 - Add host extension points in `PostgresPoolRegistry`: template methods `_databases_to_open()` and `_initialize_pool_schema()` let host subclasses prepend checkpoints DB and add schema bootstrap.
 - Add injectable pool class params (`metadata_pool_cls`, `checkpointer_pool_cls`) to `resolve_durability`/`resolve_checkpointer` so the host can inject registry-bound subclasses.

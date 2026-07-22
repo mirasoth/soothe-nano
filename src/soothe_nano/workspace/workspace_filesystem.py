@@ -589,10 +589,40 @@ class WorkspaceAwareBackend(BackendProtocol):
             max_file_size_mb=max_file_size_mb,
         )
 
+    @property
+    def virtual_mode(self) -> bool:
+        """Sandbox mode fixed at construction (independent of host config objects)."""
+        return self._virtual_mode
+
+    def bind_workspace(self, workspace: Path | str) -> None:
+        """Bind the active workspace for subsequent filesystem tool calls.
+
+        Called by deepagents ``FilesystemMiddleware`` from tool runtime so nested
+        ``task`` children resolve the parent project root without host config objects.
+        """
+        from soothe_nano.workspace.workspace_runtime import set_workspace_context
+
+        ws_path = Path(workspace).expanduser().resolve()
+        set_workspace_context(workspace=ws_path, virtual_mode=self._virtual_mode)
+
     def _get_backend(self) -> NormalizedPathBackend:
-        from soothe_nano.workspace.workspace_runtime import get_workspace_context
+        from soothe_nano.workspace.workspace_policy import resolve_workspace_for_tool_execution
+        from soothe_nano.workspace.workspace_runtime import (
+            get_workspace_context,
+            set_workspace_context,
+        )
 
         current_workspace = get_workspace_context().workspace
+        if current_workspace is None:
+            # Nested task graphs and some tool hops may lack ContextVar binding;
+            # resolve from langgraph configurable / state before process default.
+            resolved = resolve_workspace_for_tool_execution(use_langgraph_config=True)
+            if resolved is not None:
+                current_workspace = Path(resolved).expanduser().resolve()
+                set_workspace_context(
+                    workspace=current_workspace,
+                    virtual_mode=self._virtual_mode,
+                )
         if current_workspace:
             return get_workspace_backend(
                 workspace=current_workspace,

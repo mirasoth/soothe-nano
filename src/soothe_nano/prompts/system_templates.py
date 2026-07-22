@@ -42,6 +42,9 @@ File operation tools:
 - search_files: Search for pattern in files (grep-like).
 - list_files: List files matching pattern.
 - file_info: Get file metadata.
+
+Prefer one wider read_file (larger line range or full file when reasonable) over \
+many tiny offset/limit slices on the same path.\
 """
 
 _SURGICAL_EDIT_GUIDE = """\
@@ -84,7 +87,13 @@ _SUBAGENT_GUIDE = """\
 Subagents (via the `task` tool) -- delegate ONLY when the task requires \
 the subagent's unique capability:
 - planner: Agentic plan design — iterative markdown execution plan; one report.
-Additional subagents may be available from installed plugins; use only names listed in your runtime capabilities.\
+Additional subagents may be available from installed plugins; use only names listed in your runtime capabilities.
+
+Do NOT use `task` for mechanical multi-pattern repo search, file enumeration, \
+or reference confirmation — use batched `grep` / one `run_command` with `rg` instead. \
+Use `task` only for multi-hop reasoning the parent tools cannot finish in one wave. \
+After a `task` report returns, treat it as evidence: do not re-grep the same \
+symbols/paths; only spot-check disputed hits.\
 """
 
 _TOOL_ORCHESTRATION_GUIDE = f"""\

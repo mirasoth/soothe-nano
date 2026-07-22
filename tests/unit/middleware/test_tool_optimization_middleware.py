@@ -223,3 +223,106 @@ async def test_shell_search_fallback_blocked_after_native_search() -> None:
     assert getattr(run_result, "status", None) == "error"
     assert "Search consolidation" in str(run_result.content)
     run_handler.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_empty_write_todos_short_circuited() -> None:
+    from soothe_nano.middleware.tool_optimization_middleware import (
+        get_tool_reuse_metrics_snapshot,
+    )
+
+    middleware = ToolOptimizationMiddleware()
+    runtime = MagicMock()
+    runtime.config = {"configurable": {"thread_id": "t6", "checkpoint_ns": "execute:6"}}
+    request = ToolCallRequest(
+        tool_call={
+            "name": "write_todos",
+            "args": {"todos": []},
+            "id": "functions.write_todos:1",
+        },
+        tool=None,
+        state={"messages": []},
+        runtime=runtime,
+    )
+    handler = AsyncMock(
+        return_value=ToolMessage(content="should not run", tool_call_id="functions.write_todos:1")
+    )
+
+    result = await middleware.awrap_tool_call(request, handler)
+
+    assert isinstance(result, ToolMessage)
+    assert "Todo list unchanged" in str(result.content)
+    handler.assert_not_awaited()
+    assert get_tool_reuse_metrics_snapshot()["empty_write_todos_short_circuited"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_read_file_thrash_guidance_after_consecutive_slices() -> None:
+    from soothe_nano.middleware.tool_optimization_middleware import (
+        get_tool_reuse_metrics_snapshot,
+    )
+
+    middleware = ToolOptimizationMiddleware()
+    runtime = MagicMock()
+    runtime.config = {"configurable": {"thread_id": "t7", "checkpoint_ns": "execute:7"}}
+
+    async def _handler(req: ToolCallRequest) -> ToolMessage:
+        return ToolMessage(
+            content=f"slice:{req.tool_call['args']['offset']}",
+            tool_call_id=req.tool_call["id"],
+            name="read_file",
+        )
+
+    handler = AsyncMock(side_effect=_handler)
+    call_count = {"n": 0}
+
+    async def _read(offset: int, call_id: str) -> ToolMessage:
+        call_count["n"] += 1
+        request = ToolCallRequest(
+            tool_call={
+                "name": "read_file",
+                "args": {
+                    "file_path": "/repo/planner.py",
+                    "offset": offset,
+                    "limit": 20,
+                },
+                "id": call_id,
+            },
+            tool=None,
+            state={"messages": []},
+            runtime=runtime,
+        )
+        result = await middleware.awrap_tool_call(request, handler)
+        assert isinstance(result, ToolMessage)
+        return result
+
+    first = await _read(0, "functions.read_file:1")
+    second = await _read(20, "functions.read_file:2")
+    third = await _read(40, "functions.read_file:3")
+
+    assert "slice:0" in str(first.content)
+    assert "slice:20" in str(second.content)
+    assert getattr(third, "status", None) == "error"
+    assert "Read thrash guidance" in str(third.content)
+    assert handler.await_count == 2
+    assert get_tool_reuse_metrics_snapshot()["read_file_thrash_guided"] >= 1
+
+    # After guidance, a subsequent wider read (different args) is allowed.
+    wider_request = ToolCallRequest(
+        tool_call={
+            "name": "read_file",
+            "args": {
+                "file_path": "/repo/planner.py",
+                "offset": 0,
+                "limit": 200,
+            },
+            "id": "functions.read_file:4",
+        },
+        tool=None,
+        state={"messages": []},
+        runtime=runtime,
+    )
+    wider = await middleware.awrap_tool_call(wider_request, handler)
+    assert isinstance(wider, ToolMessage)
+    assert "Read thrash" not in str(wider.content)
+    assert handler.await_count == 3
