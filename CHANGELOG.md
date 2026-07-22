@@ -5,6 +5,20 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-07-22
+
+### Added
+- `WorkspaceAwareBackend.virtual_mode` property and `bind_workspace()` method so deepagents `FilesystemMiddleware` can bind nested task workspaces without host config objects.
+- `ToolOptimizationMiddleware`: short-circuit empty `write_todos` payloads and guide on repeated same-path `read_file` slices; expose new metrics counters.
+- Tests: workspace-aware backend IG-709 coverage and tool optimization middleware regression tests.
+
+### Changed
+- Require `soothe-deepagents>=0.8.2` for workspace bind / GP middleware propagate support.
+- `WorkspaceContextMiddleware` resolves `virtual_mode` from the live backend / workspace context instead of injecting `soothe_config`; opts into `propagate_to_general_purpose` so middleware carries into subagents.
+- `system_templates`: prefer one wider `read_file` over many offset/limit slices; restrict task subagent to multi-hop reasoning, not mechanical repo search.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.0...v1.0.1
+
 ## [1.0.0] - 2026-07-22
 
 ### Added
@@ -13,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Raise `AgentRuntimeConfig.recursion_limit` default from 200 to 9_999 to reduce spurious recursion caps during deep agent runs.
-- Require `soothe-deepagents>=0.8.2` for workspace bind / GP middleware propagate support.
 - Decouple nano from the host package: fix import paths from `soothe` to `soothe_nano` in filesystem README, browser-use preview docstring, and toolkits internal docstring.
 - Add host extension points in `PostgresPoolRegistry`: template methods `_databases_to_open()` and `_initialize_pool_schema()` let host subclasses prepend checkpoints DB and add schema bootstrap.
 - Add injectable pool class params (`metadata_pool_cls`, `checkpointer_pool_cls`) to `resolve_durability`/`resolve_checkpointer` so the host can inject registry-bound subclasses.
