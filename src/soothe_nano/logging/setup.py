@@ -16,7 +16,7 @@ from soothe_nano.logging.context import get_thread_id
 if TYPE_CHECKING:
     from soothe_nano.config import SootheConfig
 
-# Community plugins (soothe-plugins) use this logger tree; mirror soothe handlers here.
+# Community plugins share this logger tree; mirror soothe handlers here.
 COMMUNITY_LOGGER_NAME = "soothe_plugins"
 PACKAGE_LOGGER_NAMES: tuple[str, ...] = ("soothe", COMMUNITY_LOGGER_NAME)
 
@@ -138,7 +138,7 @@ def setup_logging(
     """Configure Soothe and community package loggers with file and optional console handlers.
 
     Writes to ``SOOTHE_HOME/logs/soothe.log`` (rotating, 5 MB max, 3 backups) for both
-    ``soothe.*`` and ``soothe_plugins.*`` loggers unless ``log_file`` overrides the path.
+    ``soothe.*`` and ``soothe_plugins.*`` logger trees unless ``log_file`` overrides the path.
     Optionally outputs to console when enabled in config.
 
     Args:

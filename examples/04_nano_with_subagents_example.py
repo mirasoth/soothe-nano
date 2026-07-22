@@ -64,8 +64,8 @@ async def main() -> None:
     print("Query 2: Optional community plugins")
     print("=" * 40)
     print(
-        "Skipping optional web automation: install soothe-plugins and enable the matching "
-        "subagent entries from that package's documentation."
+        "Skipping optional web automation: install the external community plugins "
+        "package and enable the matching subagent entries from its documentation."
     )
 
     print("\n" + "=" * 40)
@@ -80,7 +80,9 @@ async def main() -> None:
     print("\n" + "=" * 60)
     print("Example completed successfully!")
     print("=" * 60)
-    print("\nTip: For optional delegated agents from soothe-plugins, follow that package's README.")
+    print(
+        "\nTip: For optional delegated agents from the community plugins package, follow its README."
+    )
 
 
 if __name__ == "__main__":
