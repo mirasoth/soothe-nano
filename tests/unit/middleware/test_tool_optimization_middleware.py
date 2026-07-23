@@ -180,6 +180,33 @@ async def test_duplicate_empty_lookup_returns_guidance_instead_of_repeating() ->
 
 
 @pytest.mark.asyncio
+async def test_shell_search_blocked_without_prior_native_search() -> None:
+    middleware = ToolOptimizationMiddleware()
+    runtime = MagicMock()
+    runtime.config = {"configurable": {"thread_id": "t5a", "checkpoint_ns": "execute:5a"}}
+
+    run_request = ToolCallRequest(
+        tool_call={
+            "name": "run_command",
+            "args": {"command": "rg docker-compose ."},
+            "id": "functions.run_command:50",
+        },
+        tool=None,
+        state={"messages": []},
+        runtime=runtime,
+    )
+    run_handler = AsyncMock(
+        return_value=ToolMessage(content="should not run", tool_call_id="functions.run_command:50")
+    )
+    run_result = await middleware.awrap_tool_call(run_request, run_handler)
+
+    assert isinstance(run_result, ToolMessage)
+    assert getattr(run_result, "status", None) == "error"
+    assert "Native search preferred" in str(run_result.content)
+    run_handler.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_shell_search_fallback_blocked_after_native_search() -> None:
     middleware = ToolOptimizationMiddleware()
     runtime = MagicMock()
@@ -221,8 +248,77 @@ async def test_shell_search_fallback_blocked_after_native_search() -> None:
 
     assert isinstance(run_result, ToolMessage)
     assert getattr(run_result, "status", None) == "error"
-    assert "Search consolidation" in str(run_result.content)
+    assert "Native search preferred" in str(run_result.content)
     run_handler.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_regex_rg_escape_hatch_allowed() -> None:
+    middleware = ToolOptimizationMiddleware()
+    runtime = MagicMock()
+    runtime.config = {"configurable": {"thread_id": "t5b", "checkpoint_ns": "execute:5b"}}
+
+    run_request = ToolCallRequest(
+        tool_call={
+            "name": "run_command",
+            "args": {"command": "rg 'foo.*bar' ./src"},
+            "id": "functions.run_command:51",
+        },
+        tool=None,
+        state={"messages": []},
+        runtime=runtime,
+    )
+    run_handler = AsyncMock(
+        return_value=ToolMessage(
+            content="src/a.py:1:foobar", tool_call_id="functions.run_command:51"
+        )
+    )
+    run_result = await middleware.awrap_tool_call(run_request, run_handler)
+
+    assert isinstance(run_result, ToolMessage)
+    assert getattr(run_result, "status", None) != "error"
+    run_handler.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_non_search_run_command_allowed() -> None:
+    middleware = ToolOptimizationMiddleware()
+    runtime = MagicMock()
+    runtime.config = {"configurable": {"thread_id": "t5c", "checkpoint_ns": "execute:5c"}}
+
+    run_request = ToolCallRequest(
+        tool_call={
+            "name": "run_command",
+            "args": {"command": "git status"},
+            "id": "functions.run_command:52",
+        },
+        tool=None,
+        state={"messages": []},
+        runtime=runtime,
+    )
+    run_handler = AsyncMock(
+        return_value=ToolMessage(content="ok", tool_call_id="functions.run_command:52")
+    )
+    run_result = await middleware.awrap_tool_call(run_request, run_handler)
+
+    assert isinstance(run_result, ToolMessage)
+    assert str(run_result.content) == "ok"
+    run_handler.assert_awaited_once()
+
+
+def test_is_simple_shell_search_command_detector() -> None:
+    from soothe_nano.middleware.tool_optimization_middleware import (
+        _is_simple_shell_search_command,
+    )
+
+    assert _is_simple_shell_search_command("rg docker-compose .")
+    assert _is_simple_shell_search_command("grep -rn foo /repo")
+    assert _is_simple_shell_search_command("rg -F literal .")
+    assert _is_simple_shell_search_command("find . -name '*.py'")
+    assert not _is_simple_shell_search_command("rg 'foo.*bar' ./src")
+    assert not _is_simple_shell_search_command("rg -P 'foo\\d+' .")
+    assert not _is_simple_shell_search_command("git status")
+    assert not _is_simple_shell_search_command("rg foo . | head -20")
 
 
 @pytest.mark.asyncio

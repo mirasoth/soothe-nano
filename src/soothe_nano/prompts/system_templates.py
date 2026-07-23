@@ -22,7 +22,7 @@ from soothe_nano.prompts.fragments import (
 
 _SHELL_GUIDE = """\
 Execution tools (always bound — not listed in <AVAILABLE_TOOLS>):
-- run_command: Sync shell — waits for completion and returns output. Default timeout 60s; pass timeout for longer bounded jobs (max 5h, e.g. timeout=3600). Use for: ls, curl, git, make test, one-shot scripts.
+- run_command: Sync shell — waits for completion and returns output. Default timeout 60s; pass timeout for longer bounded jobs (max 5h, e.g. timeout=3600). Use for: ls, curl, git, make test, one-shot scripts. Do NOT use for repo content/path search — use grep / glob instead.
 - run_background: Async shell — returns PID + log_path immediately. Use for: servers, daemons, training, long builds you poll separately. Follow with tail_background_log/read_file; stop with kill_process.
 - run_python: Execute Python code with session persistence. Variables persist across calls.
 - tail_background_log: Read the last N lines from a run_background log (bg-{{pid}}.log).
@@ -39,13 +39,24 @@ File operation tools:
 - read_file: Read file contents (optional start_line, end_line for ranges).
 - write_file: Write to files (mode='overwrite' or 'append').
 - delete: Delete files (use backup=true to create automatic backup).
-- search_files: Search for pattern in files (grep-like).
-- list_files: List files matching pattern.
+- grep: Search for a literal text pattern inside files (prefer over shell grep/rg).
+- glob: Find files by path pattern (prefer over shell find).
+- ls: List a directory.
 - file_info: Get file metadata.
 
 Prefer one wider read_file (larger line range or full file when reasonable) over \
 many tiny offset/limit slices on the same path.\
 """
+
+_SEARCH_GUIDE = """\
+Search (native tools first):
+- Content search: use the grep tool (literal pattern; batch parallel calls for multiple patterns).
+- Path discovery: use glob (narrow path when known).
+- Do NOT use run_command with grep/rg/find/ag for routine repo lookup.
+- Escape hatch: only when you need true regex or flags the grep tool lacks, use \
+run_command with `rg '<regex>' <path>` (always pass an explicit path after the pattern).\
+"""
+
 
 _SURGICAL_EDIT_GUIDE = """\
 Surgical editing tools (PREFERRED over full-file rewrites):
@@ -90,7 +101,7 @@ the subagent's unique capability:
 Additional subagents may be available from installed plugins; use only names listed in your runtime capabilities.
 
 Do NOT use `task` for mechanical multi-pattern repo search, file enumeration, \
-or reference confirmation — use batched `grep` / one `run_command` with `rg` instead. \
+or reference confirmation — use batched `grep` / `glob` instead. \
 Use `task` only for multi-hop reasoning the parent tools cannot finish in one wave. \
 After a `task` report returns, treat it as evidence: do not re-grep the same \
 symbols/paths; only spot-check disputed hits.\
@@ -103,6 +114,8 @@ Tool selection rules (follow strictly):
 {_SHELL_GUIDE}
 
 {_FILE_OPS_GUIDE}
+
+{_SEARCH_GUIDE}
 
 {_SURGICAL_EDIT_GUIDE}
 

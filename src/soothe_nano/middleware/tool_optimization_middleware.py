@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
+import shlex
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from langchain.agents.middleware import AgentMiddleware
@@ -41,6 +43,19 @@ _CACHE_INVALIDATING_TOOLS = frozenset(
 )
 _NATIVE_SEARCH_TOOLS = frozenset({"glob", "grep"})
 _DEFAULT_READ_FILE_THRASH_THRESHOLD = 3
+_SIMPLE_SHELL_SEARCH_BINS = frozenset({"grep", "egrep", "fgrep", "ag"})
+_FIND_PATH_FLAGS = frozenset({"-name", "-iname", "-path", "-ipath", "-regex", "-iregex"})
+_RG_FIXED_FLAGS = frozenset({"-F", "--fixed-strings"})
+_RG_REGEX_FLAGS = frozenset({"-P", "--pcre2", "-e", "--regexp"})
+_RG_REGEX_METACHARS = frozenset(".^$*+?{}[]|()\\")
+_SHELL_SEARCH_REDIRECT_MSG = (
+    "Native search preferred: use the grep tool for content search and glob for "
+    "path patterns instead of shell grep/rg/find. Only use run_command with rg when "
+    "you need true regex or flags the grep tool lacks (always pass an explicit path "
+    "after the pattern)."
+)
+_ENV_SKIP_TOKENS = frozenset({"sudo", "env", "command", "time", "nice"})
+_COMPOUND_MARKERS = ("|", "&&", ";", "||")
 
 
 @dataclass(slots=True)
@@ -147,6 +162,79 @@ def _read_file_window(args: dict[str, Any]) -> _ReadFileWindow | None:
     return _ReadFileWindow(path=path)
 
 
+def _first_positional_arg(tokens: list[str]) -> str | None:
+    """Return the first non-flag token (pattern/path) from argv after the binary."""
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok == "--":
+            return tokens[i + 1] if i + 1 < len(tokens) else None
+        if tok.startswith("-"):
+            # Flags that take a separate value (e.g. -g '*.py', -e PAT).
+            if tok in {"-g", "--glob", "-e", "--regexp", "-f", "--file"} and i + 1 < len(tokens):
+                i += 2
+                continue
+            i += 1
+            continue
+        return tok
+    return None
+
+
+def _pattern_looks_like_regex(pattern: str) -> bool:
+    """True when pattern contains regex metacharacters (structural check)."""
+    return any(ch in _RG_REGEX_METACHARS for ch in pattern)
+
+
+def _is_simple_shell_search_command(command: str) -> bool:
+    """True when command is a simple shell content/path search to redirect.
+
+    Blocks grep/ag and literal-style rg/find. Allows compound pipelines and
+    rg invocations that clearly need regex (non-fixed-string with metacharacters
+    or explicit regex flags).
+    """
+    text = command.strip()
+    if not text:
+        return False
+    if any(marker in text for marker in _COMPOUND_MARKERS):
+        return False
+    try:
+        tokens = shlex.split(text)
+    except ValueError:
+        tokens = text.split()
+    if not tokens:
+        return False
+
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if "=" in tok and not tok.startswith("-") and not tok.startswith("./"):
+            i += 1
+            continue
+        if tok in _ENV_SKIP_TOKENS:
+            i += 1
+            continue
+        break
+    if i >= len(tokens):
+        return False
+
+    bin_name = Path(tokens[i]).name
+    rest = tokens[i + 1 :]
+    if bin_name in _SIMPLE_SHELL_SEARCH_BINS:
+        return True
+    if bin_name == "rg":
+        if any(t in _RG_FIXED_FLAGS for t in rest):
+            return True
+        if any(t in _RG_REGEX_FLAGS for t in rest):
+            return False
+        pattern = _first_positional_arg(rest)
+        if pattern is not None and _pattern_looks_like_regex(pattern):
+            return False
+        return True
+    if bin_name == "find":
+        return any(t in _FIND_PATH_FLAGS for t in rest)
+    return False
+
+
 def _scope_metrics(state: _ToolReuseState) -> dict[str, int]:
     """Expose current deterministic reuse metrics for executor telemetry."""
     return {
@@ -199,7 +287,7 @@ class ToolOptimizationMiddleware(AgentMiddleware):
     Controls:
     - Lookup cache for deterministic same-args reuse.
     - Duplicate empty-result replay blocking.
-    - Native-search-first policy before shell grep fallback.
+    - Native-search-first policy (block simple shell grep/rg/find).
     - Empty write_todos short-circuit.
     - Same-path read_file thrash guidance.
     """
@@ -286,22 +374,18 @@ class ToolOptimizationMiddleware(AgentMiddleware):
         if tool_name in _NATIVE_SEARCH_TOOLS:
             state.native_search_calls += 1
 
-        if tool_name == "run_command" and state.native_search_calls > 0:
+        if tool_name == "run_command":
             command = str(tool_args.get("command") or "")
-            normalized = command.lower()
-            if "grep" in normalized or "rg " in normalized or normalized.startswith("rg"):
+            if _is_simple_shell_search_command(command):
                 state.shell_search_fallback_blocked += 1
                 logger.debug(
-                    "[ToolOptimization] blocked shell search fallback scope=%s native_search_calls=%d",
+                    "[ToolOptimization] blocked simple shell search scope=%s "
+                    "native_search_calls=%d",
                     scope_id,
                     state.native_search_calls,
                 )
                 return ToolMessage(
-                    content=(
-                        "Search consolidation: native search tools already ran in this step scope. "
-                        "Reuse those results or broaden native grep/glob arguments instead of "
-                        "running an equivalent shell search fallback."
-                    ),
+                    content=_SHELL_SEARCH_REDIRECT_MSG,
                     tool_call_id=tool_call_id,
                     name=tool_name,
                     status="error",

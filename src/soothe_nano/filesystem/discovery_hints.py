@@ -23,6 +23,30 @@ Examples:
 
 {GLOB_DISCOVERY_FALLBACK_HINT}"""
 
+GREP_DISCOVERY_FALLBACK_HINT = (
+    "Prefer this grep tool over run_command with grep/rg for content search. "
+    "Batch parallel grep calls for multiple patterns. Scope with path/glob when known. "
+    "Only if you need true regex or flags this tool lacks: run_command with "
+    "`rg '<regex>' <path>` (always pass an explicit path after the pattern)."
+)
+
+GREP_TOOL_DESCRIPTION = f"""Search for a LITERAL text pattern across files (NOT regex).
+
+Uses ripgrep when available, with a Python fallback. Prefer this tool over shell
+`grep`/`rg`/`find` for routine repo content search.
+
+Args:
+- pattern: Literal string to find (fixed-string; special regex chars are matched literally)
+- path: Optional file or directory to search (default: workspace root)
+- glob: Optional filename filter (e.g. `*.py`, `**/*.ts`)
+
+Tips:
+- Batch multiple patterns as parallel grep tool calls in one step
+- Narrow with path and/or glob when the target area is known
+- For path-only discovery, use glob instead
+
+{GREP_DISCOVERY_FALLBACK_HINT}"""
+
 
 def format_glob_timeout_error(timeout_seconds: float) -> str:
     """Build a glob timeout error with discovery fallback guidance."""
@@ -36,5 +60,7 @@ def format_glob_timeout_error(timeout_seconds: float) -> str:
 __all__ = [
     "GLOB_DISCOVERY_FALLBACK_HINT",
     "GLOB_TOOL_DESCRIPTION",
+    "GREP_DISCOVERY_FALLBACK_HINT",
+    "GREP_TOOL_DESCRIPTION",
     "format_glob_timeout_error",
 ]

@@ -375,6 +375,7 @@ class TestDomainScopedPrompts:
             _DATA_GUIDE,
             _FILE_OPS_GUIDE,
             _RESEARCH_GUIDE,
+            _SEARCH_GUIDE,
             _SHELL_GUIDE,
             _SUBAGENT_GUIDE,
         )
@@ -382,10 +383,19 @@ class TestDomainScopedPrompts:
         assert "websearch" in _RESEARCH_GUIDE or "search_web" in _RESEARCH_GUIDE
         assert "research" in _RESEARCH_GUIDE.lower()
         assert "read_file" in _FILE_OPS_GUIDE or "file" in _FILE_OPS_GUIDE.lower()
+        assert "grep" in _FILE_OPS_GUIDE
+        assert "glob" in _FILE_OPS_GUIDE
+        assert "search_files" not in _FILE_OPS_GUIDE
+        assert "list_files" not in _FILE_OPS_GUIDE
         assert "run_command" in _SHELL_GUIDE
+        assert "grep / glob" in _SHELL_GUIDE or "grep" in _SHELL_GUIDE
+        assert "grep tool" in _SEARCH_GUIDE
+        assert "run_command with `rg`" in _SEARCH_GUIDE or "true regex" in _SEARCH_GUIDE
         assert "data" in _DATA_GUIDE.lower()
         assert "planner" in _SUBAGENT_GUIDE.lower()
         assert "task" in _SUBAGENT_GUIDE.lower()
+        assert "batched `grep`" in _SUBAGENT_GUIDE
+        assert "run_command` with `rg`" not in _SUBAGENT_GUIDE
 
     def test_orchestration_guide_has_all_domains(self) -> None:
         from soothe_nano.prompts import _TOOL_ORCHESTRATION_GUIDE
@@ -397,6 +407,7 @@ class TestDomainScopedPrompts:
         assert "data" in guide_lower
         assert "search_web" in guide_lower or "websearch" in guide_lower or "web" in guide_lower
         assert "research" in guide_lower
+        assert "native tools first" in guide_lower or "grep tool" in guide_lower
 
     def test_no_old_tool_names_in_guide(self) -> None:
         from soothe_nano.prompts import _TOOL_ORCHESTRATION_GUIDE
@@ -407,3 +418,5 @@ class TestDomainScopedPrompts:
         assert "run_cli" not in _TOOL_ORCHESTRATION_GUIDE
         assert "python_executor" not in _TOOL_ORCHESTRATION_GUIDE
         assert "inquiry" not in _TOOL_ORCHESTRATION_GUIDE
+        assert "search_files" not in _TOOL_ORCHESTRATION_GUIDE
+        assert "list_files" not in _TOOL_ORCHESTRATION_GUIDE

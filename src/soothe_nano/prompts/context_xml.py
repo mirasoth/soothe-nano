@@ -37,11 +37,13 @@ def build_soothe_environment_section(*, model: str) -> str:
         Single XML section string.
     """
     from soothe_nano.config.models import get_knowledge_cutoff
+    from soothe_nano.filesystem.grep_search import is_grep_available
 
     platform_name = platform_module.system()
     shell = os.environ.get("SHELL", "unknown")
     os_version = platform_module.platform()
     cutoff = get_knowledge_cutoff(model)
+    search_backend = "ripgrep" if is_grep_available() else "python_fallback"
     inner = "\n".join(
         [
             f"<platform>{_xml_text(platform_name)}</platform>",
@@ -49,6 +51,7 @@ def build_soothe_environment_section(*, model: str) -> str:
             f"<os_version>{_xml_text(os_version)}</os_version>",
             f"<model>{_xml_text(model)}</model>",
             f"<knowledge_cutoff>{_xml_text(cutoff)}</knowledge_cutoff>",
+            f"<search_backend>{_xml_text(search_backend)}</search_backend>",
         ]
     )
     # Removed version attribute for cache optimization.

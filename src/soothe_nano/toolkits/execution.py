@@ -526,6 +526,7 @@ class RunCommandShellTool(ShellTool):
     description: str = (
         "Run a shell command synchronously and return stdout+stderr when it finishes. "
         "Use for: quick CLI checks, short scripts, bounded builds/tests you can wait for. "
+        "Not for repo/content search — use the grep tool (content) or glob (paths) instead. "
         "Parameters: command (required); optional timeout in seconds (default 60). "
         "Pass timeout for longer sync work (e.g. timeout=3600 for a 1h build; max 5h). "
         "Do NOT use for servers/daemons, foreground services, or jobs with no end — "

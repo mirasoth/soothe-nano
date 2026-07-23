@@ -14,7 +14,7 @@ from langgraph.types import Command
 from soothe_deepagents.backends.protocol import BackendProtocol
 from soothe_deepagents.middleware.filesystem import FilesystemMiddleware
 
-from soothe_nano.filesystem.discovery_hints import GLOB_TOOL_DESCRIPTION
+from soothe_nano.filesystem.discovery_hints import GLOB_TOOL_DESCRIPTION, GREP_TOOL_DESCRIPTION
 
 if TYPE_CHECKING:
     from soothe_deepagents.middleware.filesystem import ApplyDiffSchema as ApplyDiffSchema
@@ -186,6 +186,7 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
         _ensure_upstream_apply_diff_support()
         custom_descriptions = dict(kwargs.pop("custom_tool_descriptions", None) or {})
         custom_descriptions.setdefault("glob", GLOB_TOOL_DESCRIPTION)
+        custom_descriptions.setdefault("grep", GREP_TOOL_DESCRIPTION)
         kwargs["custom_tool_descriptions"] = custom_descriptions
         kwargs.setdefault(
             "tools",
