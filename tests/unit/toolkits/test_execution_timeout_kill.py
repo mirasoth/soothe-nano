@@ -34,7 +34,7 @@ def test_kill_process_tree_uses_killpg_on_unix(monkeypatch) -> None:
     monkeypatch.setattr("soothe_nano.toolkits.execution.sys.platform", "linux")
 
     def fake_getpgid(pid: int) -> int:
-        # Distinct from the caller's group so killpg is used (IG-665).
+        # Distinct from the caller's group so killpg is used (IG-622).
         return 1 if pid == 0 else 999
 
     monkeypatch.setattr("soothe_nano.toolkits.execution.os.getpgid", fake_getpgid)

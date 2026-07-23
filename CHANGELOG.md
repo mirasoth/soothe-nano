@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `WorkspaceAwareBackend.virtual_mode` property and `bind_workspace()` method so deepagents `FilesystemMiddleware` can bind nested task workspaces without host config objects.
 - `ToolOptimizationMiddleware`: short-circuit empty `write_todos` payloads and guide on repeated same-path `read_file` slices; expose new metrics counters.
-- Tests: workspace-aware backend IG-709 coverage and tool optimization middleware regression tests.
+- Tests: workspace-aware backend IG-645 coverage and tool optimization middleware regression tests.
 
 ### Changed
 - Require `soothe-deepagents>=0.8.2` for workspace bind / GP middleware propagate support.

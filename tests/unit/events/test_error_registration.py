@@ -1,4 +1,4 @@
-"""IG-707: nano protocol ERROR is registered in the shared REGISTRY."""
+"""IG-643: nano protocol ERROR is registered in the shared REGISTRY."""
 
 from soothe_sdk.core.events import ERROR
 from soothe_sdk.core.registry import REGISTRY

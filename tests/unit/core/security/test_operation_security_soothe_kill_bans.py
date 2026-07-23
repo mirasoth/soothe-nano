@@ -1,4 +1,4 @@
-"""Unit tests for Soothe-targeting shell command bans (IG-665)."""
+"""Unit tests for Soothe-targeting shell command bans (IG-622)."""
 
 from __future__ import annotations
 

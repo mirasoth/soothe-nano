@@ -3,7 +3,7 @@
 -- Host/daemon-only tables are NOT created here:
 --   cron_jobs, identity_*  -> applied at runtime by the host
 --   display_card_mutations, goal_display_snapshots
---                           -> applied by the daemon display store (IG-678 PR-2)
+--                           -> applied by the daemon display store (IG-635 PR-2)
 -- A standalone nano never reads or writes any of those.
 
 CREATE TABLE IF NOT EXISTS soothe_schema_migrations (
