@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+from soothe_sdk.core.events import (
+    ERROR,
+    LLM_RETRY_ATTEMPT,
+    MEMORY_RECALLED,
+    MEMORY_STORED,
+    POLICY_CHECKED,
+    POLICY_DENIED,
+    STREAM_END,
+)
 from soothe_sdk.core.verbosity import VerbosityTier
 
 from .catalog import (
@@ -19,15 +28,6 @@ from .catalog import (
     StreamEndEvent,
     custom_event,
     register_event,
-)
-from .constants import (
-    ERROR,
-    LLM_RETRY_ATTEMPT,
-    MEMORY_RECALLED,
-    MEMORY_STORED,
-    POLICY_CHECKED,
-    POLICY_DENIED,
-    STREAM_END,
 )
 
 __all__ = [

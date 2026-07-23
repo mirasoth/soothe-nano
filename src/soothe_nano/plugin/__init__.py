@@ -28,6 +28,8 @@ Example:
     ```
 """
 
+from soothe_sdk.plugin import PluginManifest
+
 from soothe_nano.plugin.context import create_plugin_context
 from soothe_nano.plugin.discovery import (
     discover_all_plugins,
@@ -52,7 +54,6 @@ from soothe_nano.plugin.exceptions import (
 )
 from soothe_nano.plugin.lifecycle import PluginLifecycleManager
 from soothe_nano.plugin.loader import PluginLoader
-from soothe_nano.plugin.manifest import PluginManifest
 from soothe_nano.plugin.registry import PluginRegistry, RegistryEntry
 
 __all__ = [
