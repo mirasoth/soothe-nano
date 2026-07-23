@@ -5,6 +5,13 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-07-23
+
+### Fixed
+- `ToolOptimizationMiddleware` now redirects simple shell content/path searches (`grep`, `egrep`, `fgrep`, `ag`, literal `rg`, `find -name`) to the native `grep` / `glob` tools, while keeping an escape hatch for true-regex `rg` invocations (metacharacters or explicit regex flags).
+- `discovery_hints` module exposes search-backend (`ripgrep` / `python_fallback`) detection helpers.
+- Active search backend surfaced in the environment context XML and system-prompt guidance.
+
 ## [1.0.1] - 2026-07-22
 
 ### Added
