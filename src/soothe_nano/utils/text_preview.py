@@ -167,15 +167,6 @@ def preview_lines(
     return preview(text, mode="lines", first=first, last=last if last > 0 else None)
 
 
-def preview_full(text: str) -> str:
-    """Return text with no truncation.
-
-    Use this for explicit clarity when a code path conditionally switches
-    between preview modes.
-    """
-    return preview(text, mode="full")
-
-
 def log_preview(text: str, chars: int = DEFAULT_PREVIEW_CHARS) -> str:
     """Logger-optimized preview with a minimal ``"..."`` marker.
 

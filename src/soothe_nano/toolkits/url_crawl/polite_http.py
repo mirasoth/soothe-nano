@@ -445,29 +445,3 @@ class PoliteClientContext:
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         if self._acquired:
             self.client.rate_limiter.release(self.domain)
-
-
-# Global client instance (lazy initialization)
-_global_client: PoliteHTTPClient | None = None
-
-
-def get_global_polite_client(
-    max_retries: int = 3,
-    base_delay: float = 1.0,
-    enable_circuit_breaker: bool = True,
-) -> PoliteHTTPClient:
-    """Get or create global polite HTTP client."""
-    global _global_client
-    if _global_client is None:
-        _global_client = PoliteHTTPClient(
-            max_retries=max_retries,
-            base_delay=base_delay,
-            enable_circuit_breaker=enable_circuit_breaker,
-        )
-    return _global_client
-
-
-def reset_global_client() -> None:
-    """Reset global client (useful for testing)."""
-    global _global_client
-    _global_client = None

@@ -6,7 +6,6 @@ from typing import Any
 import pytest
 
 from soothe_nano.mcp.mcp_config import (
-    StaticHeadersProvider,
     interpolate_auth_headers,
 )
 
@@ -214,43 +213,6 @@ class TestInterpolateAuthHeaders:
 
         with pytest.raises(RuntimeError, match="Something went wrong"):
             interpolate_auth_headers(headers, failing_resolver)
-
-
-class TestStaticHeadersProvider:
-    """Tests for StaticHeadersProvider class."""
-
-    async def test_headers_returns_copy(self) -> None:
-        """headers() returns a copy of internal headers."""
-        provider = StaticHeadersProvider({"Authorization": "Bearer token123"})
-        headers1 = await provider.headers()
-        headers2 = await provider.headers()
-
-        # Each call returns a new dict
-        assert headers1 == headers2
-        assert headers1 is not headers2
-
-    async def test_headers_empty(self) -> None:
-        """Empty headers dict works correctly."""
-        provider = StaticHeadersProvider({})
-        headers = await provider.headers()
-        assert headers == {}
-
-    async def test_on_401_returns_false(self) -> None:
-        """Static headers cannot refresh, so on_401 returns False."""
-        provider = StaticHeadersProvider({"Authorization": "Bearer token"})
-        result = await provider.on_401()
-        assert result is False
-
-    async def test_multiple_headers(self) -> None:
-        """Multiple headers are preserved."""
-        input_headers = {
-            "Authorization": "Bearer token123",
-            "X-Api-Key": "key123",
-            "X-Custom": "value",
-        }
-        provider = StaticHeadersProvider(input_headers)
-        headers = await provider.headers()
-        assert headers == input_headers
 
 
 class TestInterpolateAuthHeadersIntegration:

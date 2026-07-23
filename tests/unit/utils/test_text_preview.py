@@ -10,7 +10,6 @@ from soothe_nano.utils.text_preview import (
     log_preview,
     preview,
     preview_first,
-    preview_full,
     preview_lines,
 )
 
@@ -228,13 +227,6 @@ class TestPreviewLinesFunc:
         result = preview_lines(text, first=3, last=0)
         assert "Line0" in result
         assert "Line9" not in result
-
-
-class TestPreviewFullFunc:
-    """preview_full() convenience function tests."""
-
-    def test_returns_text_as_is(self) -> None:
-        assert preview_full("Anything") == "Anything"
 
 
 class TestLogPreview:

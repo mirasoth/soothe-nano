@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import logging
-from operator import add
-from typing import TYPE_CHECKING, Annotated, Any
-
-from langgraph.graph.message import add_messages
-from typing_extensions import TypedDict
+from typing import TYPE_CHECKING, Any
 
 from .engine import build_deep_research_engine
 from .protocol import DeepResearchConfig
@@ -18,15 +14,6 @@ if TYPE_CHECKING:
     from soothe_nano.config import SootheConfig
 
 logger = logging.getLogger(__name__)
-
-
-class DeepResearchState(TypedDict):
-    messages: Annotated[list, add_messages]
-    research_topic: str
-    search_summaries: Annotated[list[str], add]
-    sources_gathered: Annotated[list[str], add]
-    max_loops: int
-    loop_count: int
 
 
 def _build_web_source(config: SootheConfig) -> Any:

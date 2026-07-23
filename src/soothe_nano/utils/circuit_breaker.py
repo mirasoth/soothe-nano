@@ -262,33 +262,3 @@ class CircuitBreaker:
                     time.monotonic() - self._last_failure_time if self._last_failure_time else None
                 ),
             }
-
-
-def with_circuit_breaker(
-    failure_threshold: int = 5,
-    recovery_timeout: float = 60.0,
-    success_threshold: int = 3,
-    name: str | None = None,
-) -> Callable[[Callable], Callable]:
-    """Decorator factory for circuit breaker protection.
-
-    Creates a new circuit breaker instance for the decorated function.
-
-    Args:
-        failure_threshold: Failures before opening circuit
-        recovery_timeout: Seconds before trying again
-        success_threshold: Successes needed to close
-        name: Optional circuit breaker name
-
-    Usage:
-        @with_circuit_breaker(failure_threshold=3, recovery_timeout=30)
-        async def fetch_data():
-            ...
-    """
-    breaker = CircuitBreaker(
-        failure_threshold=failure_threshold,
-        recovery_timeout=recovery_timeout,
-        success_threshold=success_threshold,
-        name=name,
-    )
-    return breaker

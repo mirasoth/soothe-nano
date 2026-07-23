@@ -206,30 +206,3 @@ def backend_file_stat(path: Path, config: Any = None) -> dict[str, Any]:
         "is_file": path.is_file(),
         "is_dir": path.is_dir(),
     }
-
-
-def backend_delete_file(path: Path, config: Any = None) -> None:
-    """Delete file, using backend when virtual mode.
-
-    Args:
-        path: Resolved host path to file.
-        config: SootheConfig for virtual mode detection.
-    """
-    if _should_use_backend(config):
-        backend = _get_backend()
-        virtual_path = _to_virtual_home_path(path)
-        if backend is not None and virtual_path is not None:
-            try:
-                backend.delete(virtual_path)
-                return
-            except Exception as e:
-                logger.debug("Backend delete failed for %s, falling back: %s", virtual_path, e)
-
-    # Fallback or non-virtual mode
-    if path.exists():
-        if path.is_file():
-            path.unlink()
-        elif path.is_dir():
-            import shutil
-
-            shutil.rmtree(path, ignore_errors=True)

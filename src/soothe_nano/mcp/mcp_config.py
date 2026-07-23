@@ -5,32 +5,9 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable
 from datetime import timedelta
-from typing import Any, Protocol
+from typing import Any
 
 from soothe_nano.config.models import MCPAuthHeaders, MCPServerConfig, MCPTransport
-
-
-class AuthProvider(Protocol):
-    """Protocol for MCP authentication providers."""
-
-    async def headers(self) -> dict[str, str]:
-        """Return headers to add to the request."""
-
-    async def on_401(self) -> bool:
-        """Handle 401 response and report whether retry should happen."""
-
-
-class StaticHeadersProvider:
-    """Static header auth provider."""
-
-    def __init__(self, headers: dict[str, str]) -> None:
-        self._headers = headers
-
-    async def headers(self) -> dict[str, str]:
-        return dict(self._headers)
-
-    async def on_401(self) -> bool:
-        return False
 
 
 def interpolate_auth_headers(
