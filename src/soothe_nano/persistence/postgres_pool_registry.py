@@ -72,17 +72,17 @@ class PostgresPoolRegistry:
     def resolve_checkpoints_pool_size(config: SootheConfig) -> int:
         """Effective max_size for the checkpoints database pool."""
         p = config.persistence
-        return p.checkpoints_pool_size
+        return p.postgres.checkpoints_pool_size
 
     @staticmethod
     def resolve_metadata_pool_size(config: SootheConfig) -> int:
         """Effective max_size for the metadata database pool."""
-        return config.persistence.metadata_pool_size
+        return config.persistence.postgres.metadata_pool_size
 
     @staticmethod
     def resolve_vectors_pool_size(config: SootheConfig) -> int:
         """Effective max_size for the vectors database pool."""
-        return config.persistence.vectors_pool_size
+        return config.persistence.postgres.vectors_pool_size
 
     @classmethod
     def validate_budget(cls, config: SootheConfig) -> None:
@@ -92,7 +92,7 @@ class PostgresPoolRegistry:
             + cls.resolve_metadata_pool_size(config)
             + cls.resolve_vectors_pool_size(config)
         )
-        threshold = config.persistence.postgres_connection_budget_warn
+        threshold = config.persistence.postgres.connection_budget_warn
         if total > threshold:
             logger.warning(
                 "PostgreSQL pool budget high: checkpoints=%d metadata=%d vectors=%d "

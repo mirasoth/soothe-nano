@@ -24,14 +24,14 @@ def postgres_pool_timing_from_config(
     (e.g. small ``checkpoints_pool_size`` in tests or worker_pool tuning).
     """
     p = config.persistence
-    min_size = p.postgres_pool_min_size
+    min_size = p.postgres.pool_min_size
     if max_size is not None:
         min_size = min(min_size, max_size)
     return {
         "min_size": min_size,
-        "timeout": float(p.postgres_pool_acquire_timeout_seconds),
-        "max_idle": float(p.postgres_pool_max_idle_seconds),
-        "max_lifetime": float(p.postgres_pool_max_lifetime_seconds),
+        "timeout": float(p.postgres.pool_acquire_timeout_seconds),
+        "max_idle": float(p.postgres.pool_max_idle_seconds),
+        "max_lifetime": float(p.postgres.pool_max_lifetime_seconds),
         "kwargs": {
             "autocommit": True,
             "prepare_threshold": 0,

@@ -450,46 +450,25 @@ class ToolsConfig(BaseModel):
     deepxiv: DeepxivToolsConfig = Field(default_factory=lambda: DeepxivToolsConfig(enabled=False))
 
 
-class PersistenceConfig(BaseModel):
-    """Unified persistence settings for protocol backends.
+class SqliteRuntimeConfig(BaseModel):
+    """Optional tuning for ``SqliteStoreRuntime``.
 
-    Multi-database PostgreSQL architecture for lifecycle isolation,
-    backup granularity, and pgvector extension requirements.
-
-    Args:
-        postgres_base_dsn: Base PostgreSQL DSN without database name.
-            Example: "postgresql://user:pass@host:port"
-            Used with postgres_databases to construct full DSNs for each component.
-        postgres_databases: Named database mapping for each component.
-            Maps component names to database names.
-            Default: {"checkpoints": "soothe_checkpoints", "metadata": "soothe_metadata",
-                      "vectors": "soothe_vectors", "memory": "soothe_memory"}
-        soothe_postgres_dsn: Single-database PostgreSQL DSN when ``postgres_base_dsn`` is unset.
-        default_backend: Default backend for new protocols (can be overridden).
+    Paths are fixed under ``$SOOTHE_DATA_DIR/databases/`` — not configurable here.
     """
 
-    # Multi-database PostgreSQL architecture
-    postgres_base_dsn: str | None = None
-    """Base PostgreSQL DSN without database name."""
+    reader_pool_size: int = Field(default=3, ge=1, le=32)
+    busy_timeout_ms: int = Field(default=60_000, ge=0, le=600_000)
+    wal_checkpoint_on_shutdown: bool = True
 
-    postgres_databases: dict[str, str] = {
-        "checkpoints": "soothe_checkpoints",
-        "metadata": "soothe_metadata",
-        "vectors": "soothe_vectors",
-        "memory": "soothe_memory",
-    }
-    """Named database mapping for each component.
 
-    Note: LangGraph checkpoints share the process checkpoints database
-    with separate table names for schema isolation.
+class PostgresPoolConfig(BaseModel):
+    """Shared PostgreSQL ``AsyncConnectionPool`` tuning.
+
+    DSN / database-name identity stays on ``PersistenceConfig``
+    (``postgres_base_dsn``, ``postgres_databases``, ``soothe_postgres_dsn``).
     """
 
-    soothe_postgres_dsn: str = "postgresql://postgres:postgres@localhost:5432/soothe"
-    """Single-database PostgreSQL DSN when ``postgres_base_dsn`` is not set."""
-
-    default_backend: Literal["postgresql", "sqlite"] = "sqlite"
-
-    postgres_pool_min_size: int = Field(
+    pool_min_size: int = Field(
         default=4,
         ge=1,
         le=32,
@@ -523,7 +502,7 @@ class PersistenceConfig(BaseModel):
         le=128,
         description=("Shared pgvector PostgreSQL pool max_size per process (vectors database)."),
     )
-    postgres_connection_budget_warn: int = Field(
+    connection_budget_warn: int = Field(
         default=120,
         ge=16,
         le=512,
@@ -531,7 +510,7 @@ class PersistenceConfig(BaseModel):
             "Log a warning when checkpoints + metadata + vectors pool max sizes exceed this sum."
         ),
     )
-    postgres_pool_max_idle_seconds: float = Field(
+    pool_max_idle_seconds: float = Field(
         default=120.0,
         ge=10.0,
         le=3600.0,
@@ -540,28 +519,71 @@ class PersistenceConfig(BaseModel):
             "Lower values return connections to PgBouncer faster under bursty load."
         ),
     )
-    postgres_pool_max_lifetime_seconds: float = Field(
+    pool_max_lifetime_seconds: float = Field(
         default=1800.0,
         ge=60.0,
         le=86400.0,
         description="Recycle pool connections after this many seconds (psycopg max_lifetime).",
     )
-    postgres_pool_acquire_timeout_seconds: float = Field(
+    pool_acquire_timeout_seconds: float = Field(
         default=45.0,
         ge=1.0,
         le=300.0,
         description="Seconds to wait for a free pool connection before PoolTimeout.",
     )
 
-    # SQLite concurrency settings for multiple loop support
-    sqlite_reader_pool_size: int = Field(
-        default=8,
-        ge=1,
-        le=32,
+
+class PersistenceConfig(BaseModel):
+    """Unified persistence settings for protocol backends.
+
+    Multi-database PostgreSQL architecture for lifecycle isolation,
+    backup granularity, and pgvector extension requirements.
+
+    Args:
+        postgres_base_dsn: Base PostgreSQL DSN without database name.
+            Example: "postgresql://user:pass@host:port"
+            Used with postgres_databases to construct full DSNs for each component.
+        postgres_databases: Named database mapping for each component.
+            Maps component names to database names.
+            Default: {"checkpoints": "soothe_checkpoints", "metadata": "soothe_metadata",
+                      "vectors": "soothe_vectors", "memory": "soothe_memory"}
+        soothe_postgres_dsn: Single-database PostgreSQL DSN when ``postgres_base_dsn`` is unset.
+        default_backend: Default backend for new protocols (can be overridden).
+        postgres: Shared PostgreSQL pool tuning.
+        sqlite: Optional SqliteStoreRuntime tuning.
+    """
+
+    # Multi-database PostgreSQL architecture
+    postgres_base_dsn: str | None = None
+    """Base PostgreSQL DSN without database name."""
+
+    postgres_databases: dict[str, str] = {
+        "checkpoints": "soothe_checkpoints",
+        "metadata": "soothe_metadata",
+        "vectors": "soothe_vectors",
+        "memory": "soothe_memory",
+    }
+    """Named database mapping for each component.
+
+    Note: LangGraph checkpoints share the process checkpoints database
+    with separate table names for schema isolation.
+    """
+
+    soothe_postgres_dsn: str = "postgresql://postgres:postgres@localhost:5432/soothe"
+    """Single-database PostgreSQL DSN when ``postgres_base_dsn`` is not set."""
+
+    default_backend: Literal["postgresql", "sqlite"] = "sqlite"
+
+    postgres: PostgresPoolConfig = Field(
+        default_factory=PostgresPoolConfig,
+        description="Shared PostgreSQL AsyncConnectionPool tuning (min/max sizes, idle/lifetime).",
+    )
+
+    sqlite: SqliteRuntimeConfig | None = Field(
+        default=None,
         description=(
-            "SQLite reader connection pool size for concurrent reads. "
-            "Higher values support more parallel loops reading simultaneously. "
-            "Writer operations are serialized via WAL mode."
+            "Optional SqliteStoreRuntime tuning (reader pool, busy_timeout). "
+            "Paths are fixed under $SOOTHE_DATA_DIR/databases/."
         ),
     )
 

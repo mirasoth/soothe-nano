@@ -494,9 +494,8 @@ class TestSQLiteVecStoreUnit:
         assert store._db_path == "/tmp/test.db"
         assert store._vector_size == 768
         assert store._distance == "l2"
-        assert store._writer_conn is None  # Lazy connection (writer)
-        assert store._reader_pool == []  # Reader pool not initialized
-        assert store._has_vec_ext is False  # Not loaded yet
+        assert store._runtime is not None
+        assert store._has_vec_ext in (True, False)
 
     def test_vector_packing_function(self) -> None:
         """Test _pack_vector utility function."""

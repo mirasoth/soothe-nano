@@ -45,7 +45,7 @@ def create_persist_store(
                 postgres_pool_timing_from_config,
             )
 
-            pool_size = config.persistence.metadata_pool_size
+            pool_size = config.persistence.postgres.metadata_pool_size
             pool_timing = postgres_pool_timing_from_config(config, max_size=pool_size)
 
         if shared_pool is not None:

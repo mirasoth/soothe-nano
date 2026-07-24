@@ -78,7 +78,7 @@ def resolve_durability(
         try:
             from soothe_nano.backends.durability.sqlite import SQLiteDurability
 
-            logger.info("Using SQLite durability backend (metadata.db)")
+            logger.info("Using SQLite durability backend (databases/metadata.db)")
             return SQLiteDurability()
         except Exception as e:
             logger.error(
@@ -166,15 +166,15 @@ def _resolve_sqlite_checkpointer(config: SootheConfig) -> tuple[Checkpointer | N
         The runner will create AsyncSqliteSaver from the path in async context.
     """
     try:
-        from soothe_sdk.paths import SOOTHE_DATA_DIR
+        from soothe_sdk.paths import resolve_checkpoints_db_path
 
-        db_path = str(Path(SOOTHE_DATA_DIR) / "soothe_checkpoints.db")
+        db_path = str(resolve_checkpoints_db_path())
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
         logger.warning("Failed to create SQLite checkpointer path: %s", exc)
         return None
 
-    logger.info("SQLite checkpointer path resolved at %s (soothe_checkpoints.db)", db_path)
+    logger.info("SQLite checkpointer path resolved at %s", db_path)
     return (None, db_path)
 
 
