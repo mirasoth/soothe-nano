@@ -3,9 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from langchain_community.tools import ShellTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
-from langchain_experimental.tools.python.tool import PythonREPLTool
 
 from soothe_nano.toolkits.execution import (
     ExecutionToolkit,
@@ -72,7 +70,7 @@ class TestRunCommandShellToolOpenAiSchema:
 
 
 class TestRunCommandShellToolInitialization:
-    """Test RunCommandShellTool (langchain_community ShellTool) configuration."""
+    """Test RunCommandShellTool configuration."""
 
     def test_default_initialization(self) -> None:
         tool = RunCommandShellTool()
@@ -81,7 +79,7 @@ class TestRunCommandShellToolInitialization:
         assert tool.timeout == 60
         assert tool.max_output_length == 100_000
         assert tool.workspace_root == ""
-        assert isinstance(tool, ShellTool)
+        assert isinstance(tool, RunCommandShellTool)
 
     def test_custom_configuration(self) -> None:
         tool = RunCommandShellTool(
@@ -103,9 +101,7 @@ class TestRunCommandShellToolInitialization:
 
         assert len(tools) == 5
         assert isinstance(tools[0], RunCommandShellTool)
-        assert isinstance(tools[0], ShellTool)
         assert isinstance(tools[1], RunPythonREPLTool)
-        assert isinstance(tools[1], PythonREPLTool)
         assert isinstance(tools[2], RunBackgroundTool)
         assert isinstance(tools[3], TailBackgroundLogTool)
         assert isinstance(tools[4], KillProcessTool)

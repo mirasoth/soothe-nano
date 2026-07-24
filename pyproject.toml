@@ -40,7 +40,6 @@ dependencies = [
     "dashscope>=1.20.0",
     "langchain>=1.2.11,<2.0.0",
     "langchain-community>=0.3.0,<1.0.0",
-    "langchain-experimental>=0.0.50,<1.0.0",
     "langchain-core>=1.2.18,<2.0.0",
     "langchain-mcp-adapters>=0.2.0,<1.0.0",
     "langchain-openai>=0.3.0,<1.0.0",

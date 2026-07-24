@@ -29,7 +29,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from langchain_community.tools import ShellTool
 from langchain_core.callbacks.manager import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
@@ -37,8 +36,6 @@ from langchain_core.callbacks.manager import (
 from langchain_core.runnables.config import run_in_executor
 from langchain_core.tools import BaseTool
 from langchain_core.tools.base import InjectedToolArg
-from langchain_experimental.tools.python.tool import PythonREPLTool, sanitize_input
-from langchain_experimental.utilities.python import PythonREPL
 
 from soothe_nano.config.middleware_access import agent_middleware_config
 
@@ -244,7 +241,7 @@ def _translate_virtual_paths_in_command(
 
 
 class RunCommandInput(BaseModel):
-    """Arguments for ``run_command`` (ShellTool-based)."""
+    """Arguments for ``run_command``."""
 
     command: str = Field(..., description="The shell command to execute.")
     timeout: int | None = Field(
@@ -507,21 +504,13 @@ def _run_shell_command_sync(
     )
 
 
-class _UnusedShellProcess:
-    """``ShellTool`` requires ``process``; Soothe runs commands via ``subprocess``."""
-
-    def run(self, commands: object) -> str:  # pragma: no cover
-        raise RuntimeError("RunCommandShellTool does not use BashProcess.run")
-
-
-class RunCommandShellTool(ShellTool):
-    """LangChain :class:`~langchain_community.tools.ShellTool` as ``run_command``.
+class RunCommandShellTool(BaseTool):
+    """Synchronous shell ``run_command`` tool.
 
     Adds operation security, workspace-aware ``cwd``, LangGraph ``ToolRuntime``
     injection, and subprocess execution.
     """
 
-    process: Any = Field(default_factory=lambda: _UnusedShellProcess())
     name: str = "run_command"
     description: str = (
         "Run a shell command synchronously and return stdout+stderr when it finishes. "
@@ -629,32 +618,62 @@ class RunCommandShellTool(ShellTool):
 
 
 class RunPythonInput(BaseModel):
-    """Arguments for ``run_python`` (PythonREPLTool-based)."""
+    """Arguments for ``run_python``."""
 
     code: str = Field(..., description="Python code to execute.")
 
 
-def _soothe_python_repl() -> PythonREPL:
+def _sanitize_python_repl_input(query: str) -> str:
+    """Strip markdown/REPL fences LLMs often wrap around Python snippets."""
+    query = re.sub(r"^(\s|`)*(?i:python)?\s*", "", query)
+    query = re.sub(r"(\s|`)*$", "", query)
+    return query
+
+
+class _SoothePythonREPL:
+    """In-process Python REPL with an isolated globals namespace."""
+
+    def __init__(self) -> None:
+        self.globals: dict[str, Any] = {"__name__": "__soothe_repl__"}
+        self.locals: dict[str, Any] | None = None
+
+    def run(self, command: str) -> str:
+        """Execute ``command`` and return captured stdout (or ``repr(exc)``)."""
+        from io import StringIO
+
+        old_stdout = sys.stdout
+        sys.stdout = buf = StringIO()
+        try:
+            exec(_sanitize_python_repl_input(command), self.globals, self.locals)  # noqa: S102
+            return buf.getvalue()
+        except Exception as exc:
+            return repr(exc)
+        finally:
+            sys.stdout = old_stdout
+
+
+def _soothe_python_repl() -> _SoothePythonREPL:
     """Isolated REPL globals (not the importing module's ``globals()``)."""
-    return PythonREPL.model_construct(_globals={}, _locals=None)
+    return _SoothePythonREPL()
 
 
-class RunPythonREPLTool(PythonREPLTool):
-    """LangChain :class:`~langchain_experimental.tools.python.PythonREPLTool` as ``run_python``.
+class RunPythonREPLTool(BaseTool):
+    """Persistent in-process ``run_python`` REPL tool.
 
-    Uses ``PythonREPL`` with an isolated namespace; state persists for the lifetime
-    of this tool instance.
+    Uses an isolated namespace; state persists for the lifetime of this tool
+    instance (reset when the agent tool catalog is rebuilt).
     """
 
     name: str = "run_python"
     description: str = (
-        "Execute Python code in a persistent Python REPL (langchain_experimental). "
+        "Execute Python code in a persistent Python REPL. "
         "Variables and imports persist across calls on the same tool instance "
         "(reset when the agent tool catalog is rebuilt). "
         "Parameters: code (required). Use print(...) to display values."
     )
     args_schema: type[BaseModel] = RunPythonInput
-    python_repl: PythonREPL = Field(default_factory=_soothe_python_repl)
+    python_repl: _SoothePythonREPL = Field(default_factory=_soothe_python_repl)
+    sanitize_input: bool = True
 
     def _run(
         self,
@@ -662,7 +681,7 @@ class RunPythonREPLTool(PythonREPLTool):
         run_manager: CallbackManagerForToolRun | None = None,
     ) -> Any:
         if self.sanitize_input:
-            code = sanitize_input(code)
+            code = _sanitize_python_repl_input(code)
         return self.python_repl.run(code)
 
     async def _arun(
@@ -671,7 +690,7 @@ class RunPythonREPLTool(PythonREPLTool):
         run_manager: AsyncCallbackManagerForToolRun | None = None,
     ) -> Any:
         if self.sanitize_input:
-            code = sanitize_input(code)
+            code = _sanitize_python_repl_input(code)
         return await run_in_executor(None, self.python_repl.run, code)
 
 
