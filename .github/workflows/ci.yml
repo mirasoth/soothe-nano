@@ -20,12 +20,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        # Pin to an immutable tag (v8+ no longer publishes major/minor tags).
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           version: "latest"
+          # Only save the uv cache on one matrix job to avoid cache reservation
+          # races between parallel jobs that compute the same key.
+          save-cache: ${{ matrix.python-version == '3.12' }}
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
@@ -58,7 +62,7 @@ jobs:
 
       - name: Upload coverage report
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-report
           path: coverage.xml
@@ -69,10 +73,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           version: "latest"
 
