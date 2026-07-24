@@ -5,6 +5,23 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2026-07-24
+
+### Fixed
+- `toolkits.execution` no longer depends on the sunset `langchain-experimental` `ShellTool` / `PythonREPL`; `run_command` and `run_python` are now implemented on `BaseTool` with an in-process REPL. `datetime.utcnow` replaced with timezone-aware UTC.
+- Bump `soothe-sdk>=1.0.6` (required for the unified SQLite runtime contract).
+
+### Changed
+- Unify SQLite durability, vector store, and persistence under a single process-scoped runtime (`sqlite_runtime`) with a shared runtime lifecycle and pool registry, matching the PostgreSQL control-plane shape.
+- Rewrite `sqlite_store` and `sqlite_vec` to route through the runtime, dropping redundant per-instance connection plumbing.
+- Centralize SQLite path resolution in `paths.sqlite_paths`, threaded through config models/settings and the resolver infra.
+- Align `postgres_pool_lifecycle` / `postgres_pool_registry` with the unified runtime shape.
+
+### Added
+- `tests/unit/persistence/test_sqlite_runtime.py` covering the new SQLite runtime.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.3...v1.0.4
+
 ## [1.0.3] - 2026-07-24
 
 ### Changed
