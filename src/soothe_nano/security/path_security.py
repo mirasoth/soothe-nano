@@ -76,40 +76,44 @@ class PathValidator:
         (r"[\ufff0-\uffff]", "unicode_special", ValidationSeverity.MEDIUM),
     )
 
-    DANGEROUS_COMPONENTS: frozenset[str] = frozenset({
-        "..",
-        ".",
-        "~",
-        "",
-        ".git",
-        ".svn",
-        ".hg",
-        "__pycache__",
-        ".DS_Store",
-        "Thumbs.db",
-    })
+    DANGEROUS_COMPONENTS: frozenset[str] = frozenset(
+        {
+            "..",
+            ".",
+            "~",
+            "",
+            ".git",
+            ".svn",
+            ".hg",
+            "__pycache__",
+            ".DS_Store",
+            "Thumbs.db",
+        }
+    )
 
-    BLOCKED_SYSTEM_PATHS: frozenset[str] = frozenset({
-        "/etc",
-        "/bin",
-        "/sbin",
-        "/usr",
-        "/lib",
-        "/lib64",
-        "/dev",
-        "/proc",
-        "/sys",
-        "/root",
-        "/boot",
-        "/var/log",
-        "/tmp/..",
-        "/home/..",
-        "C:\\Windows",
-        "C:\\Windows\\System32",
-        "C:\\Program Files",
-        "C:\\Program Files (x86)",
-        "C:\\Users\\..",
-    })
+    BLOCKED_SYSTEM_PATHS: frozenset[str] = frozenset(
+        {
+            "/etc",
+            "/bin",
+            "/sbin",
+            "/usr",
+            "/lib",
+            "/lib64",
+            "/dev",
+            "/proc",
+            "/sys",
+            "/root",
+            "/boot",
+            "/var/log",
+            "/tmp/..",
+            "/home/..",
+            "C:\\Windows",
+            "C:\\Windows\\System32",
+            "C:\\Program Files",
+            "C:\\Program Files (x86)",
+            "C:\\Users\\..",
+        }
+    )
 
     def __init__(
         self,

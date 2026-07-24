@@ -153,14 +153,16 @@ class MemuMemoryStore:
             # Store updated mapping
             mapping = self._get_memory_mapping(memory_id)
             if mapping:
-                mapping.update({
-                    "content": existing_item.content,
-                    "metadata": existing_item.metadata,
-                    "tags": existing_item.tags,
-                    "importance": existing_item.importance,
-                    "updated_at": existing_item.updated_at.isoformat(),
-                    "version": existing_item.version,
-                })
+                mapping.update(
+                    {
+                        "content": existing_item.content,
+                        "metadata": existing_item.metadata,
+                        "tags": existing_item.tags,
+                        "importance": existing_item.importance,
+                        "updated_at": existing_item.updated_at.isoformat(),
+                        "version": existing_item.version,
+                    }
+                )
                 self._store_memory_mapping(
                     memory_id, existing_item, mapping.get("memory_items", [])
                 )

@@ -57,14 +57,16 @@ def test_build_deep_research_smoke() -> None:
             ),
         ):
             runnable = build_deep_research_engine(mock_model, web_source)
-            result = runnable.invoke({
-                "messages": [],
-                "research_topic": "agentic memory research",
-                "search_summaries": [],
-                "sources_gathered": [],
-                "max_loops": 1,
-                "loop_count": 0,
-            })
+            result = runnable.invoke(
+                {
+                    "messages": [],
+                    "research_topic": "agentic memory research",
+                    "search_summaries": [],
+                    "sources_gathered": [],
+                    "max_loops": 1,
+                    "loop_count": 0,
+                }
+            )
 
     assert result.get("effort") == "normal"
     answer = result.get("answer", "")
@@ -139,13 +141,15 @@ def test_synthesize_excludes_attached_pdf_body() -> None:
             ),
         ):
             runnable = build_deep_research_engine(mock_model, web_source)
-            result = runnable.invoke({
-                "messages": [HumanMessage(content=fat_topic)],
-                "search_summaries": [],
-                "sources_gathered": [],
-                "max_loops": 1,
-                "loop_count": 0,
-            })
+            result = runnable.invoke(
+                {
+                    "messages": [HumanMessage(content=fat_topic)],
+                    "search_summaries": [],
+                    "sources_gathered": [],
+                    "max_loops": 1,
+                    "loop_count": 0,
+                }
+            )
 
     assert pdf_marker in captured[0], "PlanResearch should still see attachment text"
     synth_prompts = [p for p in captured if "Write a structured research report" in p]

@@ -71,12 +71,14 @@ async def fetch_prompts(session: Any, *, server_name: str) -> list[dict]:
     result: list[dict] = []
     for prompt in prompts:
         bare_name = prompt.name if hasattr(prompt, "name") else str(prompt)
-        result.append({
-            "name": build_mcp_tool_name(server_name, bare_name),
-            "bare_name": bare_name,
-            "description": prompt.description if hasattr(prompt, "description") else None,
-            "server": server_name,
-        })
+        result.append(
+            {
+                "name": build_mcp_tool_name(server_name, bare_name),
+                "bare_name": bare_name,
+                "description": prompt.description if hasattr(prompt, "description") else None,
+                "server": server_name,
+            }
+        )
     return result
 
 
@@ -89,13 +91,15 @@ async def fetch_resources(session: Any, *, server_name: str) -> list[dict]:
 
     result: list[dict] = []
     for resource in resources:
-        result.append({
-            "uri": resource.uri if hasattr(resource, "uri") else str(resource),
-            "name": resource.name if hasattr(resource, "name") else None,
-            "description": resource.description if hasattr(resource, "description") else None,
-            "server": server_name,
-            "mime_type": resource.mimeType if hasattr(resource, "mimeType") else None,
-        })
+        result.append(
+            {
+                "uri": resource.uri if hasattr(resource, "uri") else str(resource),
+                "name": resource.name if hasattr(resource, "name") else None,
+                "description": resource.description if hasattr(resource, "description") else None,
+                "server": server_name,
+                "mime_type": resource.mimeType if hasattr(resource, "mimeType") else None,
+            }
+        )
     return result
 
 

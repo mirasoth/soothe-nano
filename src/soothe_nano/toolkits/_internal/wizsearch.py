@@ -350,13 +350,15 @@ def _build_result_payload(result: object) -> str:
     if answer:
         parts.append(f"Direct answer: {answer}")
         parts.append("")
-    parts.extend([
-        body,
-        "</SEARCH_DATA>",
-        "",
-        "Synthesize the search data into a clear answer. "
-        "Do NOT reproduce raw results, source listings, or URLs.",
-    ])
+    parts.extend(
+        [
+            body,
+            "</SEARCH_DATA>",
+            "",
+            "Synthesize the search data into a clear answer. "
+            "Do NOT reproduce raw results, source listings, or URLs.",
+        ]
+    )
     return "\n".join(parts)
 
 
@@ -375,12 +377,14 @@ def _validate_engine_config(engines: list[str]) -> list[dict[str, Any]]:
         if engine == "tavily":
             key = os.environ.get("TAVILY_API_KEY") or os.environ.get("WIZSEARCH_TAVILY_API_KEY")
             if not key:
-                warnings.append({
-                    "engine": engine,
-                    "issue": "missing_api_key",
-                    "message": "TAVILY_API_KEY not found in environment",
-                    "action": "Set TAVILY_API_KEY or WIZSEARCH_TAVILY_API_KEY environment variable",
-                })
+                warnings.append(
+                    {
+                        "engine": engine,
+                        "issue": "missing_api_key",
+                        "message": "TAVILY_API_KEY not found in environment",
+                        "action": "Set TAVILY_API_KEY or WIZSEARCH_TAVILY_API_KEY environment variable",
+                    }
+                )
 
     if not warnings:
         https_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")

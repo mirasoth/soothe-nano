@@ -87,10 +87,12 @@ class UpdateMemoryWithSuggestionsAction(BaseAction):
         try:
             # Validate category
             if category not in self.basic_memory_types:
-                return self._add_metadata({
-                    "success": False,
-                    "error": f"Invalid category '{category}'. Available: {list(self.basic_memory_types.keys())}",
-                })
+                return self._add_metadata(
+                    {
+                        "success": False,
+                        "error": f"Invalid category '{category}'. Available: {list(self.basic_memory_types.keys())}",
+                    }
+                )
 
             if not session_date:
                 session_date = datetime.now().strftime("%Y-%m-%d")
@@ -121,23 +123,28 @@ class UpdateMemoryWithSuggestionsAction(BaseAction):
                 generate_embeddings,
             )
 
-            return self._add_metadata({
-                "success": True,
-                "character_name": character_name,
-                "category": category,
-                "operation_executed": operation_executed,
-                "new_memory_items": new_items,
-                "message": f"Successfully performed {len(operation_executed)} memory operations for {category}",
-            })
+            return self._add_metadata(
+                {
+                    "success": True,
+                    "character_name": character_name,
+                    "category": category,
+                    "operation_executed": operation_executed,
+                    "new_memory_items": new_items,
+                    "message": f"Successfully performed {len(operation_executed)} memory operations for {category}",
+                }
+            )
 
         except Exception as e:
             return self._handle_error(e)
 
     def _format_existing_content(self, existing_memory_items: list[dict[str, str]]) -> str:
         """Format existing content into a list of memory items."""
-        return "\n".join([
-            f"[Memory ID: {item['memory_id']}] {item['content']}" for item in existing_memory_items
-        ])
+        return "\n".join(
+            [
+                f"[Memory ID: {item['memory_id']}] {item['content']}"
+                for item in existing_memory_items
+            ]
+        )
 
     def _analyze_memory_operation_from_suggestion(
         self,
@@ -344,12 +351,14 @@ Memory Update Suggestion:
                 links = match.group(4) or ""
 
                 if memory_id and clean_content:
-                    items.append({
-                        "memory_id": memory_id,
-                        "mentioned_at": mentioned_at,
-                        "content": clean_content,
-                        "links": links,
-                    })
+                    items.append(
+                        {
+                            "memory_id": memory_id,
+                            "mentioned_at": mentioned_at,
+                            "content": clean_content,
+                            "links": links,
+                        }
+                    )
 
         return items
 
@@ -435,10 +444,12 @@ Memory Update Suggestion:
 
     def _format_memory_items(self, items: list[dict[str, str]]) -> str:
         """Format memory items into a string."""
-        return "\n".join([
-            f"[{item['memory_id']}][mentioned at {item['mentioned_at']}] {item['content']} [{item['links']}]"
-            for item in items
-        ])
+        return "\n".join(
+            [
+                f"[{item['memory_id']}][mentioned at {item['mentioned_at']}] {item['content']} [{item['links']}]"
+                for item in items
+            ]
+        )
 
     def _load_category_extract_prompt(
         self,

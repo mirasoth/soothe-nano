@@ -1249,11 +1249,13 @@ class LocalFilesystem(UnifiedFilesystem):
                         norm = str(match_resolved)
                 except (OSError, ValueError, RuntimeError):
                     norm = raw_path
-            matches.append({
-                "path": norm,
-                "line": int(match.get("line", 0)),
-                "text": str(match.get("text", "")),
-            })
+            matches.append(
+                {
+                    "path": norm,
+                    "line": int(match.get("line", 0)),
+                    "text": str(match.get("text", "")),
+                }
+            )
 
         if output_mode == "content":
             return GrepResult(error=da.error, matches=matches, truncated=da.truncated)

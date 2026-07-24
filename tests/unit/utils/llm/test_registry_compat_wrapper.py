@@ -22,26 +22,30 @@ from soothe_nano.utils.llm.wrappers import OpenAICompatModelWrapper
     ],
 )
 def test_requires_openai_compat_wrapper(api_base_url: str | None, expected: bool) -> None:
-    registry = ProviderRegistry([
-        ModelProviderConfig(
-            name="local",
-            provider_type="openai",
-            api_base_url=api_base_url,
-            api_key="test",
-        )
-    ])
+    registry = ProviderRegistry(
+        [
+            ModelProviderConfig(
+                name="local",
+                provider_type="openai",
+                api_base_url=api_base_url,
+                api_key="test",
+            )
+        ]
+    )
     assert registry.requires_openai_compat_wrapper("local") is expected
 
 
 def test_requires_openai_compat_wrapper_anthropic_never() -> None:
-    registry = ProviderRegistry([
-        ModelProviderConfig(
-            name="anthropic",
-            provider_type="anthropic",
-            api_base_url="http://localhost:9999/v1",
-            api_key="test",
-        )
-    ])
+    registry = ProviderRegistry(
+        [
+            ModelProviderConfig(
+                name="anthropic",
+                provider_type="anthropic",
+                api_base_url="http://localhost:9999/v1",
+                api_key="test",
+            )
+        ]
+    )
     assert registry.requires_openai_compat_wrapper("anthropic") is False
 
 

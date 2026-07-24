@@ -155,12 +155,14 @@ class TestEditFileLinesTool:
         lines = [f"Line {i}" for i in range(1, 11)]
         test_file.write_text("\n".join(lines))
 
-        result = edit_tool.invoke({
-            "file_path": str(test_file),
-            "start_line": 3,
-            "end_line": 5,
-            "new_content": "New Line 3\nNew Line 4\nNew Line 5",
-        })
+        result = edit_tool.invoke(
+            {
+                "file_path": str(test_file),
+                "start_line": 3,
+                "end_line": 5,
+                "new_content": "New Line 3\nNew Line 4\nNew Line 5",
+            }
+        )
 
         content = test_file.read_text()
         assert "New Line 3" in content
@@ -170,12 +172,14 @@ class TestEditFileLinesTool:
 
     def test_edit_nonexistent_file(self, edit_tool) -> None:
         """Test editing non-existent file."""
-        result = edit_tool.invoke({
-            "file_path": "/nonexistent/file.txt",
-            "start_line": 1,
-            "end_line": 2,
-            "new_content": "test",
-        })
+        result = edit_tool.invoke(
+            {
+                "file_path": "/nonexistent/file.txt",
+                "start_line": 1,
+                "end_line": 2,
+                "new_content": "test",
+            }
+        )
 
         assert "Error" in result or "not found" in result.lower()
 
@@ -184,12 +188,14 @@ class TestEditFileLinesTool:
         test_file = tmp_path / "test.txt"
         test_file.write_text("Line 1\nLine 2")
 
-        result = edit_tool.invoke({
-            "file_path": str(test_file),
-            "start_line": 10,
-            "end_line": 15,
-            "new_content": "test",
-        })
+        result = edit_tool.invoke(
+            {
+                "file_path": str(test_file),
+                "start_line": 10,
+                "end_line": 15,
+                "new_content": "test",
+            }
+        )
 
         assert "Error" in result or "Invalid" in result
 
@@ -207,11 +213,13 @@ class TestInsertLinesTool:
         test_file = tmp_path / "test.py"
         test_file.write_text("Line 1\nLine 2\nLine 3")
 
-        result = insert_tool.invoke({
-            "file_path": str(test_file),
-            "line": 2,
-            "content": "Inserted Line",
-        })
+        result = insert_tool.invoke(
+            {
+                "file_path": str(test_file),
+                "line": 2,
+                "content": "Inserted Line",
+            }
+        )
 
         content = test_file.read_text()
         lines = content.splitlines()
@@ -244,11 +252,13 @@ class TestDeleteLinesTool:
         lines = [f"Line {i}" for i in range(1, 11)]
         test_file.write_text("\n".join(lines))
 
-        result = delete_lines_tool.invoke({
-            "file_path": str(test_file),
-            "start_line": 3,
-            "end_line": 5,
-        })
+        result = delete_lines_tool.invoke(
+            {
+                "file_path": str(test_file),
+                "start_line": 3,
+                "end_line": 5,
+            }
+        )
 
         content = test_file.read_text()
         assert "Line 3" not in content
@@ -261,11 +271,13 @@ class TestDeleteLinesTool:
         test_file = tmp_path / "test.txt"
         test_file.write_text("Line 1\nLine 2")
 
-        result = delete_lines_tool.invoke({
-            "file_path": str(test_file),
-            "start_line": 10,
-            "end_line": 15,
-        })
+        result = delete_lines_tool.invoke(
+            {
+                "file_path": str(test_file),
+                "start_line": 10,
+                "end_line": 15,
+            }
+        )
 
         assert "Error" in result or "Invalid" in result
 
@@ -296,10 +308,12 @@ class TestApplyDiffTool:
         test_file = tmp_path / "test.txt"
         test_file.write_text("content")
 
-        result = apply_diff_tool.invoke({
-            "file_path": str(test_file),
-            "diff": "invalid diff format",
-        })
+        result = apply_diff_tool.invoke(
+            {
+                "file_path": str(test_file),
+                "diff": "invalid diff format",
+            }
+        )
 
         assert "Error" in result or "Failed" in result
 

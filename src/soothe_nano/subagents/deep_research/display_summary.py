@@ -7,14 +7,16 @@ import re
 _SCOPE_HEADING_RE = re.compile(r"^#{1,3}\s+\**Scope\**:?\**", re.IGNORECASE | re.MULTILINE)
 _SECTION_HEADING_RE = re.compile(r"^#{1,3}\s+(.+)$", re.MULTILINE)
 _SKIP_HEADINGS = frozenset({"scope", "references"})
-_PREFERRED_SUMMARY_SECTIONS = frozenset({
-    "executive summary",
-    "key findings",
-    "overview",
-    "summary",
-    "verdict",
-    "recommendation",
-})
+_PREFERRED_SUMMARY_SECTIONS = frozenset(
+    {
+        "executive summary",
+        "key findings",
+        "overview",
+        "summary",
+        "verdict",
+        "recommendation",
+    }
+)
 
 
 def _body_after_scope(report: str) -> str:

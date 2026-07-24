@@ -57,10 +57,12 @@ class TestPermissionSet:
     def test_contains_permission(self) -> None:
         """Test that PermissionSet contains check works."""
         perm_set = PermissionSet(
-            frozenset([
-                Permission("fs", "read", "*"),
-                Permission("fs", "write", "/specific/path"),
-            ])
+            frozenset(
+                [
+                    Permission("fs", "read", "*"),
+                    Permission("fs", "write", "/specific/path"),
+                ]
+            )
         )
 
         assert perm_set.contains(Permission("fs", "read", "/any/path"))
@@ -71,17 +73,21 @@ class TestPermissionSet:
     def test_narrow_restrictions(self) -> None:
         """Test narrowing a permission set."""
         parent_set = PermissionSet(
-            frozenset([
-                Permission("fs", "read", "*"),
-                Permission("fs", "write", "*"),
-                Permission("shell", "execute", "*"),
-            ])
+            frozenset(
+                [
+                    Permission("fs", "read", "*"),
+                    Permission("fs", "write", "*"),
+                    Permission("shell", "execute", "*"),
+                ]
+            )
         )
 
-        restrictions = frozenset([
-            Permission("fs", "read", "/safe/path"),
-            Permission("fs", "read", "*"),  # Keep read permission
-        ])
+        restrictions = frozenset(
+            [
+                Permission("fs", "read", "/safe/path"),
+                Permission("fs", "read", "*"),  # Keep read permission
+            ]
+        )
 
         child_set = parent_set.narrow(restrictions)
 
@@ -232,10 +238,12 @@ class TestConfigDrivenPolicy:
 
         # Create a custom permission set with no shell execute
         no_execute_permissions = PermissionSet(
-            frozenset([
-                Permission("fs", "read", "*"),
-                Permission("net", "outbound", "*"),
-            ])
+            frozenset(
+                [
+                    Permission("fs", "read", "*"),
+                    Permission("net", "outbound", "*"),
+                ]
+            )
         )
 
         context = PolicyContext(
@@ -316,19 +324,23 @@ class TestConfigDrivenPolicy:
     def test_narrow_for_child_with_restrictions(self) -> None:
         """Test narrowing permissions for a child subagent."""
         child_restrictions = {
-            "research": frozenset([
-                Permission("fs", "read", "/safe"),
-                Permission("fs", "read", "*"),  # Need to include this for intersection
-            ]),
+            "research": frozenset(
+                [
+                    Permission("fs", "read", "/safe"),
+                    Permission("fs", "read", "*"),  # Need to include this for intersection
+                ]
+            ),
         }
 
         policy = ConfigDrivenPolicy(child_restrictions=child_restrictions)
 
         parent_permissions = PermissionSet(
-            frozenset([
-                Permission("fs", "read", "*"),
-                Permission("fs", "write", "*"),
-            ])
+            frozenset(
+                [
+                    Permission("fs", "read", "*"),
+                    Permission("fs", "write", "*"),
+                ]
+            )
         )
 
         child_permissions = policy.narrow_for_child(parent_permissions, "research")
@@ -343,10 +355,12 @@ class TestConfigDrivenPolicy:
         policy = ConfigDrivenPolicy()
 
         parent_permissions = PermissionSet(
-            frozenset([
-                Permission("fs", "read", "*"),
-                Permission("fs", "write", "*"),
-            ])
+            frozenset(
+                [
+                    Permission("fs", "read", "*"),
+                    Permission("fs", "write", "*"),
+                ]
+            )
         )
 
         child_permissions = policy.narrow_for_child(parent_permissions, "unknown_child")

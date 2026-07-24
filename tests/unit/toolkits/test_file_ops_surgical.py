@@ -62,12 +62,14 @@ class TestEditFileLinesTool:
         code_file = tmp_path / "code.py"
         code_file.write_text("def hello():\n    print('world')\n    return True\n")
 
-        edit_tool.invoke({
-            "file_path": str(code_file),
-            "start_line": 2,
-            "end_line": 2,
-            "new_content": "    print('Soothe')",
-        })
+        edit_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "start_line": 2,
+                "end_line": 2,
+                "new_content": "    print('Soothe')",
+            }
+        )
 
         updated = code_file.read_text()
         assert "Soothe" in updated
@@ -81,12 +83,14 @@ class TestEditFileLinesTool:
         code_file = tmp_path / "multi.py"
         code_file.write_text("x = 1\ny = 2\nz = 3\n")
 
-        edit_tool.invoke({
-            "file_path": str(code_file),
-            "start_line": 1,
-            "end_line": 2,
-            "new_content": "a = 10\nb = 20",
-        })
+        edit_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "start_line": 1,
+                "end_line": 2,
+                "new_content": "a = 10\nb = 20",
+            }
+        )
 
         updated = code_file.read_text()
         assert "a = 10" in updated
@@ -98,12 +102,14 @@ class TestEditFileLinesTool:
         small_file = tmp_path / "small.txt"
         small_file.write_text("only one line\n")
 
-        result = edit_tool.invoke({
-            "file_path": str(small_file),
-            "start_line": 10,
-            "end_line": 15,
-            "new_content": "invalid",
-        })
+        result = edit_tool.invoke(
+            {
+                "file_path": str(small_file),
+                "start_line": 10,
+                "end_line": 15,
+                "new_content": "invalid",
+            }
+        )
 
         # Should return error
         assert "error" in result.lower() or "invalid" in result.lower()
@@ -113,12 +119,14 @@ class TestEditFileLinesTool:
         code_file = tmp_path / "indented.py"
         code_file.write_text("def foo():\n    x = 1\n    y = 2\n")
 
-        edit_tool.invoke({
-            "file_path": str(code_file),
-            "start_line": 2,
-            "end_line": 2,
-            "new_content": "    x = 10",
-        })
+        edit_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "start_line": 2,
+                "end_line": 2,
+                "new_content": "    x = 10",
+            }
+        )
 
         updated = code_file.read_text()
         assert "    x = 10" in updated  # Indentation preserved
@@ -128,12 +136,14 @@ class TestEditFileLinesTool:
         code_file = tmp_path / "end.txt"
         code_file.write_text("line1\nline2\nline3\n")
 
-        edit_tool.invoke({
-            "file_path": str(code_file),
-            "start_line": 3,
-            "end_line": 3,
-            "new_content": "new_last_line",
-        })
+        edit_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "start_line": 3,
+                "end_line": 3,
+                "new_content": "new_last_line",
+            }
+        )
 
         updated = code_file.read_text()
         assert "new_last_line" in updated
@@ -152,11 +162,13 @@ class TestInsertLinesTool:
         code_file = tmp_path / "insert.txt"
         code_file.write_text("line1\nline2\n")
 
-        insert_tool.invoke({
-            "file_path": str(code_file),
-            "line": 2,  # Insert before line 2 (between line1 and line2)
-            "content": "new_line",
-        })
+        insert_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "line": 2,  # Insert before line 2 (between line1 and line2)
+                "content": "new_line",
+            }
+        )
 
         updated = code_file.read_text()
         lines = updated.split("\n")
@@ -169,11 +181,13 @@ class TestInsertLinesTool:
         code_file = tmp_path / "beginning.txt"
         code_file.write_text("existing\n")
 
-        insert_tool.invoke({
-            "file_path": str(code_file),
-            "line": 1,  # Insert at line 1 (beginning)
-            "content": "first",
-        })
+        insert_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "line": 1,  # Insert at line 1 (beginning)
+                "content": "first",
+            }
+        )
 
         updated = code_file.read_text()
         assert updated.startswith("first")
@@ -183,11 +197,13 @@ class TestInsertLinesTool:
         code_file = tmp_path / "multi.txt"
         code_file.write_text("original\n")
 
-        insert_tool.invoke({
-            "file_path": str(code_file),
-            "line": 2,  # Insert at end (after line 1)
-            "content": "line1\nline2\nline3",
-        })
+        insert_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "line": 2,  # Insert at end (after line 1)
+                "content": "line1\nline2\nline3",
+            }
+        )
 
         updated = code_file.read_text()
         assert "line1" in updated
@@ -199,11 +215,13 @@ class TestInsertLinesTool:
         code_file = tmp_path / "preserve.txt"
         code_file.write_text("before\nafter\n")
 
-        insert_tool.invoke({
-            "file_path": str(code_file),
-            "line": 2,  # Insert before "after"
-            "content": "inserted",
-        })
+        insert_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "line": 2,  # Insert before "after"
+                "content": "inserted",
+            }
+        )
 
         updated = code_file.read_text()
         assert "before" in updated
@@ -224,11 +242,13 @@ class TestDeleteLinesTool:
         code_file = tmp_path / "delete.txt"
         code_file.write_text("keep1\ndelete1\ndelete2\nkeep2\n")
 
-        delete_lines_tool.invoke({
-            "file_path": str(code_file),
-            "start_line": 2,
-            "end_line": 3,
-        })
+        delete_lines_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "start_line": 2,
+                "end_line": 3,
+            }
+        )
 
         updated = code_file.read_text()
         assert "keep1" in updated
@@ -241,11 +261,13 @@ class TestDeleteLinesTool:
         code_file = tmp_path / "single.txt"
         code_file.write_text("keep1\ndelete\nkeep2\n")
 
-        delete_lines_tool.invoke({
-            "file_path": str(code_file),
-            "start_line": 2,
-            "end_line": 2,
-        })
+        delete_lines_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "start_line": 2,
+                "end_line": 2,
+            }
+        )
 
         updated = code_file.read_text()
         assert "keep1" in updated
@@ -257,11 +279,13 @@ class TestDeleteLinesTool:
         code_file = tmp_path / "end.txt"
         code_file.write_text("keep\ndelete1\ndelete2\n")
 
-        delete_lines_tool.invoke({
-            "file_path": str(code_file),
-            "start_line": 2,
-            "end_line": 3,
-        })
+        delete_lines_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "start_line": 2,
+                "end_line": 3,
+            }
+        )
 
         updated = code_file.read_text()
         assert "keep" in updated
@@ -272,11 +296,13 @@ class TestDeleteLinesTool:
         code_file = tmp_path / "small.txt"
         code_file.write_text("one line\n")
 
-        result = delete_lines_tool.invoke({
-            "file_path": str(code_file),
-            "start_line": 10,
-            "end_line": 15,
-        })
+        result = delete_lines_tool.invoke(
+            {
+                "file_path": str(code_file),
+                "start_line": 10,
+                "end_line": 15,
+            }
+        )
 
         # Should return error
         assert isinstance(result, str)
@@ -293,12 +319,14 @@ class TestCodeEditErrorHandling:
     def test_edit_nonexistent_file(self, middleware) -> None:
         """Test editing non-existent file."""
         edit_tool = next(t for t in middleware.tools if t.name == "edit_lines")
-        result = edit_tool.invoke({
-            "file_path": "/nonexistent/file.txt",
-            "start_line": 1,
-            "end_line": 1,
-            "new_content": "test",
-        })
+        result = edit_tool.invoke(
+            {
+                "file_path": "/nonexistent/file.txt",
+                "start_line": 1,
+                "end_line": 1,
+                "new_content": "test",
+            }
+        )
 
         assert isinstance(result, str)
 

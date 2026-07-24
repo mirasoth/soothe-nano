@@ -32,17 +32,19 @@ SEARCH_SKILLS_TOOL = "search_skills"
 INVOKE_SKILL_TOOL = "invoke_skill"
 SEARCH_TOOLS_TOOL = "search_tools"
 
-FILE_OP_TOOLS: frozenset[str] = frozenset({
-    "read_file",
-    "write_file",
-    "edit_file",
-    "glob",
-    "grep",
-    "delete",
-    "insert_lines",
-    "apply_diff",
-    "file_info",
-})
+FILE_OP_TOOLS: frozenset[str] = frozenset(
+    {
+        "read_file",
+        "write_file",
+        "edit_file",
+        "glob",
+        "grep",
+        "delete",
+        "insert_lines",
+        "apply_diff",
+        "file_info",
+    }
+)
 _PATH_KEYS: tuple[str, ...] = ("file_path", "path", "filepath", "file")
 
 
