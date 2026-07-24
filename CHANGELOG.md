@@ -5,12 +5,31 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-07-24
+
+### Changed
+- Drop SDK re-export shims in `events` and `plugin` packages; import the canonical registry and plugin contracts directly from `soothe_sdk`.
+- Expose the `project_instructions` prompt module as part of the public API surface.
+- Minor refactors in MCP config and the academic / deep research subagent implementations.
+
+### Removed
+- Dead code swept across grep search, MCP reconnect, middleware tool-name hints, backend ops, polite HTTP, browser CDP, circuit breaker, outcome preview, prompt clock, and text preview modules.
+- Host-owned constants pruned from `events.constants`; nano references only its own protocol type strings.
+- Pruned unit tests tied to removed dead code: grep search, static headers provider, prompt clock, text preview, and MCP auth.
+
+### Fixed
+- Internal reference numbering aligned to the canonical scheme across tests and module docstrings.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.2...v1.0.3
+
 ## [1.0.2] - 2026-07-23
 
 ### Fixed
 - `ToolOptimizationMiddleware` now redirects simple shell content/path searches (`grep`, `egrep`, `fgrep`, `ag`, literal `rg`, `find -name`) to the native `grep` / `glob` tools, while keeping an escape hatch for true-regex `rg` invocations (metacharacters or explicit regex flags).
 - `discovery_hints` module exposes search-backend (`ripgrep` / `python_fallback`) detection helpers.
 - Active search backend surfaced in the environment context XML and system-prompt guidance.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.1...v1.0.2
 
 ## [1.0.1] - 2026-07-22
 
