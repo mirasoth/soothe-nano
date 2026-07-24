@@ -91,9 +91,10 @@ class AddActivityMemoryAction(BaseAction):
             formatted_content = self._format_content_with_llm(character_name, content, session_date)
 
             if not formatted_content.strip():
-                return self._add_metadata(
-                    {"success": False, "error": "LLM returned empty formatted content"}
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": "LLM returned empty formatted content",
+                })
 
             # Add memory IDs with timestamp to the formatted content
             memory_items, content_with_ids = self._add_memory_ids_with_timestamp(
@@ -108,20 +109,18 @@ class AddActivityMemoryAction(BaseAction):
                 self._add_memory_item_embedding(character_name, "activity", memory_items)
 
             if success:
-                return self._add_metadata(
-                    {
-                        "success": True,
-                        "character_name": character_name,
-                        "category": "activity",
-                        "session_date": session_date,
-                        "memory_items_added": len(memory_items),
-                        "memory_items": memory_items,
-                        "message": (
-                            f"Successfully generated {len(memory_items)} self-contained "
-                            f"activity memory items for {character_name}"
-                        ),
-                    }
-                )
+                return self._add_metadata({
+                    "success": True,
+                    "character_name": character_name,
+                    "category": "activity",
+                    "session_date": session_date,
+                    "memory_items_added": len(memory_items),
+                    "memory_items": memory_items,
+                    "message": (
+                        f"Successfully generated {len(memory_items)} self-contained "
+                        f"activity memory items for {character_name}"
+                    ),
+                })
             return self._add_metadata({"success": False, "error": "Failed to save activity memory"})
 
         except Exception as e:
@@ -227,14 +226,12 @@ Transform the raw content into properly formatted activity memory items (ONE MEA
                 # Generate new unique memory ID for this line
                 memory_id = self._generate_memory_id()
                 # Format: [memory_id][mentioned at {session_date}] {content} [links]
-                processed_items.append(
-                    {
-                        "memory_id": memory_id,
-                        "mentioned_at": session_date,
-                        "content": line,
-                        "links": "",
-                    }
-                )
+                processed_items.append({
+                    "memory_id": memory_id,
+                    "mentioned_at": session_date,
+                    "content": line,
+                    "links": "",
+                })
                 plain_memory_lines.append(f"[{memory_id}][mentioned at {session_date}] {line} []")
 
         plain_memory_text = "\n".join(plain_memory_lines)

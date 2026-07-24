@@ -242,12 +242,10 @@ def test_git_operations_including_push_allowed() -> None:
 
 def test_path_whitelist_bypass_overrides_default_deny() -> None:
     cfg = SimpleNamespace(
-        security=SimpleNamespace(
-            **{
-                **_security(allow_out=False).__dict__,
-                "whitelist_paths_bypass": ["/etc/**", "/private/etc/**"],
-            }
-        ),
+        security=SimpleNamespace(**{
+            **_security(allow_out=False).__dict__,
+            "whitelist_paths_bypass": ["/etc/**", "/private/etc/**"],
+        }),
         workspace_dir="/tmp/ws",
     )
     policy = ConfigDrivenPolicy(config=cfg)
@@ -269,12 +267,10 @@ def test_path_whitelist_bypass_overrides_default_deny() -> None:
 
 def test_command_whitelist_bypass_overrides_default_deny() -> None:
     cfg = SimpleNamespace(
-        security=SimpleNamespace(
-            **{
-                **_security(allow_out=False).__dict__,
-                "whitelist_commands_bypass": [r"rm\s+-rf\s+/"],
-            }
-        ),
+        security=SimpleNamespace(**{
+            **_security(allow_out=False).__dict__,
+            "whitelist_commands_bypass": [r"rm\s+-rf\s+/"],
+        }),
         workspace_dir="/tmp/ws",
     )
     policy = ConfigDrivenPolicy(config=cfg)

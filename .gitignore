@@ -35,3 +35,5 @@ venv/
 ENV/
 env/
 .DS_Store
+
+.backups/

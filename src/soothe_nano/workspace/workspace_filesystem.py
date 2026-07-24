@@ -33,21 +33,17 @@ def _grep_matches_for_backend(result: Any) -> list[dict[str, Any]]:
     if isinstance(result, GrepResult):
         for match in result.matches or []:
             if isinstance(match, dict):
-                matches.append(
-                    {
-                        "path": match.get("path", ""),
-                        "line": int(match.get("line", 0)),
-                        "text": match.get("text", ""),
-                    }
-                )
+                matches.append({
+                    "path": match.get("path", ""),
+                    "line": int(match.get("line", 0)),
+                    "text": match.get("text", ""),
+                })
             else:
-                matches.append(
-                    {
-                        "path": getattr(match, "path", ""),
-                        "line": int(getattr(match, "line", getattr(match, "line_number", 0))),
-                        "text": getattr(match, "text", getattr(match, "line_content", "")),
-                    }
-                )
+                matches.append({
+                    "path": getattr(match, "path", ""),
+                    "line": int(getattr(match, "line", getattr(match, "line_number", 0))),
+                    "text": getattr(match, "text", getattr(match, "line_content", "")),
+                })
     elif isinstance(result, list):
         for item in result:
             if isinstance(item, dict):
@@ -341,30 +337,24 @@ class NormalizedPathBackend:
             if isinstance(result, list) and result:
                 for item in result:
                     if isinstance(item, dict):
-                        entries.append(
-                            {
-                                "path": item.get("path", ""),
-                                "is_dir": bool(item.get("is_dir", False)),
-                                "size": item.get("size", 0),
-                                "modified_at": item.get("modified_at"),
-                            }
-                        )
+                        entries.append({
+                            "path": item.get("path", ""),
+                            "is_dir": bool(item.get("is_dir", False)),
+                            "size": item.get("size", 0),
+                            "modified_at": item.get("modified_at"),
+                        })
                     elif isinstance(item, str):
                         entries.append({"path": item, "is_dir": False})
                     else:
                         modified = getattr(item, "modified_at", None)
-                        entries.append(
-                            {
-                                "path": item.path,
-                                "is_dir": item.is_dir,
-                                "size": item.size,
-                                "modified_at": (
-                                    modified.isoformat()
-                                    if hasattr(modified, "isoformat")
-                                    else modified
-                                ),
-                            }
-                        )
+                        entries.append({
+                            "path": item.path,
+                            "is_dir": item.is_dir,
+                            "size": item.size,
+                            "modified_at": (
+                                modified.isoformat() if hasattr(modified, "isoformat") else modified
+                            ),
+                        })
             return LsResult(entries=entries)
         except Exception as e:
             logger.warning("ls error for %s: %s", path, e)
@@ -378,30 +368,24 @@ class NormalizedPathBackend:
             if isinstance(result, list) and result:
                 for item in result:
                     if isinstance(item, dict):
-                        entries.append(
-                            {
-                                "path": item.get("path", ""),
-                                "is_dir": bool(item.get("is_dir", False)),
-                                "size": item.get("size", 0),
-                                "modified_at": item.get("modified_at"),
-                            }
-                        )
+                        entries.append({
+                            "path": item.get("path", ""),
+                            "is_dir": bool(item.get("is_dir", False)),
+                            "size": item.get("size", 0),
+                            "modified_at": item.get("modified_at"),
+                        })
                     elif isinstance(item, str):
                         entries.append({"path": item, "is_dir": False})
                     else:
                         modified = getattr(item, "modified_at", None)
-                        entries.append(
-                            {
-                                "path": item.path,
-                                "is_dir": item.is_dir,
-                                "size": item.size,
-                                "modified_at": (
-                                    modified.isoformat()
-                                    if hasattr(modified, "isoformat")
-                                    else modified
-                                ),
-                            }
-                        )
+                        entries.append({
+                            "path": item.path,
+                            "is_dir": item.is_dir,
+                            "size": item.size,
+                            "modified_at": (
+                                modified.isoformat() if hasattr(modified, "isoformat") else modified
+                            ),
+                        })
             return LsResult(entries=entries)
         except Exception as e:
             logger.warning("als error for %s: %s", path, e)
@@ -415,9 +399,10 @@ class NormalizedPathBackend:
         file_infos: list[dict[str, Any]] = []
         for item in result.matches or []:
             if isinstance(item, dict):
-                file_infos.append(
-                    {"path": item.get("path", ""), "is_dir": bool(item.get("is_dir", False))}
-                )
+                file_infos.append({
+                    "path": item.get("path", ""),
+                    "is_dir": bool(item.get("is_dir", False)),
+                })
             else:
                 file_infos.append({"path": str(item), "is_dir": False})
         return GlobResult(error=result.error, matches=file_infos)
@@ -430,9 +415,10 @@ class NormalizedPathBackend:
         file_infos: list[dict[str, Any]] = []
         for item in result.matches or []:
             if isinstance(item, dict):
-                file_infos.append(
-                    {"path": item.get("path", ""), "is_dir": bool(item.get("is_dir", False))}
-                )
+                file_infos.append({
+                    "path": item.get("path", ""),
+                    "is_dir": bool(item.get("is_dir", False)),
+                })
             else:
                 file_infos.append({"path": str(item), "is_dir": False})
         return GlobResult(error=result.error, matches=file_infos)

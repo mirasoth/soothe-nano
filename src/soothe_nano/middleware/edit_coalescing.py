@@ -41,14 +41,12 @@ DEFAULT_STAGING_BUFFER_MAX_ENTRIES: int = 64
 DEFAULT_STAGING_BUFFER_EVICTION_POLICY: str = "reject_newest"
 
 # Edit tools that are coalesced
-EDIT_TOOL_NAMES: frozenset[str] = frozenset(
-    {
-        "edit_file",
-        "edit_lines",
-        "insert_lines",
-        "delete_lines",
-    }
-)
+EDIT_TOOL_NAMES: frozenset[str] = frozenset({
+    "edit_file",
+    "edit_lines",
+    "insert_lines",
+    "delete_lines",
+})
 
 # Path argument keys to extract file path from tool args
 _PATH_ARG_KEYS: tuple[str, ...] = ("path", "file_path", "filepath", "file")

@@ -61,13 +61,15 @@ sync-dev:
 # Format code
 format:
 	@echo "Formatting code..."
-	$(UV_RUN) ruff format src/ tests/ examples/
+	$(UV_RUN) ruff format --preview src/ tests/ examples/
 	@echo "✓ Code formatted"
 
-# Check formatting (for CI)
+# Check formatting (for CI). --preview keeps markdown code-block formatting
+# (enabled by [tool.ruff.format] docstring-code-format) stable across ruff
+# versions, so CI and local disagree less.
 format-check:
 	@echo "Checking code formatting..."
-	$(UV_RUN) ruff format --check src/ tests/ examples/
+	$(UV_RUN) ruff format --check --preview src/ tests/ examples/
 	@echo "✓ Format check passed"
 
 # Lint code

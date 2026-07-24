@@ -49,17 +49,15 @@ class GetAvailableCategoriesAction(BaseAction):
                     "config_source": self.config_manager.get_folder_path(category),
                 }
 
-            return self._add_metadata(
-                {
-                    "success": True,
-                    "categories": categories,
-                    "total_categories": len(categories),
-                    "processing_order": [cat for cat in self.processing_order if cat != "activity"],
-                    "embeddings_enabled": self.embeddings_enabled,
-                    "excluded_categories": ["activity"],
-                    "message": f"Found {len(categories)} memory categories from config (excluding activity)",
-                }
-            )
+            return self._add_metadata({
+                "success": True,
+                "categories": categories,
+                "total_categories": len(categories),
+                "processing_order": [cat for cat in self.processing_order if cat != "activity"],
+                "embeddings_enabled": self.embeddings_enabled,
+                "excluded_categories": ["activity"],
+                "message": f"Found {len(categories)} memory categories from config (excluding activity)",
+            })
 
         except Exception as e:
             return self._handle_error(e)

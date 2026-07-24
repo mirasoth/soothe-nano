@@ -6,43 +6,41 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-DEFAULT_CORE_TOOL_NAMES: frozenset[str] = frozenset(
-    {
-        # soothe_deepagents filesystem
-        "ls",
-        "read_file",
-        "write_file",
-        "edit_file",
-        "glob",
-        "grep",
-        # soothe_deepagents other
-        "write_todos",
-        "task",
-        # soothe surgical file ops
-        "delete",
-        "edit_lines",
-        "insert_lines",
-        "delete_lines",
-        "apply_diff",
-        "file_info",
-        # soothe execution
-        "run_command",
-        "run_python",
-        "run_background",
-        "tail_background_log",
-        "kill_process",
-        # soothe datetime
-        "current_datetime",
-        # progressive discovery
-        "search_tools",
-        "search_skills",
-        "invoke_skill",
-        # MCP progressive disclosure
-        "search_mcp_tools",
-        "mcp_resources_list",
-        "mcp_resources_read",
-    }
-)
+DEFAULT_CORE_TOOL_NAMES: frozenset[str] = frozenset({
+    # soothe_deepagents filesystem
+    "ls",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "glob",
+    "grep",
+    # soothe_deepagents other
+    "write_todos",
+    "task",
+    # soothe surgical file ops
+    "delete",
+    "edit_lines",
+    "insert_lines",
+    "delete_lines",
+    "apply_diff",
+    "file_info",
+    # soothe execution
+    "run_command",
+    "run_python",
+    "run_background",
+    "tail_background_log",
+    "kill_process",
+    # soothe datetime
+    "current_datetime",
+    # progressive discovery
+    "search_tools",
+    "search_skills",
+    "invoke_skill",
+    # MCP progressive disclosure
+    "search_mcp_tools",
+    "mcp_resources_list",
+    "mcp_resources_read",
+})
 
 
 @dataclass(frozen=True, slots=True)

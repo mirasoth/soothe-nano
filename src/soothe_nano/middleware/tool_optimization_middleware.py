@@ -28,19 +28,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _CACHEABLE_LOOKUP_TOOLS = frozenset({"read_file", "glob", "grep"})
-_CACHE_INVALIDATING_TOOLS = frozenset(
-    {
-        "edit_file",
-        "edit_lines",
-        "insert_lines",
-        "delete_lines",
-        "write_file",
-        "move_file",
-        "delete_file",
-        "run_command",
-        "run_python",
-    }
-)
+_CACHE_INVALIDATING_TOOLS = frozenset({
+    "edit_file",
+    "edit_lines",
+    "insert_lines",
+    "delete_lines",
+    "write_file",
+    "move_file",
+    "delete_file",
+    "run_command",
+    "run_python",
+})
 _NATIVE_SEARCH_TOOLS = frozenset({"glob", "grep"})
 _DEFAULT_READ_FILE_THRASH_THRESHOLD = 3
 _SIMPLE_SHELL_SEARCH_BINS = frozenset({"grep", "egrep", "fgrep", "ag"})

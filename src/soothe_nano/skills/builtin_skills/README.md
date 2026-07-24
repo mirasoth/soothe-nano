@@ -49,9 +49,7 @@ User skills can also be added via ``SootheConfig.skills`` / ``skills:`` in YAML:
 ```python
 from soothe_nano.config import SootheConfig
 
-config = SootheConfig(
-    skills=["~/.soothe/skills/my-reviewer", "/path/to/custom/skills/deploy"]
-)
+config = SootheConfig(skills=["~/.soothe/skills/my-reviewer", "/path/to/custom/skills/deploy"])
 ```
 
 ## Creating New Skills

@@ -75,9 +75,10 @@ class GenerateMemorySuggestionsAction(BaseAction):
             if available_categories is None:
                 available_categories = self._get_available_categories(character_name)
             if not available_categories:
-                return self._add_metadata(
-                    {"success": False, "error": "No available categories found"}
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": "No available categories found",
+                })
 
             # Convert memory items to text for analysis
             memory_items_text = "\n".join([f"- {item['content']}" for item in new_memory_items])
@@ -155,27 +156,26 @@ should be extracted and added to that category:
             response = self.llm_client.simple_chat(suggestions_prompt)
 
             if not response.strip():
-                return self._add_metadata(
-                    {"success": False, "error": "LLM returned empty suggestions"}
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": "LLM returned empty suggestions",
+                })
 
             # Parse text response
             suggestions = self._parse_suggestions_from_text(
                 response.strip(), available_categories, new_memory_items
             )
 
-            return self._add_metadata(
-                {
-                    "success": True,
-                    "character_name": character_name,
-                    "suggestions": suggestions,
-                    "categories_analyzed": available_categories,
-                    "message": (
-                        f"Generated self-contained suggestions for {len(suggestions)} categories "
-                        f"based on {len(new_memory_items)} memory items"
-                    ),
-                }
-            )
+            return self._add_metadata({
+                "success": True,
+                "character_name": character_name,
+                "suggestions": suggestions,
+                "categories_analyzed": available_categories,
+                "message": (
+                    f"Generated self-contained suggestions for {len(suggestions)} categories "
+                    f"based on {len(new_memory_items)} memory items"
+                ),
+            })
 
         except Exception as e:
             return self._handle_error(e)

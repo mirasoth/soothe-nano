@@ -95,9 +95,10 @@ class RunTheoryOfMindAction(BaseAction):
         """
         try:
             if not conversation_text.strip():
-                return self._add_metadata(
-                    {"success": False, "error": "Empty conversation text provided"}
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": "Empty conversation text provided",
+                })
 
             if not activity_items:
                 return self._add_metadata({"success": False, "error": "No memory items provided"})
@@ -111,9 +112,10 @@ class RunTheoryOfMindAction(BaseAction):
             )
 
             if not response.strip():
-                return self._add_metadata(
-                    {"success": False, "error": "LLM returned empty response"}
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": "LLM returned empty response",
+                })
 
             # Parse text response
             reasoning_process, theory_of_mind_items = self._parse_theory_of_mind_from_text(
@@ -121,25 +123,21 @@ class RunTheoryOfMindAction(BaseAction):
             )
 
             if not theory_of_mind_items:
-                return self._add_metadata(
-                    {
-                        "success": False,
-                        "error": "No theory of mind items could be extracted from conversation",
-                    }
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": "No theory of mind items could be extracted from conversation",
+                })
 
-            return self._add_metadata(
-                {
-                    "success": True,
-                    "character_name": character_name,
-                    "theory_of_mind_items_added": len(theory_of_mind_items),
-                    "theory_of_mind_items": theory_of_mind_items,
-                    "reasoning_process": reasoning_process,
-                    "message": (
-                        f"Successfully extracted {len(theory_of_mind_items)} theory of mind items from conversation"
-                    ),
-                }
-            )
+            return self._add_metadata({
+                "success": True,
+                "character_name": character_name,
+                "theory_of_mind_items_added": len(theory_of_mind_items),
+                "theory_of_mind_items": theory_of_mind_items,
+                "reasoning_process": reasoning_process,
+                "message": (
+                    f"Successfully extracted {len(theory_of_mind_items)} theory of mind items from conversation"
+                ),
+            })
 
         except Exception as e:
             return self._handle_error(e)
@@ -256,14 +254,12 @@ what are the evidences, how you get to your conclusion, and how confident you ar
                 # Parse memory items
                 elif inference_section and line:
                     memory_id = self._generate_memory_id()
-                    theory_of_mind_items.append(
-                        {
-                            "memory_id": memory_id,
-                            "mentioned_at": session_date,
-                            "content": line,
-                            "links": "",
-                        }
-                    )
+                    theory_of_mind_items.append({
+                        "memory_id": memory_id,
+                        "mentioned_at": session_date,
+                        "content": line,
+                        "links": "",
+                    })
 
         except Exception:
             logger.exception("Failed to parse theory of mind from text")

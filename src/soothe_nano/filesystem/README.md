@@ -107,8 +107,8 @@ for entry in entries:
 
 ```python
 # These will raise PathTraversalError:
-fs.read("../etc/passwd")        # Blocked
-fs.write("../../outside.txt")   # Blocked
+fs.read("../etc/passwd")  # Blocked
+fs.write("../../outside.txt")  # Blocked
 fs.read("subdir/../../../etc/passwd")  # Blocked
 ```
 
@@ -130,16 +130,16 @@ When `virtual_mode=False`, absolute paths outside workspace are blocked:
 fs = LocalFilesystem(workspace="/workspace", virtual_mode=False)
 
 fs.read("/workspace/config.json")  # OK - within workspace
-fs.read("/etc/passwd")              # Blocked - outside workspace
+fs.read("/etc/passwd")  # Blocked - outside workspace
 ```
 
 ### Invalid Path Detection
 
 ```python
 # These will raise InvalidPathError:
-fs.read("file\x00.txt")     # Null bytes
-fs.read("~/.bashrc")         # Home directory reference
-fs.read("")                  # Empty path
+fs.read("file\x00.txt")  # Null bytes
+fs.read("~/.bashrc")  # Home directory reference
+fs.read("")  # Empty path
 ```
 
 ## Error Handling
@@ -196,6 +196,7 @@ print(f"Backup at: {result.backup_path}")
 ```python
 from soothe_deepagents.backends.protocol import ReadResult, WriteResult
 from soothe_nano.filesystem import UnifiedFilesystem
+
 
 class S3Filesystem(UnifiedFilesystem):
     """S3-backed filesystem implementation."""
@@ -257,9 +258,9 @@ if result.error:
 ```python
 fs = LocalFilesystem(
     workspace="/workspace",
-    virtual_mode=True,          # Enable sandboxing
-    max_file_size_mb=10,        # Max file size
-    backup_dir=".backups",      # Backup directory
+    virtual_mode=True,  # Enable sandboxing
+    max_file_size_mb=10,  # Max file size
+    backup_dir=".backups",  # Backup directory
 )
 ```
 

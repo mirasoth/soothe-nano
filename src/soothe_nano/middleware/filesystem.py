@@ -121,18 +121,16 @@ def coerce_provider_safe_tool_message(
         mime = block.get("mime_type") if isinstance(block, dict) else None
         mime_part = f", mime_type={mime}" if mime else ""
         path_part = f" at {path}" if path else ""
-        safe_blocks.append(
-            {
-                "type": "text",
-                "text": (
-                    "System reminder: read_file returned a document or media file"
-                    f"{path_part} (block type={block_type!r}{mime_part}) that cannot be "
-                    "sent inline to this chat model. Use goal attachment text, "
-                    "run_command (e.g. pdftotext or a PDF parser), or paginated text "
-                    "reads on extracted files instead of read_file on this path."
-                ),
-            }
-        )
+        safe_blocks.append({
+            "type": "text",
+            "text": (
+                "System reminder: read_file returned a document or media file"
+                f"{path_part} (block type={block_type!r}{mime_part}) that cannot be "
+                "sent inline to this chat model. Use goal attachment text, "
+                "run_command (e.g. pdftotext or a PDF parser), or paginated text "
+                "reads on extracted files instead of read_file on this path."
+            ),
+        })
 
     if not converted:
         return message

@@ -48,14 +48,12 @@ def _list_chrome_processes() -> list[dict[str, str]]:
         pid_str, args = parts
         udd_match = re.search(r"--user-data-dir=(\S+)", args)
         port_match = re.search(r"--remote-debugging-port=(\d+)", args)
-        processes.append(
-            {
-                "pid": pid_str.strip(),
-                "args": args,
-                "user_data_dir": udd_match.group(1) if udd_match else "",
-                "debug_port": port_match.group(1) if port_match else "",
-            }
-        )
+        processes.append({
+            "pid": pid_str.strip(),
+            "args": args,
+            "user_data_dir": udd_match.group(1) if udd_match else "",
+            "debug_port": port_match.group(1) if port_match else "",
+        })
     return processes
 
 

@@ -110,23 +110,19 @@ class LinkRelatedMemoriesAction(BaseAction):
         try:
             # Validate inputs
             if not self.embeddings_enabled:
-                return self._add_metadata(
-                    {
-                        "success": False,
-                        "error": "Embeddings are not enabled. Cannot perform similarity search.",
-                    }
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": "Embeddings are not enabled. Cannot perform similarity search.",
+                })
 
             if category not in self.basic_memory_types:
                 available_cats = list(self.basic_memory_types.keys())
-                return self._add_metadata(
-                    {
-                        "success": False,
-                        "error": (
-                            f"Skipping category '{category}' not in available categories. Available: {available_cats}"
-                        ),
-                    }
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": (
+                        f"Skipping category '{category}' not in available categories. Available: {available_cats}"
+                    ),
+                })
 
             # If link_all_items is True, process all memory items in the category
             if link_all_items:
@@ -141,22 +137,18 @@ class LinkRelatedMemoriesAction(BaseAction):
 
             # Otherwise, process single memory item
             if not memory_id:
-                return self._add_metadata(
-                    {
-                        "success": False,
-                        "error": "memory_id is required when link_all_items is False",
-                    }
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": "memory_id is required when link_all_items is False",
+                })
 
             # Find the target memory item
             target_memory = self._find_memory_item(character_name, category, memory_id)
             if not target_memory:
-                return self._add_metadata(
-                    {
-                        "success": False,
-                        "error": f"Memory ID '{memory_id}' not found in {category} for {character_name}",
-                    }
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": f"Memory ID '{memory_id}' not found in {category} for {character_name}",
+                })
 
             # Generate embedding for target content
             target_embedding = self.embedding_client.embed(target_memory["content"])
@@ -183,15 +175,13 @@ class LinkRelatedMemoriesAction(BaseAction):
             if write_to_memory and link_ids:
                 self._append_links_to_memory(character_name, category, memory_id, link_ids)
 
-            return self._add_metadata(
-                {
-                    "success": True,
-                    "character_name": character_name,
-                    "linked_memory_ids": link_ids,
-                    "total_related": len(related_memories),
-                    "message": f"Found {len(related_memories)} related memories for {memory_id}",
-                }
-            )
+            return self._add_metadata({
+                "success": True,
+                "character_name": character_name,
+                "linked_memory_ids": link_ids,
+                "total_related": len(related_memories),
+                "message": f"Found {len(related_memories)} related memories for {memory_id}",
+            })
 
         except Exception as e:
             return self._handle_error(e)
@@ -253,17 +243,15 @@ class LinkRelatedMemoriesAction(BaseAction):
                             )
 
                             # Add ALL candidates regardless of similarity threshold initially
-                            all_candidates.append(
-                                {
-                                    "memory_id": emb_data.get("memory_id", ""),
-                                    "content": emb_data["text"],
-                                    "full_line": emb_data.get("full_line", emb_data["text"]),
-                                    "category": category,
-                                    "similarity": similarity,
-                                    "item_id": emb_data.get("item_id", ""),
-                                    "line_number": emb_data.get("line_number", 0),
-                                }
-                            )
+                            all_candidates.append({
+                                "memory_id": emb_data.get("memory_id", ""),
+                                "content": emb_data["text"],
+                                "full_line": emb_data.get("full_line", emb_data["text"]),
+                                "category": category,
+                                "similarity": similarity,
+                                "item_id": emb_data.get("item_id", ""),
+                                "line_number": emb_data.get("line_number", 0),
+                            })
 
                     except Exception:
                         logger.warning("Failed to load embeddings for %s", category, exc_info=True)
@@ -369,18 +357,17 @@ class LinkRelatedMemoriesAction(BaseAction):
             # Get all memory items in the category
             content = self._read_memory_content(character_name, category)
             if not content:
-                return self._add_metadata(
-                    {
-                        "success": False,
-                        "error": f"No content found in {category} for {character_name}",
-                    }
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": f"No content found in {category} for {character_name}",
+                })
 
             memory_items = self._parse_memory_items(content)
             if not memory_items:
-                return self._add_metadata(
-                    {"success": False, "error": f"No memory items found in {category}"}
-                )
+                return self._add_metadata({
+                    "success": False,
+                    "error": f"No memory items found in {category}",
+                })
 
             # Determine search categories - search in ALL categories by default
             if search_categories is None:
@@ -414,16 +401,14 @@ class LinkRelatedMemoriesAction(BaseAction):
                     self._append_links_to_memory(character_name, category, memory_id, link_ids)
                     total_linked += 1
 
-            return self._add_metadata(
-                {
-                    "success": True,
-                    "character_name": character_name,
-                    "category": category,
-                    "total_items_processed": len(memory_items),
-                    "total_items_linked": total_linked,
-                    "message": f"Linked {total_linked} out of {len(memory_items)} memory items in {category}",
-                }
-            )
+            return self._add_metadata({
+                "success": True,
+                "character_name": character_name,
+                "category": category,
+                "total_items_processed": len(memory_items),
+                "total_items_linked": total_linked,
+                "message": f"Linked {total_linked} out of {len(memory_items)} memory items in {category}",
+            })
 
         except Exception as e:
             return self._handle_error(e)

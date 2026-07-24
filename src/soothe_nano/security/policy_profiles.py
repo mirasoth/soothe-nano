@@ -32,16 +32,14 @@ logger = logging.getLogger(__name__)
 STANDARD_PROFILE = PolicyProfile(
     name="standard",
     permissions=PermissionSet(
-        frozenset(
-            [
-                Permission("fs", "read", "*"),
-                Permission("fs", "write", "*"),
-                Permission("shell", "execute", "*"),
-                Permission("net", "outbound", "*"),
-                Permission("mcp", "connect", "*"),
-                Permission("subagent", "spawn", "*"),
-            ]
-        )
+        frozenset([
+            Permission("fs", "read", "*"),
+            Permission("fs", "write", "*"),
+            Permission("shell", "execute", "*"),
+            Permission("net", "outbound", "*"),
+            Permission("mcp", "connect", "*"),
+            Permission("subagent", "spawn", "*"),
+        ])
     ),
     approvable=PermissionSet(frozenset()),
     deny_rules=[],
@@ -50,21 +48,17 @@ STANDARD_PROFILE = PolicyProfile(
 READONLY_PROFILE = PolicyProfile(
     name="readonly",
     permissions=PermissionSet(
-        frozenset(
-            [
-                Permission("fs", "read", "*"),
-                Permission("net", "outbound", "*"),
-                Permission("subagent", "spawn", "*"),
-            ]
-        )
+        frozenset([
+            Permission("fs", "read", "*"),
+            Permission("net", "outbound", "*"),
+            Permission("subagent", "spawn", "*"),
+        ])
     ),
     approvable=PermissionSet(
-        frozenset(
-            [
-                Permission("fs", "write", "*"),
-                Permission("shell", "execute", "*"),
-            ]
-        )
+        frozenset([
+            Permission("fs", "write", "*"),
+            Permission("shell", "execute", "*"),
+        ])
     ),
     deny_rules=[],
 )
@@ -72,16 +66,14 @@ READONLY_PROFILE = PolicyProfile(
 PRIVILEGED_PROFILE = PolicyProfile(
     name="privileged",
     permissions=PermissionSet(
-        frozenset(
-            [
-                Permission("fs", "read", "*"),
-                Permission("fs", "write", "*"),
-                Permission("shell", "execute", "*"),
-                Permission("net", "outbound", "*"),
-                Permission("mcp", "connect", "*"),
-                Permission("subagent", "spawn", "*"),
-            ]
-        )
+        frozenset([
+            Permission("fs", "read", "*"),
+            Permission("fs", "write", "*"),
+            Permission("shell", "execute", "*"),
+            Permission("net", "outbound", "*"),
+            Permission("mcp", "connect", "*"),
+            Permission("subagent", "spawn", "*"),
+        ])
     ),
     approvable=PermissionSet(frozenset()),
     deny_rules=[],
@@ -101,53 +93,47 @@ STRICT_POLICY = SecurityPolicy(
     allow_traversal=False,
     allow_home_expansion=False,
     allow_symlinks=False,
-    blocked_extensions=frozenset(
-        {
-            ".exe",
-            ".dll",
-            ".so",
-            ".dylib",
-            ".bin",
-            ".sh",
-            ".bat",
-            ".cmd",
-            ".ps1",
-            ".pyz",
-            ".egg",
-            ".whl",
-        }
-    ),
-    blocked_patterns=frozenset(
-        {
-            "*.key",
-            "*.pem",
-            "*.p12",
-            "*.pfx",
-            ".env*",
-            "*.secret",
-            "*.credentials",
-            ".git/*",
-            ".svn/*",
-            ".hg/*",
-        }
-    ),
-    blocked_paths=frozenset(
-        {
-            "/etc",
-            "/bin",
-            "/sbin",
-            "/usr",
-            "/lib",
-            "/lib64",
-            "/dev",
-            "/proc",
-            "/sys",
-            "/root",
-            "/boot",
-            "/var/log",
-            "/tmp/..",
-        }
-    ),
+    blocked_extensions=frozenset({
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".bin",
+        ".sh",
+        ".bat",
+        ".cmd",
+        ".ps1",
+        ".pyz",
+        ".egg",
+        ".whl",
+    }),
+    blocked_patterns=frozenset({
+        "*.key",
+        "*.pem",
+        "*.p12",
+        "*.pfx",
+        ".env*",
+        "*.secret",
+        "*.credentials",
+        ".git/*",
+        ".svn/*",
+        ".hg/*",
+    }),
+    blocked_paths=frozenset({
+        "/etc",
+        "/bin",
+        "/sbin",
+        "/usr",
+        "/lib",
+        "/lib64",
+        "/dev",
+        "/proc",
+        "/sys",
+        "/root",
+        "/boot",
+        "/var/log",
+        "/tmp/..",
+    }),
     on_violation=PolicyAction.DENY,
     on_suspicious=PolicyAction.DENY,
 )
@@ -183,42 +169,38 @@ SANDBOX_POLICY = SecurityPolicy(
     max_file_size=1024 * 1024,
     max_path_length=256,
     max_components=32,
-    blocked_extensions=frozenset(
-        {
-            ".exe",
-            ".dll",
-            ".so",
-            ".dylib",
-            ".sh",
-            ".bat",
-            ".cmd",
-            ".ps1",
-            ".vbs",
-            ".py",
-            ".pyw",
-            ".pyc",
-            ".pyo",
-            ".rb",
-            ".pl",
-            ".php",
-            ".jsp",
-            ".jar",
-            ".war",
-            ".ear",
-        }
-    ),
-    blocked_patterns=frozenset(
-        {
-            "*..*",
-            "*~*",
-            "*.tmp",
-            "*.temp",
-            ".*",
-            "*/.*",
-            "*/.git/*",
-            "*/.svn/*",
-        }
-    ),
+    blocked_extensions=frozenset({
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".sh",
+        ".bat",
+        ".cmd",
+        ".ps1",
+        ".vbs",
+        ".py",
+        ".pyw",
+        ".pyc",
+        ".pyo",
+        ".rb",
+        ".pl",
+        ".php",
+        ".jsp",
+        ".jar",
+        ".war",
+        ".ear",
+    }),
+    blocked_patterns=frozenset({
+        "*..*",
+        "*~*",
+        "*.tmp",
+        "*.temp",
+        ".*",
+        "*/.*",
+        "*/.git/*",
+        "*/.svn/*",
+    }),
     allowed_operations=frozenset({"read", "ls", "glob"}),
     on_violation=PolicyAction.DENY,
     on_suspicious=PolicyAction.DENY,

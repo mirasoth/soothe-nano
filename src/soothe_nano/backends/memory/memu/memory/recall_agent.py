@@ -92,16 +92,14 @@ class RecallAgent:
             for category in self.default_categories:
                 content = self.storage_manager.read_memory_file(category)
                 if content:
-                    results.append(
-                        {
-                            "category": category,
-                            "content": content,
-                            "content_type": "default_category",
-                            "length": len(content),
-                            "lines": len(content.split("\n")),
-                            "file_exists": category in all_categories,
-                        }
-                    )
+                    results.append({
+                        "category": category,
+                        "content": content,
+                        "content_type": "default_category",
+                        "length": len(content),
+                        "lines": len(content.split("\n")),
+                        "file_exists": category in all_categories,
+                    })
                 else:
                     logger.debug("No content found for %s:%s:%s", agent_id, user_id, category)
 
@@ -208,18 +206,16 @@ class RecallAgent:
                 combined_score = content_relevance
 
                 if combined_score > 0:
-                    category_scores.append(
-                        {
-                            "category": category,
-                            "content": content,
-                            "score": combined_score,
-                            "content_relevance": content_relevance,
-                            "semantic_search_used": self.semantic_search_enabled
-                            and self.embedding_client is not None,
-                            "length": len(content),
-                            "lines": len(content.split("\n")),
-                        }
-                    )
+                    category_scores.append({
+                        "category": category,
+                        "content": content,
+                        "score": combined_score,
+                        "content_relevance": content_relevance,
+                        "semantic_search_used": self.semantic_search_enabled
+                        and self.embedding_client is not None,
+                        "length": len(content),
+                        "lines": len(content.split("\n")),
+                    })
 
             # Sort by score and get top-k
             category_scores.sort(key=lambda x: x["score"], reverse=True)
@@ -322,19 +318,17 @@ class RecallAgent:
                         similarity = self._cosine_similarity(query_embedding, emb_data["embedding"])
 
                         if similarity > 0.1:  # noqa: PLR2004 - Minimum threshold for semantic similarity
-                            results.append(
-                                {
-                                    "content": emb_data["text"],
-                                    "content_type": "relevant_memory",
-                                    "semantic_score": similarity,
-                                    "category": category,
-                                    "item_id": emb_data.get("item_id", ""),
-                                    "memory_id": emb_data.get("memory_id", ""),
-                                    "line_number": emb_data.get("line_number", 0),
-                                    "length": len(emb_data["text"]),
-                                    "metadata": emb_data.get("metadata", {}),
-                                }
-                            )
+                            results.append({
+                                "content": emb_data["text"],
+                                "content_type": "relevant_memory",
+                                "semantic_score": similarity,
+                                "category": category,
+                                "item_id": emb_data.get("item_id", ""),
+                                "memory_id": emb_data.get("memory_id", ""),
+                                "line_number": emb_data.get("line_number", 0),
+                                "length": len(emb_data["text"]),
+                                "metadata": emb_data.get("metadata", {}),
+                            })
 
                 except Exception:
                     logger.warning("Failed to process embeddings for %s", category, exc_info=True)

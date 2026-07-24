@@ -91,19 +91,17 @@ class ClusterMemoriesAction(BaseAction):
             new_theory_of_mind_items,
         )
 
-        return self._add_metadata(
-            {
-                "success": True,
-                "character_name": character_name,
-                "updated_clusters": sorted(updated_clusters.keys()),
-                "new_clusters": sorted(new_clusters.keys()),
-                "message": (
-                    f"Analyzed {len(new_memory_items)} new memory items. "
-                    f"Updated {len(updated_clusters)} existing clusters and "
-                    f"detected {len(new_clusters)} new clusters"
-                ),
-            }
-        )
+        return self._add_metadata({
+            "success": True,
+            "character_name": character_name,
+            "updated_clusters": sorted(updated_clusters.keys()),
+            "new_clusters": sorted(new_clusters.keys()),
+            "message": (
+                f"Analyzed {len(new_memory_items)} new memory items. "
+                f"Updated {len(updated_clusters)} existing clusters and "
+                f"detected {len(new_clusters)} new clusters"
+            ),
+        })
 
     def _format_memory_item(self, memory_item: dict[str, str]) -> str:
         """Format memory items into a string."""
@@ -126,12 +124,10 @@ class ClusterMemoriesAction(BaseAction):
             for item in itertools.chain(new_memory_items, new_theory_of_mind_items)
         }
 
-        memory_items_text = "\n".join(
-            [
-                f"Memory ID: {item['memory_id']}\nContent: {item['content']}"
-                for item in all_items.values()
-            ]
-        )
+        memory_items_text = "\n".join([
+            f"Memory ID: {item['memory_id']}\nContent: {item['content']}"
+            for item in all_items.values()
+        ])
 
         # Create cluster list string outside f-string to avoid backslash issue
         clusters_list = "\n".join(f"- {cluster}" for cluster in existing_clusters)
@@ -212,12 +208,10 @@ Your task is to analyze if each of the memory items is related to any of the exi
             for item in itertools.chain(new_memory_items, new_theory_of_mind_items)
         }
 
-        memory_items_text = "\n".join(
-            [
-                f"Memory ID: {item['memory_id']}\nContent: {item['content']}"
-                for item in all_items.values()
-            ]
-        )
+        memory_items_text = "\n".join([
+            f"Memory ID: {item['memory_id']}\nContent: {item['content']}"
+            for item in all_items.values()
+        ])
 
         # Create cluster list string outside f-string to avoid backslash issue
         existing_clusters_list = "\n".join(f"- {cluster}" for cluster in existing_clusters)

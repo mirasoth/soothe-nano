@@ -6,47 +6,37 @@ import re
 
 # User-facing phrasings for built-in core skills (name → extra match tokens).
 BUILTIN_SKILL_ALIASES: dict[str, frozenset[str]] = {
-    "clawhub": frozenset(
-        {
-            "claw hub",
-            "claw hub registry",
-            "clawhub registry",
-            "community skill registry",
-        }
-    ),
-    "github": frozenset(
-        {
-            "git hub",
-            "github cli",
-            "gh cli",
-        }
-    ),
-    "skill-creator": frozenset(
-        {
-            "skill creator",
-            "create skill",
-            "create a skill",
-            "new skill",
-            "write skill",
-            "agentskill",
-            "skill authoring",
-        }
-    ),
-    "mcp-builder": frozenset(
-        {
-            "mcp builder",
-            "mcp server",
-            "model context protocol",
-            "build mcp",
-            "create mcp",
-        }
-    ),
-    "weather": frozenset(
-        {
-            "wttr",
-            "wttr.in",
-        }
-    ),
+    "clawhub": frozenset({
+        "claw hub",
+        "claw hub registry",
+        "clawhub registry",
+        "community skill registry",
+    }),
+    "github": frozenset({
+        "git hub",
+        "github cli",
+        "gh cli",
+    }),
+    "skill-creator": frozenset({
+        "skill creator",
+        "create skill",
+        "create a skill",
+        "new skill",
+        "write skill",
+        "agentskill",
+        "skill authoring",
+    }),
+    "mcp-builder": frozenset({
+        "mcp builder",
+        "mcp server",
+        "model context protocol",
+        "build mcp",
+        "create mcp",
+    }),
+    "weather": frozenset({
+        "wttr",
+        "wttr.in",
+    }),
 }
 
 _COMPACT_RE = re.compile(r"[\s\-_]+")

@@ -120,11 +120,11 @@ from memu.config import get_simple_summary, get_required_files, get_optional_fil
 
 # Get simplified configuration summary
 summary = get_simple_summary()
-print(summary['processing_principle'])  # activity file records all content
+print(summary["processing_principle"])  # activity file records all content
 
 # View required and optional files
-required = get_required_files()     # ['activity']
-optional = get_optional_files()    # ['profile', 'event', 'reminder', 'interests', 'study']
+required = get_required_files()  # ['activity']
+optional = get_optional_files()  # ['profile', 'event', 'reminder', 'interests', 'study']
 ```
 
 ### 2. Intelligent File Detection
@@ -133,8 +133,8 @@ optional = get_optional_files()    # ['profile', 'event', 'reminder', 'interests
 from memu.config import detect_file_type, is_required_file
 
 # Auto-detect file type
-file_type = detect_file_type("activity_log.md")      # Returns 'activity'
-file_type = detect_file_type("alice_profile.md")     # Returns 'profile'
+file_type = detect_file_type("activity_log.md")  # Returns 'activity'
+file_type = detect_file_type("alice_profile.md")  # Returns 'profile'
 
 # Check if it's a required file
 is_core = is_required_file(file_type)  # activity=True, others=False
@@ -167,14 +167,11 @@ configs["new_type"] = MarkdownFileConfig(
     depends_on=["activity"],  # Set dependencies
     content_structure={
         "Title1": "## Title1\nContent template",
-        "Title2": "## Title2\nContent template"
+        "Title2": "## Title2\nContent template",
     },
-    usage_examples=[
-        "Usage1",
-        "Usage2"
-    ],
+    usage_examples=["Usage1", "Usage2"],
     auto_detect_keywords=["keyword1", "keyword2"],
-    content_patterns=["pattern1", "pattern2"]
+    content_patterns=["pattern1", "pattern2"],
 )
 ```
 

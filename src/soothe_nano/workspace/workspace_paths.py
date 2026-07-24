@@ -8,27 +8,25 @@ from typing import Any
 from soothe_nano.config import SootheConfig
 from soothe_nano.workspace.workspace_runtime import resolve_process_workspace_root
 
-_UNIX_HOST_ROOT_TOP_NAMES: frozenset[str] = frozenset(
-    {
-        "Applications",
-        "bin",
-        "cores",
-        "dev",
-        "etc",
-        "home",
-        "Library",
-        "opt",
-        "private",
-        "sbin",
-        "sys",
-        "System",
-        "tmp",
-        "usr",
-        "Users",
-        "var",
-        "Volumes",
-    }
-)
+_UNIX_HOST_ROOT_TOP_NAMES: frozenset[str] = frozenset({
+    "Applications",
+    "bin",
+    "cores",
+    "dev",
+    "etc",
+    "home",
+    "Library",
+    "opt",
+    "private",
+    "sbin",
+    "sys",
+    "System",
+    "tmp",
+    "usr",
+    "Users",
+    "var",
+    "Volumes",
+})
 
 
 def config_workspace_root(config: Any | None) -> str | None:

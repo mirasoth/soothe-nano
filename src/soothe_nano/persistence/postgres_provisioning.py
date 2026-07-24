@@ -55,9 +55,13 @@ def postgres_target_dsn(base_dsn: str, database_name: str) -> str:
     """Build a DSN for a named database under ``base_dsn``."""
     validate_database_name(database_name)
     parts = urlsplit(base_dsn.rstrip("/"))
-    return urlunsplit(
-        (parts.scheme, parts.netloc, f"/{database_name}", parts.query, parts.fragment)
-    )
+    return urlunsplit((
+        parts.scheme,
+        parts.netloc,
+        f"/{database_name}",
+        parts.query,
+        parts.fragment,
+    ))
 
 
 def uses_postgresql_persistence(config: SootheConfig) -> bool:
