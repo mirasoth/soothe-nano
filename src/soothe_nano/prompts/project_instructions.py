@@ -148,7 +148,7 @@ def _build_block_cached(
 ) -> str | None:
     """Read + format one instruction file. Cached on ``(path, mtime, caps)``."""
     path = Path(path_str)
-    body, truncated_lines = _read_file_head_lines(path, max_lines=max_lines)
+    body, truncated_lines = read_file_head_lines(path, max_lines=max_lines)
     if not body.strip():
         return None
     headline, partial = _headline_excerpt(body, max_chars=headline_max_chars)
@@ -187,9 +187,18 @@ def _format_instruction_block(
 
 load_workspace_project_instructions = load_agent_instructions
 
+# Public aliases for the cached block builder and head-line reader. Host
+# packages import these instead of reaching into the underscore-prefixed
+# names; the private names remain as the canonical implementations so
+# existing internal call sites and test monkeypatches keep working.
+build_block_cached = _build_block_cached
+read_file_head_lines = _read_file_head_lines
+
 __all__ = [
     "DEFAULT_PROJECT_INSTRUCTION_MAX_LINES",
     "PROJECT_INSTRUCTION_HEADLINE_MAX_CHARS",
     "load_agent_instructions",
     "load_workspace_project_instructions",
+    "build_block_cached",
+    "read_file_head_lines",
 ]
