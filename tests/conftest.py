@@ -87,13 +87,33 @@ def test_config() -> SootheConfig:
 
 
 @pytest.fixture
-def requires_llm_api():
-    """Skip when no LLM API credentials are available."""
+def requires_llm_api(integration_config: SootheConfig):
+    """Skip when LLM API credentials are missing or don't match the model.
+
+    Beyond a coarse env-var check, this also attempts to instantiate the
+    configured default chat model and skips the test when the provider
+    rejects the request due to missing credentials. This prevents false
+    positives where, e.g., only a DASHSCOPE key is set but the default
+    model routes to the OpenAI provider (or vice versa).
+    """
     if not _has_valid_api_key():
         pytest.skip(
             "Test requires LLM API key (set OPENAI_API_KEY, ANTHROPIC_API_KEY, "
             "DASHSCOPE_API_KEY, or DASHSCOPE_CP_API_KEY + DASHSCOPE_CP_BASE_URL)"
         )
+    # Verify the resolved default model can actually be created with the
+    # current environment; a provider-key mismatch would otherwise surface
+    # as a hard error mid-test instead of a clean skip.
+    try:
+        import openai
+
+        cred_errors: tuple[type[BaseException], ...] = (openai.OpenAIError, ValueError)
+    except ImportError:  # pragma: no cover - openai is a core dep
+        cred_errors = (ValueError,)
+    try:
+        integration_config.create_chat_model("default")
+    except cred_errors as exc:  # type: ignore[misc]
+        pytest.skip(f"Default model cannot be created with current credentials: {exc}")
 
 
 @pytest.fixture
