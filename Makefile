@@ -58,18 +58,18 @@ sync-dev:
 	uv sync --extra dev
 	@echo "✓ Dev dependencies synced"
 
-# Format code
+# Format code. No --preview: match root `make format` and verify_finally.sh,
+# which run stable ruff. docstring-code-format (set in [tool.ruff.format])
+# is the stable knob for markdown code-block formatting in docstrings.
 format:
 	@echo "Formatting code..."
-	$(UV_RUN) ruff format --preview src/ tests/ examples/
+	$(UV_RUN) ruff format src/ tests/ examples/
 	@echo "✓ Code formatted"
 
-# Check formatting (for CI). --preview keeps markdown code-block formatting
-# (enabled by [tool.ruff.format] docstring-code-format) stable across ruff
-# versions, so CI and local disagree less.
+# Check formatting (for CI). Same stable-ruff semantics as `format`.
 format-check:
 	@echo "Checking code formatting..."
-	$(UV_RUN) ruff format --check --preview src/ tests/ examples/
+	$(UV_RUN) ruff format --check src/ tests/ examples/
 	@echo "✓ Format check passed"
 
 # Lint code
