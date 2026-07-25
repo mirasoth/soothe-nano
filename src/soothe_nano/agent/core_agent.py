@@ -1,4 +1,4 @@
-"""Coding CoreAgent class definition.
+"""SootheNanoAgent class definition.
 
 Thin wrapper with typed protocol properties and execution interface.
 Pure CoreAgent runtime — no StrangeLoop / Autopilot infrastructure.
@@ -52,14 +52,32 @@ def _persisted_checkpointer(graph: Any) -> Any:
     return cp if isinstance(cp, BaseCheckpointSaver) else None
 
 
+def _is_benign_state_read_error(exc: ValueError) -> bool:
+    """Whether a LangGraph ``aget_state`` ValueError should soft-fail to None."""
+    msg = str(exc)
+    return "No checkpointer set" in msg or ("Subgraph" in msg and "not found" in msg)
+
+
 def _state_retrieval_config(config: RunnableConfig | None) -> dict[str, Any]:
     """Build RunnableConfig safe for ``aget_state`` after ephemeral execute streams.
 
     Ephemeral twin graphs can leave ``__pregel_checkpointer: None`` on the
     shared config dict. LangGraph then refuses to read state even when the primary
     graph has a checkpointer attached.
+
+    Host orchestration may also merge parent ``checkpoint_ns`` (e.g. StrangeLoop
+    node ``execute``) into CoreAgent config for tracing. After the null
+    checkpointer override is removed, LangGraph interprets a non-empty
+    ``checkpoint_ns`` as a CoreAgent subgraph lookup and raises
+    ``Subgraph execute not found``. Clear parent checkpoint coordinates so
+    state is read from the CoreAgent root thread.
     """
-    from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
+    from langgraph._internal._constants import (
+        CONFIG_KEY_CHECKPOINT_ID,
+        CONFIG_KEY_CHECKPOINT_MAP,
+        CONFIG_KEY_CHECKPOINT_NS,
+        CONFIG_KEY_CHECKPOINTER,
+    )
 
     if not config:
         return {}
@@ -67,6 +85,10 @@ def _state_retrieval_config(config: RunnableConfig | None) -> dict[str, Any]:
     conf = dict(out.get("configurable") or {})
     if conf.get(CONFIG_KEY_CHECKPOINTER) is None:
         conf.pop(CONFIG_KEY_CHECKPOINTER, None)
+    # Parent host namespaces must not drive CoreAgent subgraph resolution.
+    conf.pop(CONFIG_KEY_CHECKPOINT_NS, None)
+    conf.pop(CONFIG_KEY_CHECKPOINT_ID, None)
+    conf.pop(CONFIG_KEY_CHECKPOINT_MAP, None)
     if conf:
         out["configurable"] = conf
     elif "configurable" in out:
@@ -87,8 +109,8 @@ def _normalize_layer1_input(input_arg: str | dict) -> dict:
     return input_arg
 
 
-class CodingCoreAgent:
-    """Coding CoreAgent runtime interface.
+class SootheNanoAgent:
+    """Soothe nano CoreAgent runtime interface.
 
     Self-contained module wrapping CompiledStateGraph with explicit typed
     protocol properties. Pure execution runtime for tools, subagents, and
@@ -228,8 +250,8 @@ class CodingCoreAgent:
         try:
             return await self._graph.aget_state(config=_state_retrieval_config(config))
         except ValueError as exc:
-            if "No checkpointer set" in str(exc):
-                logger.debug("[Exec] Cannot get state: no checkpointer configured")
+            if _is_benign_state_read_error(exc):
+                logger.debug("[Exec] Cannot get state: %s", exc)
                 return None
             raise
 
@@ -297,8 +319,8 @@ class CodingCoreAgent:
         try:
             return await self._graph.aget_state(config=_state_retrieval_config(config))
         except ValueError as exc:
-            if "No checkpointer set" in str(exc):
-                logger.debug("[Exec] Cannot get state: no checkpointer configured")
+            if _is_benign_state_read_error(exc):
+                logger.debug("[Exec] Cannot get state: %s", exc)
                 return None
             raise
 
@@ -324,3 +346,7 @@ class CodingCoreAgent:
         if durability is not None:
             invoke_kwargs["durability"] = durability
         return await self.execution_graph.ainvoke(graph_input, config or {}, **invoke_kwargs)
+
+
+# Compatibility alias — prefer SootheNanoAgent for new code.
+CodingCoreAgent = SootheNanoAgent

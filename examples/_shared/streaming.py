@@ -12,7 +12,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from soothe_nano import CodingCoreAgent as NanoAgent
+from soothe_nano import SootheNanoAgent as NanoAgent
 
 
 def _truncate(text: str, limit: int = 200) -> str:

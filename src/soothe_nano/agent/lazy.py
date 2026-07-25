@@ -10,7 +10,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from soothe_nano.agent.core_agent import CodingCoreAgent
+from soothe_nano.agent.core_agent import SootheNanoAgent
 
 if TYPE_CHECKING:
     from langchain_core.runnables import RunnableConfig
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MaterializeHook = Callable[[CodingCoreAgent], Awaitable[None] | None]
+MaterializeHook = Callable[[SootheNanoAgent], Awaitable[None] | None]
 
 
 class LazyCoreAgent:
@@ -29,7 +29,7 @@ class LazyCoreAgent:
 
     def __init__(
         self,
-        factory: Callable[[], CodingCoreAgent],
+        factory: Callable[[], SootheNanoAgent],
         *,
         memory: Any | None = None,
         planner: Any | None = None,
@@ -38,7 +38,7 @@ class LazyCoreAgent:
         materialize_hook: MaterializeHook | None = None,
     ) -> None:
         self._factory = factory
-        self._delegate: CodingCoreAgent | None = None
+        self._delegate: SootheNanoAgent | None = None
         self._memory = memory
         self._planner = planner
         self._policy = policy
@@ -49,13 +49,13 @@ class LazyCoreAgent:
     def is_materialized(self) -> bool:
         return self._delegate is not None
 
-    def materialize(self) -> CodingCoreAgent:
+    def materialize(self) -> SootheNanoAgent:
         if self._delegate is None:
             self._delegate = self._factory()
             logger.info("[Init] LazyCoreAgent materialized")
         return self._delegate
 
-    async def amaterialize(self) -> CodingCoreAgent:
+    async def amaterialize(self) -> SootheNanoAgent:
         agent = self.materialize()
         if self._materialize_hook is not None:
             result = self._materialize_hook(agent)

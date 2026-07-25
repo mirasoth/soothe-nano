@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from soothe_sdk.protocols.core_agent import CoreAgentCapabilities
 
-from soothe_nano.agent.core_agent import CodingCoreAgent, ephemeral_execute_stream_enabled
+from soothe_nano.agent.core_agent import SootheNanoAgent, ephemeral_execute_stream_enabled
 from soothe_nano.config import SootheConfig
 from soothe_nano.middleware import build_soothe_middleware_stack
 from soothe_nano.resolve import (
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 class AgentBuilder:
-    """Builder for CodingCoreAgent instances."""
+    """Builder for SootheNanoAgent instances."""
 
     def __init__(
         self,
@@ -78,7 +78,7 @@ class AgentBuilder:
         policy: PolicyProtocol | None = None,
         mcp_registry: Any | None = None,
         core_agent_kind: str | None = None,
-    ) -> CodingCoreAgent:
+    ) -> SootheNanoAgent:
         from soothe_deepagents import create_deep_agent
 
         create_start = time.perf_counter()
@@ -250,7 +250,7 @@ class AgentBuilder:
             },
         )
 
-        agent = CodingCoreAgent(
+        agent = SootheNanoAgent(
             graph=graph,
             config=self._config,
             memory=resolved_memory,
@@ -414,7 +414,7 @@ def create_nano_agent(
     planner: PlannerProtocol | None = None,
     policy: PolicyProtocol | None = None,
     core_agent_kind: str | None = None,
-) -> CodingCoreAgent:
+) -> SootheNanoAgent:
     return AgentBuilder(config).build(
         model=model,
         tools=tools,

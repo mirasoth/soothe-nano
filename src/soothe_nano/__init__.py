@@ -1,4 +1,4 @@
-"""soothe-nano — batteries-included Coding CoreAgent."""
+"""soothe-nano — batteries-included SootheNanoAgent."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import importlib.metadata
 
 from soothe_sdk.protocols.core_agent import CoreAgentCapabilities
 
-from soothe_nano.agent import CodingCoreAgent, LazyCoreAgent
+from soothe_nano.agent import CodingCoreAgent, LazyCoreAgent, SootheNanoAgent
 from soothe_nano.agent.core_agent import ephemeral_execute_stream_enabled
 from soothe_nano.agent.factory import create_nano_agent
 from soothe_nano.agent.subagent_catalog import spec_subagent_name
@@ -28,6 +28,7 @@ __all__ = [
     "LazyCoreAgent",
     "NanoConfig",
     "SootheConfig",
+    "SootheNanoAgent",
     "create_nano_agent",
     "ephemeral_execute_stream_enabled",
     "spec_subagent_name",
