@@ -52,6 +52,21 @@ def _persisted_checkpointer(graph: Any) -> Any:
     return cp if isinstance(cp, BaseCheckpointSaver) else None
 
 
+def _langgraph_durability_kwargs(graph: Any, durability: str | None) -> dict[str, str]:
+    """Build LangGraph ``durability`` kwargs only when a checkpointer can honor them.
+
+    Passing ``durability`` without a checkpointer triggers LangGraph's
+    ``UserWarning: durability has no effect when no checkpointer is present``.
+    Ephemeral execute twins are compiled with ``checkpointer=None``, so omit
+    the kwarg there.
+    """
+    if durability is None:
+        return {}
+    if _persisted_checkpointer(graph) is None:
+        return {}
+    return {"durability": durability}
+
+
 def _is_benign_state_read_error(exc: ValueError) -> bool:
     """Whether a LangGraph ``aget_state`` ValueError should soft-fail to None."""
     msg = str(exc)
@@ -226,19 +241,21 @@ class SootheNanoAgent:
         )
 
         graph_input = _normalize_layer1_input(input_arg)
+        stream_kwargs = {
+            "subgraphs": subgraphs,
+            **_langgraph_durability_kwargs(self._graph, durability),
+        }
         if stream_mode:
             return self._graph.astream(
                 graph_input,
                 config or {},
                 stream_mode=stream_mode,
-                subgraphs=subgraphs,
-                durability=durability,
+                **stream_kwargs,
             )
         return self._graph.astream(
             graph_input,
             config or {},
-            subgraphs=subgraphs,
-            durability=durability,
+            **stream_kwargs,
         )
 
     async def aget_state(
@@ -263,10 +280,11 @@ class SootheNanoAgent:
         durability: str | None = None,
     ) -> Any:
         graph_input = _normalize_layer1_input(input_arg)
-        invoke_kwargs: dict[str, Any] = {}
-        if durability is not None:
-            invoke_kwargs["durability"] = durability
-        return await self._graph.ainvoke(graph_input, config or {}, **invoke_kwargs)
+        return await self._graph.ainvoke(
+            graph_input,
+            config or {},
+            **_langgraph_durability_kwargs(self._graph, durability),
+        )
 
     def execution_astream(
         self,
@@ -279,19 +297,21 @@ class SootheNanoAgent:
     ) -> AsyncIterator[Any]:
         graph_input = _normalize_layer1_input(input_arg)
         graph = self.execution_graph
+        stream_kwargs = {
+            "subgraphs": subgraphs,
+            **_langgraph_durability_kwargs(graph, durability),
+        }
         if stream_mode:
             return graph.astream(
                 graph_input,
                 config or {},
                 stream_mode=stream_mode,
-                subgraphs=subgraphs,
-                durability=durability,
+                **stream_kwargs,
             )
         return graph.astream(
             graph_input,
             config or {},
-            subgraphs=subgraphs,
-            durability=durability,
+            **stream_kwargs,
         )
 
     def execute_stream(
@@ -302,6 +322,8 @@ class SootheNanoAgent:
         stream_mode: list[str] | None = None,
         subgraphs: bool = False,
     ) -> AsyncIterator[Any]:
+        # Prefer exit-mode checkpoints when the graph can persist; omit otherwise
+        # so LangGraph does not warn on the checkpointer-free ephemeral twin.
         return self.execution_astream(
             input_arg,
             config=config,
@@ -342,10 +364,12 @@ class SootheNanoAgent:
         durability: str | None = None,
     ) -> Any:
         graph_input = _normalize_layer1_input(input_arg)
-        invoke_kwargs: dict[str, Any] = {}
-        if durability is not None:
-            invoke_kwargs["durability"] = durability
-        return await self.execution_graph.ainvoke(graph_input, config or {}, **invoke_kwargs)
+        graph = self.execution_graph
+        return await graph.ainvoke(
+            graph_input,
+            config or {},
+            **_langgraph_durability_kwargs(graph, durability),
+        )
 
 
 # Compatibility alias — prefer SootheNanoAgent for new code.
