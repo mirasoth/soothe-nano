@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soothe-nano"
-version = "1.0.5"
-description = "Soothe Nano — batteries-included Coding CoreAgent on deepagents"
+version = "1.0.6"
+description = "Soothe Nano — batteries-included SootheNanoAgent on deepagents"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<3.15"
