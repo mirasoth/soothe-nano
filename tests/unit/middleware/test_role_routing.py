@@ -181,14 +181,14 @@ class TestRoleRoutingMiddleware:
 
 
 def test_main_stack_mounts_role_routing_when_enabled() -> None:
-    config = SootheConfig(
-        agent={"runtime": {"role_routing": {"enabled": True}}},
-    )
+    config = SootheConfig()
     stack = build_soothe_middleware_stack(config, policy=None)
     assert any(mw.name == "RoleRoutingMiddleware" for mw in stack)
 
 
 def test_main_stack_omits_role_routing_when_disabled() -> None:
-    config = SootheConfig()
+    config = SootheConfig(
+        agent={"runtime": {"role_routing": {"enabled": False}}},
+    )
     stack = build_soothe_middleware_stack(config, policy=None)
     assert not any(mw.name == "RoleRoutingMiddleware" for mw in stack)

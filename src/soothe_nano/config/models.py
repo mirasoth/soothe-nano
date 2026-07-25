@@ -1386,7 +1386,7 @@ class RoleRoutingConfig(BaseModel):
     """
 
     enabled: bool = Field(
-        default=False,
+        default=True,
         description="Enable per-hop orchestration vs generation model routing in CoreAgent",
     )
     orchestration_model_role: ModelRole = Field(
