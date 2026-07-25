@@ -12,9 +12,81 @@ from soothe_nano.diagnose.models import (
     aggregate_status,
 )
 
+_ROUTER_ROLES = ("default", "think", "fast", "image", "ocr")
+
 
 def _unresolved_env_ref(value: str | None) -> bool:
     return bool(value and "${" in value)
+
+
+def _provider_from_spec(spec: str | None) -> str | None:
+    """Extract provider name from a ``provider:model`` router/embedding spec."""
+    if not spec or not isinstance(spec, str):
+        return None
+    provider, _, model = spec.partition(":")
+    if not model:
+        return None
+    provider = provider.strip()
+    return provider or None
+
+
+def active_provider_names(config: Any) -> set[str]:
+    """Providers referenced by the active router profile and embedding config.
+
+    Unused ``providers[]`` entries (e.g. alternate profile backends) must not
+    fail the providers category when the active profile is healthy.
+    """
+    names: set[str] = set()
+
+    def _add(spec: str | None) -> None:
+        name = _provider_from_spec(spec)
+        if name:
+            names.add(name)
+
+    router = getattr(config, "router", None)
+    if router is not None:
+        for role in _ROUTER_ROLES:
+            _add(getattr(router, role, None))
+
+    _add(getattr(config, "embedding_model", None))
+
+    for entry in getattr(config, "embedding_profile", None) or []:
+        if isinstance(entry, dict):
+            _add(entry.get("model_role"))
+        else:
+            _add(getattr(entry, "model_role", None))
+
+    return names
+
+
+def _demote_inactive_provider_check(
+    check: CheckResult,
+    *,
+    active: set[str],
+    profile_name: str | None,
+) -> CheckResult:
+    """Downgrade credential failures for providers not used by the active profile."""
+    if not active or check.name in active:
+        return check
+    if check.status not in (CheckStatus.ERROR, CheckStatus.WARNING):
+        return check
+
+    profile_label = profile_name or "active"
+    return CheckResult(
+        name=check.name,
+        status=CheckStatus.INFO,
+        message=(
+            f"{check.message} (not used by active profile '{profile_label}')"
+            if check.message
+            else f"{check.name}: not used by active profile '{profile_label}'"
+        ),
+        details={
+            **check.details,
+            "active_profile": profile_name,
+            "required_by_active_profile": False,
+            "impact": "Does not affect the active router/embedding providers",
+        },
+    )
 
 
 async def _check_provider_credentials(
@@ -175,14 +247,49 @@ async def check_providers(
             ],
         )
 
+    active = active_provider_names(config)
+    profile_name = getattr(config, "active_router_profile", None)
+    provider_by_name = {p.name: p for p in providers}
+
     tasks = [_check_provider_credentials(p.name, p.api_key, p.provider_type) for p in providers]
-    checks = list(await asyncio.gather(*tasks))
+    checks = [
+        _demote_inactive_provider_check(c, active=active, profile_name=profile_name)
+        for c in await asyncio.gather(*tasks)
+    ]
+
+    # Missing providers referenced by the active profile are hard failures.
+    for name in sorted(active):
+        if name not in provider_by_name:
+            checks.append(
+                CheckResult(
+                    name=name,
+                    status=CheckStatus.ERROR,
+                    message=(
+                        f"{name}: referenced by active profile "
+                        f"'{profile_name or 'active'}' but not in providers[]"
+                    ),
+                    details={
+                        "active_profile": profile_name,
+                        "required_by_active_profile": True,
+                        "remediation": f"Add a providers[] entry named '{name}'",
+                    },
+                )
+            )
 
     if live_llm:
         checks.append(await _live_invoke_default(config))
 
+    # Category health follows active-profile providers (+ live invoke), not unused ones.
+    status_checks = [
+        c
+        for c in checks
+        if c.name == "default_model_live"
+        or not active
+        or c.name in active
+        or c.details.get("required_by_active_profile") is True
+    ]
     return CategoryResult(
         category="providers",
-        status=aggregate_status([c.status for c in checks]),
+        status=aggregate_status([c.status for c in status_checks]),
         checks=checks,
     )

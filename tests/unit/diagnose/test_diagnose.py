@@ -60,11 +60,66 @@ async def test_providers_only_configured() -> None:
     from soothe_nano.diagnose.providers import check_providers
 
     p = SimpleNamespace(name="openrouter", api_key="sk-test", provider_type="openai")
-    cfg = SimpleNamespace(providers=[p], router=SimpleNamespace(default="openrouter:model"))
+    cfg = SimpleNamespace(
+        providers=[p],
+        router=SimpleNamespace(default="openrouter:model"),
+        active_router_profile="default",
+        embedding_model=None,
+        embedding_profile=[],
+    )
     result = await check_providers(cfg, live_llm=False)
     assert len(result.checks) == 1
     assert result.checks[0].name == "openrouter"
     assert result.checks[0].status == CheckStatus.OK
+
+
+@pytest.mark.asyncio
+async def test_providers_unused_env_ref_does_not_fail_category() -> None:
+    """Alternate-profile providers with bad keys must not fail when unused."""
+    from soothe_nano.diagnose.providers import check_providers
+
+    dashscope = SimpleNamespace(name="dashscope", api_key="sk-ok", provider_type="openai")
+    agnes = SimpleNamespace(name="agnes", api_key="${AGNESAI_API_KEY}", provider_type="openai")
+    omlx = SimpleNamespace(name="omlx", api_key="local", provider_type="openai")
+    cfg = SimpleNamespace(
+        providers=[dashscope, agnes, omlx],
+        router=SimpleNamespace(
+            default="dashscope:glm",
+            fast="dashscope:flash",
+            think=None,
+            image="dashscope:vision",
+            ocr="omlx:ocr",
+        ),
+        active_router_profile="production",
+        embedding_model="dashscope:text-embedding-v4",
+        embedding_profile=[],
+    )
+    result = await check_providers(cfg, live_llm=False)
+    by_name = {c.name: c for c in result.checks}
+    assert by_name["dashscope"].status == CheckStatus.OK
+    assert by_name["omlx"].status == CheckStatus.OK
+    assert by_name["agnes"].status == CheckStatus.INFO
+    assert "not used by active profile" in by_name["agnes"].message
+    assert result.status == CheckStatus.OK
+
+
+@pytest.mark.asyncio
+async def test_providers_active_env_ref_fails_category() -> None:
+    from soothe_nano.diagnose.providers import check_providers
+
+    agnes = SimpleNamespace(name="agnes", api_key="${AGNESAI_API_KEY}", provider_type="openai")
+    cfg = SimpleNamespace(
+        providers=[agnes],
+        router=SimpleNamespace(
+            default="agnes:agnes-2.0-flash", think=None, fast=None, image=None, ocr=None
+        ),
+        active_router_profile="agnes-eval",
+        embedding_model=None,
+        embedding_profile=[],
+    )
+    result = await check_providers(cfg, live_llm=False)
+    assert result.status == CheckStatus.ERROR
+    assert result.checks[0].status == CheckStatus.ERROR
 
 
 @pytest.mark.asyncio
