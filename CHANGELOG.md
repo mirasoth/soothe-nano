@@ -5,6 +5,19 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-07-25
+
+### Added
+- Public `soothe_nano.diagnose` API for package-owned doctor checks (`tool_deps`,
+  `providers`, `observability`; deep: MCP, vector stores, models, protocols).
+- Tool dependency checks use deepagents `get_rg_bin` / `get_fd_bin` helpers.
+
+### Fixed
+- Diagnose status aggregation no longer prefers lexicographic `"ok"` over
+  `"error"` when combining `CheckStatus` values (`StrEnum` + `max()`).
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.7...v1.0.8
+
 ## [1.0.7] - 2026-07-25
 
 ### Fixed
