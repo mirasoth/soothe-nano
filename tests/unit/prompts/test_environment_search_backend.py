@@ -9,7 +9,7 @@ from soothe_nano.prompts.context_xml import build_soothe_environment_section
 
 def test_environment_includes_ripgrep_search_backend() -> None:
     with patch(
-        "soothe_nano.filesystem.grep_search.is_grep_available",
+        "soothe_deepagents.backends.grep_search.is_rg_available",
         return_value=True,
     ):
         section = build_soothe_environment_section(model="test-model")
@@ -19,7 +19,7 @@ def test_environment_includes_ripgrep_search_backend() -> None:
 
 def test_environment_includes_python_fallback_search_backend() -> None:
     with patch(
-        "soothe_nano.filesystem.grep_search.is_grep_available",
+        "soothe_deepagents.backends.grep_search.is_rg_available",
         return_value=False,
     ):
         section = build_soothe_environment_section(model="test-model")

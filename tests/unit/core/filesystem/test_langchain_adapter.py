@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from soothe_deepagents.backends.grep_search import is_rg_available
 from soothe_deepagents.backends.protocol import (
     GrepResult,
 )
@@ -15,7 +16,6 @@ from soothe_nano.filesystem import (
     LocalFilesystem,
     PathNotFoundError,
 )
-from soothe_nano.filesystem.grep_search import is_grep_available
 
 
 class TestLangChainAdapter:
@@ -151,7 +151,7 @@ class TestLangChainAdapter:
 
     def test_grep(self, adapter: LangChainAdapter, temp_dir: Path):
         """Test grep method."""
-        if not is_grep_available():
+        if not is_rg_available():
             pytest.skip("grep backend is unavailable in this environment")
 
         (temp_dir / "test1.txt").write_text("hello world")

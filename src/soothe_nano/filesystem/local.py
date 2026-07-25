@@ -10,11 +10,18 @@ import subprocess
 from pathlib import Path
 
 import aiofiles
+import wcmatch.glob as wcglob
 from soothe_deepagents.backends.filesystem import FilesystemBackend
 from soothe_deepagents.backends.fs_safety import (
     compute_version_stamp,
     create_backup,
     write_atomic,
+)
+from soothe_deepagents.backends.glob_search import (
+    list_via_fd,
+    list_via_scandir,
+    max_depth_for_pattern,
+    parse_glob_pattern,
 )
 from soothe_deepagents.backends.protocol import (
     BatchedEditOperation,
@@ -42,6 +49,7 @@ from .exceptions import (
 from .unified import UnifiedFilesystem
 
 logger = logging.getLogger(__name__)
+_WCMATCH_FLAGS = wcglob.BRACE | wcglob.GLOBSTAR
 
 
 class LocalFilesystem(UnifiedFilesystem):
@@ -1156,21 +1164,71 @@ class LocalFilesystem(UnifiedFilesystem):
         path: str = ".",
         include_ignored: bool = False,
     ) -> GlobResult:
-        """Glob pattern matching."""
-        resolved = self._resolve_path(path)
+        """Glob pattern matching (files and directories).
 
+        Trailing ``/`` means directories only. Uses ``fd`` when available, otherwise
+        ``os.scandir`` with pattern depth bounding.
+        """
+        if pattern.startswith("/"):
+            pattern = pattern.lstrip("/")
+
+        resolved = self._resolve_path(path)
         if not resolved.is_dir():
             return GlobResult(matches=[], error=f"Not a directory: {path}")
 
-        matches: list[FileInfo] = []
-        # Use pathlib's glob for proper ** handling
-        try:
-            for match in resolved.glob(pattern):
-                if match.is_file():
-                    matches.append({"path": str(match.relative_to(resolved)), "is_dir": False})
-        except OSError:
-            pass
+        match_pattern, dirs_only = parse_glob_pattern(pattern)
+        if dirs_only and not match_pattern:
+            return GlobResult(
+                matches=[],
+                error=f"Invalid directories-only glob pattern {pattern!r}",
+            )
 
+        depth = max_depth_for_pattern(match_pattern)
+
+        entries: list[tuple[str, bool]] | None = None
+        if not include_ignored:
+            fd_hits = list_via_fd(
+                resolved,
+                match_pattern or "*",
+                dirs_only=dirs_only,
+                max_results=1000,
+                max_depth=depth,
+                include_ignored=False,
+            )
+            if fd_hits is not None:
+                entries = []
+                for abs_str, is_dir in fd_hits:
+                    try:
+                        rel = Path(abs_str).resolve().relative_to(resolved.resolve())
+                    except ValueError:
+                        continue
+                    rel_posix = rel.as_posix()
+                    if rel_posix == ".":
+                        continue
+                    entries.append((rel_posix, is_dir))
+
+        if entries is None:
+            # Relative paths are rooted at the search directory (same as pathlib.glob).
+            entries, _truncated = list_via_scandir(
+                resolved,
+                workspace=resolved,
+                is_ignored=None,
+                max_depth=depth,
+                dirs_only=dirs_only,
+                include_ignored=True,
+            )
+
+        matches: list[FileInfo] = []
+        for rel_posix, is_dir in entries:
+            if dirs_only and not is_dir:
+                continue
+            if not wcglob.globmatch(
+                rel_posix, match_pattern, flags=_WCMATCH_FLAGS
+            ) and not wcglob.globmatch(Path(rel_posix).name, match_pattern, flags=_WCMATCH_FLAGS):
+                continue
+            matches.append({"path": rel_posix, "is_dir": is_dir})
+
+        matches.sort(key=lambda m: m["path"])
         return GlobResult(matches=matches)
 
     async def aglob(

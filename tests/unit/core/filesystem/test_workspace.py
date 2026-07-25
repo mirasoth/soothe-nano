@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from soothe_deepagents.backends.grep_search import is_rg_available
 from soothe_deepagents.backends.protocol import (
     EditResult,
     GrepResult,
@@ -17,7 +18,6 @@ from soothe_nano.filesystem import (
     LocalFilesystem,
     WorkspaceFilesystem,
 )
-from soothe_nano.filesystem.grep_search import is_grep_available
 
 
 class TestWorkspaceFilesystem:
@@ -111,7 +111,7 @@ class TestWorkspaceFilesystem:
 
     def test_grep(self, workspace_fs: WorkspaceFilesystem, temp_dir: Path):
         """Test grep search."""
-        if not is_grep_available():
+        if not is_rg_available():
             pytest.skip("grep backend is unavailable in this environment")
 
         # Create test file with searchable content

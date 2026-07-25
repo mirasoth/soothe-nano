@@ -5,6 +5,21 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-07-25
+
+### Fixed
+- Import `is_rg_available` from `soothe_deepagents.backends.grep_search` (filesystem re-exports were missing in deepagents 0.8.3).
+- Omit LangGraph `durability` kwargs when no checkpointer is present (ephemeral execute twin).
+
+### Changed
+- Require `soothe-deepagents>=0.8.4` for directory-capable glob (`fd` + scandir) and `grep_search` helpers.
+- Workspace/local glob uses deepagents discovery helpers directly; drop the local `grep_search` shim.
+
+### Added
+- Directory glob coverage (`trailing /`, `include_dirs`) in unit tests.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.6...v1.0.7
+
 ## [1.0.4] - 2026-07-24
 
 ### Fixed

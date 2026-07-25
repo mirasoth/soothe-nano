@@ -8,16 +8,18 @@ GLOB_DISCOVERY_FALLBACK_HINT = (
     "directories before read_file on specific targets. Avoid repeating broad ** globs."
 )
 
-GLOB_TOOL_DESCRIPTION = f"""Find files matching a glob pattern.
+GLOB_TOOL_DESCRIPTION = f"""Find files and directories matching a glob pattern.
 
 Supports standard glob patterns: `*` (any characters), `**` (any directories), `?` (single character).
-Returns a list of file paths that match the pattern (relative to workspace root when virtual mode is on).
+A trailing `/` means directories only (e.g. `packages/*/`). Otherwise matching files and directories
+are returned (`is_dir` marks directories).
 
 Prefer narrow patterns scoped to a directory (e.g. `packages/foo/**/*.test.ts`) over repo-wide `**` scans.
 Set `path` to a subdirectory when the search target is known.
 
 Examples:
 - `**/*.py` - Find all Python files (may be slow on large repos)
+- `packages/*/` - Package directories under packages/
 - `packages/api/**/*.test.ts` - TypeScript tests under one package
 - `*.txt` - Text files in the search root
 

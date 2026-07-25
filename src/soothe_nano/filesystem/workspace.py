@@ -8,12 +8,16 @@ and framework-wide filesystem operations.
 from __future__ import annotations
 
 import asyncio
-import os
-import subprocess
 from pathlib import Path
 
 import wcmatch.glob as wcglob
 from pathspec import PathSpec
+from soothe_deepagents.backends.glob_search import (
+    list_via_fd,
+    list_via_scandir,
+    max_depth_for_pattern,
+    parse_glob_pattern,
+)
 from soothe_deepagents.backends.protocol import (
     BatchedEditOperation,
     BatchedEditResult,
@@ -32,7 +36,6 @@ from .local import LocalFilesystem
 from .unified import UnifiedFilesystem
 
 _WCMATCH_FLAGS = wcglob.BRACE | wcglob.GLOBSTAR
-_GIT_LS_FILES_TIMEOUT_S = 5.0
 
 
 class WorkspaceFilesystem(UnifiedFilesystem):
@@ -143,9 +146,15 @@ class WorkspaceFilesystem(UnifiedFilesystem):
 
     def _is_ignored(self, rel_posix: str) -> bool:
         """Return True when a workspace-relative path is ignored."""
-        return self._ignore_spec().match_file(rel_posix)
+        spec = self._ignore_spec()
+        if spec.match_file(rel_posix):
+            return True
+        # Directory gitignore rules often end with ``/``; match those too.
+        if not rel_posix.endswith("/"):
+            return spec.match_file(f"{rel_posix}/")
+        return False
 
-    def _apply_glob_limits(self, results: list[str]) -> tuple[list[str], bool]:
+    def _apply_glob_limits(self, results: list) -> tuple[list, bool]:
         """Cap glob results to ``DEFAULT_GLOB_MAX_RESULTS``.
 
         Returns:
@@ -155,68 +164,54 @@ class WorkspaceFilesystem(UnifiedFilesystem):
             return results[: self.DEFAULT_GLOB_MAX_RESULTS], True
         return results, False
 
-    def _list_files_via_git(self) -> list[str] | None:
-        """List non-ignored files using git index (fast, full gitignore semantics)."""
-        if not (self.workspace / ".git").exists():
-            return None
-        try:
-            proc = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(self.workspace),
-                    "ls-files",
-                    "-co",
-                    "--exclude-standard",
-                    "-z",
-                ],
-                capture_output=True,
-                check=False,
-                timeout=_GIT_LS_FILES_TIMEOUT_S,
+    def _collect_glob_entries(
+        self,
+        search_path: Path,
+        *,
+        match_pattern: str,
+        dirs_only: bool,
+        include_ignored: bool,
+    ) -> list[tuple[str, bool]]:
+        """Collect ``(workspace_rel_or_abs, is_dir)`` then normalize to workspace-rel.
+
+        Prefers ``fd`` when available; falls back to ``os.scandir``.
+        """
+        depth = max_depth_for_pattern(match_pattern)
+
+        if not include_ignored:
+            fd_hits = list_via_fd(
+                search_path,
+                match_pattern or "*",
+                dirs_only=dirs_only,
+                excludes=list(self.ESSENTIAL_GLOB_EXCLUDES),
+                max_results=max(self.DEFAULT_GLOB_MAX_RESULTS * 20, 1000),
+                max_depth=depth,
+                include_ignored=False,
             )
-        except (OSError, subprocess.TimeoutExpired):
-            return None
-        if proc.returncode != 0:
-            return None
-        return [p.decode("utf-8", errors="replace") for p in proc.stdout.split(b"\0") if p]
+            if fd_hits is not None:
+                workspace_resolved = self.workspace.resolve()
+                rel_entries: list[tuple[str, bool]] = []
+                for abs_str, is_dir in fd_hits:
+                    try:
+                        rel = Path(abs_str).resolve().relative_to(workspace_resolved)
+                    except ValueError:
+                        continue
+                    rel_posix = "." if rel == Path(".") else rel.as_posix()
+                    if rel_posix == ".":
+                        continue
+                    if self._is_ignored(rel_posix):
+                        continue
+                    rel_entries.append((rel_posix, is_dir))
+                return rel_entries
 
-    def _list_files_via_walk(self, search_path: Path) -> list[str]:
-        """Walk the tree, pruning ignored directories using pathspec."""
-        rel_paths: list[str] = []
-        search_resolved = search_path.resolve()
-        workspace_resolved = self.workspace.resolve()
-
-        for root, dirs, files in os.walk(search_path, topdown=True, followlinks=False):
-            root_path = Path(root)
-            try:
-                rel_root = root_path.resolve().relative_to(workspace_resolved)
-                rel_root_posix = "." if rel_root == Path(".") else rel_root.as_posix()
-            except ValueError:
-                continue
-
-            # Filter out ignored directories
-            dirs[:] = sorted(
-                d
-                for d in dirs
-                if not self._is_ignored(
-                    f"{rel_root_posix}/{d}".removeprefix("./") if rel_root_posix != "." else d
-                )
-            )
-
-            for name in files:
-                rel_posix = (
-                    name if rel_root_posix == "." else f"{rel_root_posix}/{name}".removeprefix("./")
-                )
-                if self._is_ignored(rel_posix):
-                    continue
-                full = root_path / name
-                if not full.is_file():
-                    continue
-                if not full.resolve().is_relative_to(search_resolved):
-                    continue
-                rel_paths.append(rel_posix)
-
-        return rel_paths
+        return list_via_scandir(
+            search_path,
+            workspace=self.workspace,
+            is_ignored=None if include_ignored else self._is_ignored,
+            max_depth=depth,
+            dirs_only=dirs_only,
+            include_ignored=include_ignored,
+        )[0]
 
     # ========================================================================
     # Path Operations
@@ -583,8 +578,11 @@ class WorkspaceFilesystem(UnifiedFilesystem):
     ) -> GlobResult:
         """Glob pattern matching with gitignore support.
 
+        Trailing ``/`` on the pattern means directories only (e.g. ``packages/*/``).
+        Otherwise matching files and directories are returned with ``is_dir`` set.
+
         Args:
-            pattern: Glob pattern (e.g., "**/*.py").
+            pattern: Glob pattern (e.g., "**/*.py", "packages/*/").
             path: Directory to search in.
             include_ignored: Whether to include gitignored files.
 
@@ -613,31 +611,22 @@ class WorkspaceFilesystem(UnifiedFilesystem):
                 error=f"Error globbing path '{path}': outside workspace",
             )
 
-        # Get candidates (respecting gitignore)
-        if include_ignored:
-            # List all files without gitignore filtering
-            candidates: list[str] = []
-            for root, _dirs, files in os.walk(search_path, topdown=True, followlinks=False):
-                root_path = Path(root)
-                try:
-                    rel_root = root_path.resolve().relative_to(self.workspace.resolve())
-                    rel_root_posix = "." if rel_root == Path(".") else rel_root.as_posix()
-                except ValueError:
-                    continue
-                for name in files:
-                    rel_posix = (
-                        name
-                        if rel_root_posix == "."
-                        else f"{rel_root_posix}/{name}".removeprefix("./")
-                    )
-                    candidates.append(rel_posix)
-        else:
-            candidates = self._list_files_via_git()
-            if candidates is None:
-                candidates = self._list_files_via_walk(search_path)
+        match_pattern, dirs_only = parse_glob_pattern(pattern)
+        if dirs_only and not match_pattern:
+            return GlobResult(
+                matches=[],
+                error=f"Invalid directories-only glob pattern {pattern!r}",
+            )
 
-        results: list[str] = []
-        for rel_posix in candidates:
+        candidates = self._collect_glob_entries(
+            search_path,
+            match_pattern=match_pattern,
+            dirs_only=dirs_only,
+            include_ignored=include_ignored,
+        )
+
+        results: list[FileInfo] = []
+        for rel_posix, is_dir in candidates:
             if search_prefix != ".":
                 if rel_posix != search_prefix and not rel_posix.startswith(f"{search_prefix}/"):
                     continue
@@ -649,22 +638,20 @@ class WorkspaceFilesystem(UnifiedFilesystem):
             else:
                 match_rel = rel_posix
 
+            if dirs_only and not is_dir:
+                continue
+
             if not wcglob.globmatch(
-                match_rel, pattern, flags=_WCMATCH_FLAGS
-            ) and not wcglob.globmatch(Path(rel_posix).name, pattern, flags=_WCMATCH_FLAGS):
+                match_rel, match_pattern, flags=_WCMATCH_FLAGS
+            ) and not wcglob.globmatch(Path(rel_posix).name, match_pattern, flags=_WCMATCH_FLAGS):
                 continue
 
             full_path = (self.workspace / rel_posix).resolve()
-            if not full_path.is_file():
-                continue
-
             # Always return host-absolute paths so the LLM gets paths that work
-            # consistently across filesystem tools (which accept host-absolute
-            # paths under the workspace via _normalize_path) AND shell tools
-            # (which see '/' as the host root, not the workspace).
-            results.append(str(full_path))
+            # consistently across filesystem tools and shell tools.
+            results.append({"path": str(full_path), "is_dir": is_dir})
 
-        results.sort()
+        results.sort(key=lambda m: str(m["path"]))
         limited_results, truncated = self._apply_glob_limits(results)
 
         hint: str | None = None
@@ -676,7 +663,7 @@ class WorkspaceFilesystem(UnifiedFilesystem):
             )
 
         return GlobResult(
-            matches=[{"path": p, "is_dir": False} for p in limited_results],
+            matches=limited_results,
             truncated=truncated,
             error=hint,
         )

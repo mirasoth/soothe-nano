@@ -36,14 +36,15 @@ def build_soothe_environment_section(*, model: str) -> str:
     Returns:
         Single XML section string.
     """
+    from soothe_deepagents.backends.grep_search import is_rg_available
+
     from soothe_nano.config.models import get_knowledge_cutoff
-    from soothe_nano.filesystem.grep_search import is_grep_available
 
     platform_name = platform_module.system()
     shell = os.environ.get("SHELL", "unknown")
     os_version = platform_module.platform()
     cutoff = get_knowledge_cutoff(model)
-    search_backend = "ripgrep" if is_grep_available() else "python_fallback"
+    search_backend = "ripgrep" if is_rg_available() else "python_fallback"
     inner = "\n".join(
         [
             f"<platform>{_xml_text(platform_name)}</platform>",
