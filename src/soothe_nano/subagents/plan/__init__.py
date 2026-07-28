@@ -9,6 +9,7 @@ from typing import Any
 
 from soothe_sdk.plugin import plugin, subagent
 
+from . import events as _events  # noqa: F401 — register soothe.subagent.planner.* wire types
 from .implementation import create_plan_subagent
 from .schemas import (
     PlanRefinement,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -128,6 +129,95 @@ async def test_plan_engine_recon_toolnode_executes_ls(
     user_blob = str(planner_calls[0])
     assert "alpha.txt" in user_blob
     assert "Plan" in out["messages"][-1].content
+
+
+@pytest.mark.asyncio
+async def test_plan_engine_logs_tool_calls(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Orphan card gets tool updates only; tool calls are logged at INFO."""
+    (tmp_path / "alpha.txt").write_text("hello\n", encoding="utf-8")
+
+    emitted: list[dict[str, Any]] = []
+
+    def _capture(payload: dict[str, Any], _logger: Any = None) -> None:
+        emitted.append(dict(payload))
+
+    monkeypatch.setattr(plan_engine, "emit_progress", _capture)
+
+    recon_ai = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "ls",
+                "args": {"path": "."},
+                "id": "call_ls1",
+                "type": "tool_call",
+            }
+        ],
+    )
+    summary_ai = AIMessage(content="Workspace has alpha.txt")
+
+    bound = MagicMock()
+    bound.ainvoke = AsyncMock(side_effect=[recon_ai, summary_ai])
+    model = MagicMock()
+    model.bind_tools = MagicMock(return_value=bound)
+
+    _patch_planner(
+        monkeypatch,
+        planner_returns=PlanRefinement(
+            plan_markdown="# Plan\n1. Use alpha.txt\n",
+            finish_planning=True,
+        ),
+    )
+
+    graph = build_plan_engine(
+        model,
+        PlanSubagentConfig(enable_recon=True, max_recon_rounds=4),
+        workspace=str(tmp_path),
+    )
+    with caplog.at_level(logging.INFO, logger="soothe_nano.subagents.plan.engine"):
+        await graph.ainvoke({"messages": [HumanMessage(content="inventory the workspace")]})
+
+    assert any(e.get("name") == "ls" for e in emitted)
+    assert not any(
+        str(e.get("type") or "").startswith("soothe.subagent.planner.") for e in emitted
+    )
+    assert any("[planner] tool ls" in r.message for r in caplog.records)
+    assert any("[planner] tool ls →" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_plan_engine_emits_stage_progress_not_in_tool_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stage progress uses subagent wire (status line); not tool_call.update rows."""
+    _patch_planner(
+        monkeypatch,
+        planner_returns=PlanRefinement(plan_markdown="# Plan\nDone.", finish_planning=True),
+    )
+    wire_events: list[dict[str, Any]] = []
+    tool_events: list[dict[str, Any]] = []
+
+    def _capture_wire(payload: dict[str, Any], _logger: Any = None) -> None:
+        wire_events.append(dict(payload))
+
+    def _capture_tool(payload: dict[str, Any], _logger: Any = None) -> None:
+        tool_events.append(dict(payload))
+
+    monkeypatch.setattr(plan_engine, "emit_subagent_wire_event", _capture_wire)
+    monkeypatch.setattr(plan_engine, "emit_progress", _capture_tool)
+
+    graph = build_plan_engine(MagicMock(), _plan_only_config())
+    await graph.ainvoke({"messages": [HumanMessage(content="parent task")]})
+
+    progress = [e for e in wire_events if e.get("type") == "soothe.subagent.planner.progress"]
+    assert progress
+    assert any(e.get("phase") == "start" for e in progress)
+    assert any(e.get("phase") == "draft" for e in progress)
+    assert not any(
+        str(e.get("type") or "").startswith("soothe.subagent.planner.") for e in tool_events
+    )
 
 
 @pytest.mark.asyncio

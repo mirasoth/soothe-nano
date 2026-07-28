@@ -1,9 +1,14 @@
-"""Logging configuration for Soothe."""
+"""Logging configuration for soothe-nano (host-agnostic).
+
+Hosts attach their own logger trees via ``extra_logger_names`` (e.g. soothe
+passes ``("soothe",)``). Nano never hardcodes unknown downstream package names.
+"""
 
 from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import Iterable, Sequence
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -16,9 +21,10 @@ from soothe_nano.logging.context import get_thread_id
 if TYPE_CHECKING:
     from soothe_nano.config import SootheConfig
 
-# Community plugins share this logger tree; mirror soothe handlers here.
+# Nano-owned logger trees that share the configured log file / console handlers.
+# Downstream hosts add their own names via ``extra_logger_names``.
 COMMUNITY_LOGGER_NAME = "soothe_plugins"
-PACKAGE_LOGGER_NAMES: tuple[str, ...] = ("soothe", COMMUNITY_LOGGER_NAME)
+PACKAGE_LOGGER_NAMES: tuple[str, ...] = ("soothe_nano", COMMUNITY_LOGGER_NAME)
 
 # Suffix length for conversation thread id in log lines (full id stays in context vars).
 _THREAD_ID_LOG_SUFFIX_LEN = 4
@@ -55,9 +61,34 @@ class ThreadFormatter(ShortLevelFormatter):
         return super().format(record)
 
 
-def _package_loggers() -> tuple[logging.Logger, ...]:
-    """Return package loggers that receive shared Soothe file/console handlers."""
-    return tuple(logging.getLogger(name) for name in PACKAGE_LOGGER_NAMES)
+def resolve_package_logger_names(
+    extra_logger_names: Sequence[str] | None = None,
+) -> tuple[str, ...]:
+    """Merge nano package logger names with host-supplied extras (order-preserving).
+
+    Args:
+        extra_logger_names: Additional logger tree roots (e.g. ``("soothe",)``).
+
+    Returns:
+        Deduplicated logger names: nano defaults first, then extras.
+    """
+    names: list[str] = list(PACKAGE_LOGGER_NAMES)
+    seen = set(names)
+    for name in extra_logger_names or ():
+        if not name or name in seen:
+            continue
+        names.append(name)
+        seen.add(name)
+    return tuple(names)
+
+
+def _package_loggers(
+    extra_logger_names: Sequence[str] | None = None,
+) -> tuple[logging.Logger, ...]:
+    """Return package loggers that receive shared file/console handlers."""
+    return tuple(
+        logging.getLogger(name) for name in resolve_package_logger_names(extra_logger_names)
+    )
 
 
 def _rotating_handler_path(handler: RotatingFileHandler) -> Path | None:
@@ -134,18 +165,22 @@ def setup_logging(
     *,
     foreground: bool = False,
     log_file: str | Path | None = None,
+    extra_logger_names: Sequence[str] | Iterable[str] | None = None,
 ) -> None:
-    """Configure Soothe and community package loggers with file and optional console handlers.
+    """Configure nano (and optional host) package loggers with file/console handlers.
 
-    Writes to ``SOOTHE_HOME/logs/soothe.log`` (rotating, 5 MB max, 3 backups) for both
-    ``soothe.*`` and ``soothe_plugins.*`` logger trees unless ``log_file`` overrides the path.
-    Optionally outputs to console when enabled in config.
+    Writes to ``SOOTHE_HOME/logs/soothe.log`` (rotating) for ``soothe_nano.*`` and
+    ``soothe_plugins.*`` unless ``log_file`` overrides the path. Downstream hosts
+    pass their logger roots via ``extra_logger_names`` (e.g. ``("soothe",)``).
 
     Args:
         config: Optional config to read logging configuration from.
         foreground: When ``True``, forces console logging to stdout at INFO level
             regardless of config settings. Useful for foreground process mode.
         log_file: Optional log file path override (default ``SOOTHE_HOME/logs/soothe.log``).
+        extra_logger_names: Additional logger tree roots to attach the same
+            handlers to. Unknown downstream packages register here; nano does
+            not hardcode host names.
     """
     from soothe_nano.config import SootheConfig as _SootheConfig
 
@@ -165,7 +200,8 @@ def setup_logging(
     file_level = getattr(logging, file_level_name, logging.INFO)
     console_level = getattr(logging, console_level_name, logging.WARNING)
 
-    package_loggers = _package_loggers()
+    extras = tuple(extra_logger_names) if extra_logger_names is not None else ()
+    package_loggers = _package_loggers(extras)
     min_level = min(file_level, console_level)
     for logger in package_loggers:
         logger.setLevel(min_level)

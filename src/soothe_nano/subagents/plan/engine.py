@@ -22,7 +22,10 @@ from soothe_sdk.ux.stream_tool_wire import STREAM_TOOL_CALL_UPDATE
 
 from soothe_nano.utils.llm.structured import invoke_structured_chat_typed
 from soothe_nano.utils.progress import emit_progress
+from soothe_nano.utils.subagent_emit import emit_subagent_wire_event
+from soothe_nano.utils.text_preview import log_preview
 
+from .events import PlannerProgressEvent
 from .schemas import PlanRefinement, PlanSubagentConfig
 from .tools import get_planner_readonly_tools
 
@@ -32,6 +35,60 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _FINDING_TRUNCATE = 4000
+_TOOL_ARGS_LOG_CHARS = 80
+
+
+def _emit_planner_stage(
+    phase: str,
+    message: str,
+    *,
+    loop_count: int = 0,
+    total_loops: int = 0,
+) -> None:
+    """Emit stage for the orphan card status line (CLI maps this; not an activity note)."""
+    emit_subagent_wire_event(
+        PlannerProgressEvent(
+            phase=phase,
+            message=message,
+            loop_count=loop_count,
+            total_loops=total_loops,
+        ).to_dict(),
+        logger,
+    )
+
+
+def _compact_tool_args(args: dict[str, Any]) -> str:
+    """One short arg hint for logs (prefer path/pattern keys)."""
+    for key in ("path", "file_path", "glob", "pattern", "query", "regex", "file"):
+        val = args.get(key)
+        if val is None or val == "":
+            continue
+        return f"{key}={log_preview(str(val), _TOOL_ARGS_LOG_CHARS)}"
+    if not args:
+        return ""
+    return log_preview(str(args), _TOOL_ARGS_LOG_CHARS)
+
+
+def _emit_tool_update(*, tool_call_id: str, name: str, args: dict[str, Any]) -> None:
+    """Emit tool row for the orphan SubAgent card and log the call."""
+    hint = _compact_tool_args(args)
+    logger.info("[planner] tool %s%s", name, f" {hint}" if hint else "")
+    emit_progress(
+        {
+            "type": STREAM_TOOL_CALL_UPDATE,
+            "tool_call_id": tool_call_id,
+            "name": name,
+            "args": dict(args or {}),
+        },
+        logger,
+    )
+
+
+def _log_tool_result(tm: ToolMessage) -> None:
+    name = str(getattr(tm, "name", None) or "tool")
+    content = getattr(tm, "content", "")
+    result_text = content if isinstance(content, str) else str(content)
+    logger.info("[planner] tool %s → %d chars", name, len(result_text))
 
 
 class PlanEngineState(dict):
@@ -66,18 +123,6 @@ Rules:
 - Set `finish_planning` true when the plan is actionable and stable enough to hand to a human.
 - You may use recon findings below; do not invent file paths that contradict findings.
 - If context is thin, still produce the best plan you can and list assumptions explicitly."""
-
-
-def _emit_tool_update(*, tool_call_id: str, name: str, args: dict[str, Any]) -> None:
-    emit_progress(
-        {
-            "type": STREAM_TOOL_CALL_UPDATE,
-            "tool_call_id": tool_call_id,
-            "name": name,
-            "args": dict(args or {}),
-        },
-        logger,
-    )
 
 
 def _truncate_finding(text: str) -> str:
@@ -157,7 +202,14 @@ def build_plan_engine(
             last = state["messages"][-1]
             c = getattr(last, "content", "")
             text = c if isinstance(c, str) else str(c)
-        logger.info("Plan subagent: ingested task (%d chars)", len(text))
+        logger.info(
+            "[planner] start chars=%d recon=%s max_recon=%d max_plan=%d",
+            len(text),
+            "on" if tools_by_name else "off",
+            plan_config.max_recon_rounds if tools_by_name else 0,
+            plan_config.max_plan_rounds,
+        )
+        _emit_planner_stage("start", "starting")
         return {
             "task_text": text,
             "plan_markdown": "",
@@ -176,6 +228,13 @@ def build_plan_engine(
             f"## Delegated task\n{task}\n\n## Recon round\n{rr} / {plan_config.max_recon_rounds}\n\n"
             f"## Findings so far\n{prior}"
         )
+        logger.info("[planner] recon %d/%d", rr, plan_config.max_recon_rounds)
+        _emit_planner_stage(
+            "recon",
+            f"recon {rr}/{plan_config.max_recon_rounds}",
+            loop_count=rr,
+            total_loops=plan_config.max_recon_rounds,
+        )
         try:
             bound = model.bind_tools(list(tools_by_name.values()))
 
@@ -189,7 +248,7 @@ def build_plan_engine(
 
             ai = await await_with_llm_call_policy(_invoke, config=llm_policy)
         except Exception:
-            logger.exception("Plan subagent: recon model call failed")
+            logger.exception("[planner] recon model call failed")
             return {"recon_round": rr, "finish_recon": True, "findings": []}
 
         tool_calls = _tool_calls_from_message(ai)
@@ -201,7 +260,7 @@ def build_plan_engine(
             elif content:
                 summary = str(content).strip()
             findings = [f"### Recon summary\n{summary}"] if summary else []
-            logger.info("Plan subagent: recon finished at round %d (no tool calls)", rr)
+            logger.info("[planner] recon done (no tools) round=%d", rr)
             return {
                 "recon_round": rr,
                 "finish_recon": True,
@@ -230,11 +289,6 @@ def build_plan_engine(
                     normalized.append(tc)
             ai = AIMessage(content=ai.content, tool_calls=normalized)
 
-        logger.info(
-            "Plan subagent: recon round %d model requested %d tool call(s)",
-            rr,
-            len(tool_calls),
-        )
         return {
             "recon_round": rr,
             "finish_recon": False,
@@ -255,13 +309,15 @@ def build_plan_engine(
             break
         tool_msgs.reverse()
         findings = _format_tool_findings(ai_for_calls, tool_msgs) if tool_msgs else []
+        for tm in tool_msgs:
+            _log_tool_result(tm)
         rr = int(state.get("recon_round", 0))
         done = rr >= plan_config.max_recon_rounds
         logger.info(
-            "Plan subagent: recon round %d tools complete (n=%d finish=%s)",
-            rr,
+            "[planner] recon tools n=%d round=%d%s",
             len(tool_msgs),
-            done,
+            rr,
+            " → draft" if done else "",
         )
         return {"findings": findings, "finish_recon": done}
 
@@ -274,6 +330,13 @@ def build_plan_engine(
             f"## Delegated task\n{task}\n\n## Plan design round\n{pr} / {plan_config.max_plan_rounds}\n\n"
             f"## Recon findings\n{findings}\n\n"
             f"## Previous plan draft\n{prev or '(none — write initial plan)'}"
+        )
+        logger.info("[planner] drafting %d/%d", pr, plan_config.max_plan_rounds)
+        _emit_planner_stage(
+            "draft",
+            f"drafting {pr}/{plan_config.max_plan_rounds}",
+            loop_count=pr,
+            total_loops=plan_config.max_plan_rounds,
         )
         try:
 
@@ -289,7 +352,7 @@ def build_plan_engine(
 
             ref = await await_with_llm_call_policy(_invoke, config=llm_policy)
         except Exception:
-            logger.exception("Plan subagent: planner structured output failed")
+            logger.exception("[planner] draft structured output failed")
             ref = PlanRefinement(
                 plan_markdown=f"## Plan\n\n1. Address: {task}\n",
                 rationale="planner_failed_fallback",
@@ -297,20 +360,27 @@ def build_plan_engine(
             )
 
         done = bool(ref.finish_planning) or pr >= plan_config.max_plan_rounds
+        markdown = (ref.plan_markdown or "").strip()
         logger.info(
-            "Plan subagent: plan round %d complete (finish=%s, md_len=%d)",
+            "[planner] draft %d/%d md=%d finish=%s",
             pr,
+            plan_config.max_plan_rounds,
+            len(markdown),
             done,
-            len(ref.plan_markdown or ""),
         )
         return {
             "plan_round": pr,
-            "plan_markdown": (ref.plan_markdown or "").strip(),
+            "plan_markdown": markdown,
             "finish_planning": done,
         }
 
     def emit_final(state: dict[str, Any]) -> dict[str, Any]:
         body = (state.get("plan_markdown") or "").strip() or "(no plan produced)"
+        logger.info(
+            "[planner] done rounds=%d md=%d",
+            int(state.get("plan_round", 0) or 0),
+            len(body),
+        )
         return {"messages": [AIMessage(content=body)]}
 
     def route_after_ingest(state: dict[str, Any]) -> str:
