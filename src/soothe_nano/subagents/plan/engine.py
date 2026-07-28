@@ -2,6 +2,9 @@
 
 Readonly filesystem recon (optional), then agentic plan-design loops, then a
 single delegate final message. Mutating tools are never bound (RFC-633).
+
+Recon executes middleware tools via ``ToolNode`` so ``ToolRuntime`` is injected
+(bare ``tool.ainvoke(args)`` fails FilesystemMiddleware tools).
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 from soothe_sdk.ux.stream_tool_wire import STREAM_TOOL_CALL_UPDATE
 
 from soothe_nano.utils.llm.structured import invoke_structured_chat_typed
@@ -26,6 +30,8 @@ if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
 
 logger = logging.getLogger(__name__)
+
+_FINDING_TRUNCATE = 4000
 
 
 class PlanEngineState(dict):
@@ -74,6 +80,50 @@ def _emit_tool_update(*, tool_call_id: str, name: str, args: dict[str, Any]) -> 
     )
 
 
+def _truncate_finding(text: str) -> str:
+    if len(text) <= _FINDING_TRUNCATE:
+        return text
+    return text[:_FINDING_TRUNCATE] + "\n…(truncated)"
+
+
+def _tool_calls_from_message(msg: Any) -> list[dict[str, Any]]:
+    raw = getattr(msg, "tool_calls", None) or []
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for tc in raw:
+        if isinstance(tc, dict):
+            out.append(tc)
+        else:
+            out.append(
+                {
+                    "name": getattr(tc, "name", "") or "",
+                    "args": dict(getattr(tc, "args", None) or {}),
+                    "id": getattr(tc, "id", "") or "",
+                }
+            )
+    return out
+
+
+def _format_tool_findings(ai: Any, tool_messages: list[ToolMessage]) -> list[str]:
+    """Build finding blocks from ToolNode outputs paired with the prior AI tool_calls."""
+    by_id = {
+        str(tc.get("id") or ""): tc
+        for tc in _tool_calls_from_message(ai)
+        if str(tc.get("id") or "")
+    }
+    findings: list[str] = []
+    for tm in tool_messages:
+        call_id = str(getattr(tm, "tool_call_id", "") or "")
+        tc = by_id.get(call_id) or {}
+        name = str(getattr(tm, "name", None) or tc.get("name") or "tool")
+        args = dict(tc.get("args") or {})
+        content = getattr(tm, "content", "")
+        result_text = content if isinstance(content, str) else str(content)
+        findings.append(f"### {name}({args})\n{_truncate_finding(result_text)}")
+    return findings
+
+
 def build_plan_engine(
     model: BaseChatModel,
     plan_config: PlanSubagentConfig,
@@ -94,6 +144,7 @@ def build_plan_engine(
         else []
     )
     tools_by_name = {getattr(t, "name", ""): t for t in tools}
+    recon_tool_node = ToolNode(list(tools_by_name.values())) if tools_by_name else None
 
     def ingest_task(state: dict[str, Any]) -> dict[str, Any]:
         text = ""
@@ -114,10 +165,10 @@ def build_plan_engine(
             "finish_planning": False,
             "findings": [],
             "recon_round": 0,
-            "finish_recon": not bool(tools),
+            "finish_recon": not bool(tools_by_name),
         }
 
-    async def recon_iteration(state: dict[str, Any]) -> dict[str, Any]:
+    async def recon_model(state: dict[str, Any]) -> dict[str, Any]:
         task = state.get("task_text", "")
         rr = int(state.get("recon_round", 0)) + 1
         prior = "\n\n".join(state.get("findings") or []) or "(none yet)"
@@ -141,7 +192,7 @@ def build_plan_engine(
             logger.exception("Plan subagent: recon model call failed")
             return {"recon_round": rr, "finish_recon": True, "findings": []}
 
-        tool_calls = list(getattr(ai, "tool_calls", None) or [])
+        tool_calls = _tool_calls_from_message(ai)
         if not tool_calls:
             summary = ""
             content = getattr(ai, "content", "")
@@ -151,41 +202,68 @@ def build_plan_engine(
                 summary = str(content).strip()
             findings = [f"### Recon summary\n{summary}"] if summary else []
             logger.info("Plan subagent: recon finished at round %d (no tool calls)", rr)
-            return {"recon_round": rr, "finish_recon": True, "findings": findings}
+            return {
+                "recon_round": rr,
+                "finish_recon": True,
+                "findings": findings,
+                "messages": [ai if isinstance(ai, AIMessage) else AIMessage(content=summary)],
+            }
 
-        new_findings: list[str] = []
         for tc in tool_calls:
             name = str(tc.get("name") or "")
             args = dict(tc.get("args") or {})
             call_id = str(tc.get("id") or f"call_{uuid.uuid4().hex[:12]}")
+            if not tc.get("id"):
+                tc["id"] = call_id
             _emit_tool_update(tool_call_id=call_id, name=name, args=args)
-            tool = tools_by_name.get(name)
-            if tool is None:
-                result_text = f"Tool not available: {name}"
-            else:
-                try:
-                    raw = await tool.ainvoke(args)
-                    result_text = raw if isinstance(raw, str) else str(raw)
-                except Exception as exc:  # noqa: BLE001
-                    result_text = f"{type(exc).__name__}: {exc}"
-            if len(result_text) > 4000:
-                result_text = result_text[:4000] + "\n…(truncated)"
-            new_findings.append(f"### {name}({args})\n{result_text}")
-            # Satisfy tool-call protocol if messages are inspected later.
-            _ = ToolMessage(content=result_text, tool_call_id=call_id)
 
-        done = rr >= plan_config.max_recon_rounds
+        # Ensure ids exist on the AIMessage for ToolNode pairing.
+        if isinstance(ai, AIMessage) and ai.tool_calls:
+            normalized = []
+            for tc in ai.tool_calls:
+                if isinstance(tc, dict):
+                    entry = dict(tc)
+                    if not entry.get("id"):
+                        entry["id"] = f"call_{uuid.uuid4().hex[:12]}"
+                    normalized.append(entry)
+                else:
+                    normalized.append(tc)
+            ai = AIMessage(content=ai.content, tool_calls=normalized)
+
         logger.info(
-            "Plan subagent: recon round %d complete (tools=%d finish=%s)",
+            "Plan subagent: recon round %d model requested %d tool call(s)",
             rr,
             len(tool_calls),
-            done,
         )
         return {
             "recon_round": rr,
-            "finish_recon": done,
-            "findings": new_findings,
+            "finish_recon": False,
+            "messages": [ai],
         }
+
+    def recon_collect(state: dict[str, Any]) -> dict[str, Any]:
+        """Harvest ToolNode ``ToolMessage`` outputs into recon findings."""
+        msgs = list(state.get("messages") or [])
+        tool_msgs: list[ToolMessage] = []
+        ai_for_calls: Any = None
+        for msg in reversed(msgs):
+            if isinstance(msg, ToolMessage):
+                tool_msgs.append(msg)
+                continue
+            if getattr(msg, "type", None) == "ai" or isinstance(msg, AIMessage):
+                ai_for_calls = msg
+            break
+        tool_msgs.reverse()
+        findings = _format_tool_findings(ai_for_calls, tool_msgs) if tool_msgs else []
+        rr = int(state.get("recon_round", 0))
+        done = rr >= plan_config.max_recon_rounds
+        logger.info(
+            "Plan subagent: recon round %d tools complete (n=%d finish=%s)",
+            rr,
+            len(tool_msgs),
+            done,
+        )
+        return {"findings": findings, "finish_recon": done}
 
     async def plan_iteration(state: dict[str, Any]) -> dict[str, Any]:
         task = state.get("task_text", "")
@@ -240,7 +318,19 @@ def build_plan_engine(
             return "plan"
         return "recon"
 
-    def route_after_recon(state: dict[str, Any]) -> str:
+    def route_after_recon_model(state: dict[str, Any]) -> str:
+        if state.get("finish_recon"):
+            return "plan"
+        if recon_tool_node is None:
+            return "plan"
+        msgs = state.get("messages") or []
+        if not msgs:
+            return "plan"
+        if _tool_calls_from_message(msgs[-1]):
+            return "tools"
+        return "plan"
+
+    def route_after_recon_collect(state: dict[str, Any]) -> str:
         if state.get("finish_recon"):
             return "plan"
         if int(state.get("recon_round", 0)) >= plan_config.max_recon_rounds:
@@ -256,21 +346,32 @@ def build_plan_engine(
 
     graph = StateGraph(PlanEngineState)
     graph.add_node("ingest_task", ingest_task)
-    graph.add_node("recon_iteration", recon_iteration)
     graph.add_node("plan_iteration", plan_iteration)
     graph.add_node("emit_final", emit_final)
 
     graph.add_edge(START, "ingest_task")
-    graph.add_conditional_edges(
-        "ingest_task",
-        route_after_ingest,
-        {"recon": "recon_iteration", "plan": "plan_iteration"},
-    )
-    graph.add_conditional_edges(
-        "recon_iteration",
-        route_after_recon,
-        {"recon": "recon_iteration", "plan": "plan_iteration"},
-    )
+    if recon_tool_node is not None:
+        graph.add_node("recon_model", recon_model)
+        graph.add_node("recon_tools", recon_tool_node)
+        graph.add_node("recon_collect", recon_collect)
+        graph.add_conditional_edges(
+            "ingest_task",
+            route_after_ingest,
+            {"recon": "recon_model", "plan": "plan_iteration"},
+        )
+        graph.add_conditional_edges(
+            "recon_model",
+            route_after_recon_model,
+            {"tools": "recon_tools", "plan": "plan_iteration"},
+        )
+        graph.add_edge("recon_tools", "recon_collect")
+        graph.add_conditional_edges(
+            "recon_collect",
+            route_after_recon_collect,
+            {"recon": "recon_model", "plan": "plan_iteration"},
+        )
+    else:
+        graph.add_edge("ingest_task", "plan_iteration")
     graph.add_conditional_edges(
         "plan_iteration",
         route_after_plan,
