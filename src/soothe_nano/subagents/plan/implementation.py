@@ -34,18 +34,17 @@ def create_plan_subagent(
     Returns:
         Dict with ``name``, ``description``, and ``runnable`` graph.
     """
-    _ = context.get("work_dir", "")
+    workspace = str(context.get("work_dir") or context.get("workspace") or "").strip() or None
     sub_cfg = config.subagents.get("planner", SubagentConfig())
     plan_opts = PlanSubagentConfig(**sub_cfg.config)
 
-    runnable = build_plan_engine(model, plan_opts, soothe_config=config)
+    runnable = build_plan_engine(model, plan_opts, soothe_config=config, workspace=workspace)
 
     return {
         "name": "planner",
         "description": (
-            "Planning delegate with agentic plan-design loops: iteratively refines a full "
-            "markdown execution plan before returning one report. Use when the main thread "
-            "needs structured planning; readonly recon belongs on execute-step threads."
+            "Planning delegate with readonly filesystem recon and agentic plan-design "
+            "loops: produces a markdown plan for human Approve/Reject/comments review."
         ),
         "runnable": runnable,
     }
