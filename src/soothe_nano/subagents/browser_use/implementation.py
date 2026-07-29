@@ -44,6 +44,8 @@ logger = logging.getLogger(__name__)
 
 _NO_EXTRACTED_CONTENT = "BrowserUse task completed (no extracted content.)"
 _MAX_HISTORY_DIGEST_STEPS = 12
+# Matches browser_use's own TIMEOUT_AgentEventBusStop default.
+_AGENT_EVENTBUS_STOP_TIMEOUT_S = 3.0
 
 
 class _BrowserUseSynthesisDecision(BaseModel):
@@ -393,6 +395,25 @@ class _SuppressOutput:
         os.close(self._original_stdout)
 
 
+async def _stop_browser_agent_eventbus(agent: Any, *, run_id: str) -> None:
+    """Shut down a browser ``Agent``'s own event bus.
+
+    ``Agent.run()`` normally does this on the way out, but we drive the agent
+    through a manual ``step()`` loop and never call it. A bus left running keeps
+    an ``asyncio`` task polling every 0.1s that also refuses cancellation, which
+    is enough to stop the calling process from ever exiting.
+    """
+    eventbus = getattr(agent, "eventbus", None)
+    if eventbus is None:
+        return
+    try:
+        await eventbus.stop(clear=True, timeout=_AGENT_EVENTBUS_STOP_TIMEOUT_S)
+    except Exception:
+        _log_browser_event("eventbus_stop_failed", run_id=run_id)
+    else:
+        _log_browser_event("eventbus_stop", run_id=run_id)
+
+
 def _build_browser_use_graph(
     *,
     headless: bool = True,
@@ -465,6 +486,7 @@ def _build_browser_use_graph(
         run_t0 = time.perf_counter()
         result = _NO_EXTRACTED_CONTENT
         run_success = True
+        agent: Any = None
 
         try:
             with output_suppressor:
@@ -744,6 +766,8 @@ def _build_browser_use_graph(
                 logger,
             )
         finally:
+            await _stop_browser_agent_eventbus(agent, run_id=run_id)
+
             if ephemeral_profile_dir:
                 import shutil
 
