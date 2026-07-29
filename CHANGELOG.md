@@ -5,6 +5,19 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2026-07-29
+
+### Fixed
+- browser_use subagent now stops the browser `Agent.eventbus` from an outer
+  `finally` on both happy and failure paths. Previously the bubus `_run_loop`
+  re-armed on `CancelledError` and the process hung forever after the answer
+  was already printed.
+- `operation_guard` denies bare `kill <pid>` against the live daemon, self, or
+  parent via protected-kill hooks; banned-command patterns cover common shell
+  idioms (port 8765, pidfile, `pgrep soothed`) that resolve the daemon PID.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.10...v1.0.11
+
 ## [1.0.10] - 2026-07-29
 
 ### Fixed
