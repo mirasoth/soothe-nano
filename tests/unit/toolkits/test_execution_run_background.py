@@ -30,6 +30,18 @@ class TestRunBackgroundSpawn:
         finally:
             _kill_process_tree(result["pid"], sig=signal.SIGKILL)
 
+    def test_run_background_ignores_extra_llm_kwargs(self) -> None:
+        """LLMs often pass Cursor-style ``description``; args_schema must strip it."""
+        tool = RunBackgroundTool()
+        result = tool.invoke({"command": "sleep 30", "description": "start a short sleep job"})
+        assert result["status"] == "running"
+        assert isinstance(result["pid"], int)
+        assert result["pid"] > 0
+        try:
+            os.kill(result["pid"], 0)
+        finally:
+            _kill_process_tree(result["pid"], sig=signal.SIGKILL)
+
     def test_run_background_writes_header_before_spawn(self, tmp_path) -> None:
         tool = RunBackgroundTool(workspace_root=str(tmp_path))
         result = tool._run(command='echo "header-test" && sleep 30')

@@ -694,6 +694,12 @@ class RunPythonREPLTool(BaseTool):
         return await run_in_executor(None, self.python_repl.run, code)
 
 
+class RunBackgroundInput(BaseModel):
+    """Arguments for ``run_background``."""
+
+    command: str = Field(..., description="The shell command to execute in the background.")
+
+
 class RunBackgroundTool(BaseTool):
     """Background shell execution via ``run_background`` (see tool description)."""
 
@@ -708,6 +714,7 @@ class RunBackgroundTool(BaseTool):
         "with an explicit timeout instead. "
         "Parameters: command (required)."
     )
+    args_schema: type[BaseModel] = RunBackgroundInput
     workspace_root: str = Field(default="", description="Working directory for shell")
     background_log_dir: str | None = Field(
         default=None,

@@ -67,6 +67,7 @@ class TestRunCommandShellToolOpenAiSchema:
         props = params.get("properties") or {}
         assert "runtime" not in props
         assert "command" in props
+        assert "description" not in props
 
 
 class TestRunCommandShellToolInitialization:
