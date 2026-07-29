@@ -5,6 +5,26 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] - 2026-07-29
+
+### Fixed
+- `RunBackgroundTool` now declares `RunBackgroundInput` / `args_schema` so LangChain
+  strips unknown LLM kwargs (e.g. Cursor-style `description`) instead of raising
+  `TypeError: _arun() got an unexpected keyword argument 'description'`.
+- Diagnose only fails providers used by the active profile.
+- Planner recon tools run via `ToolNode` so `ToolRuntime` injection works.
+
+### Added
+- Readonly recon tools for the plan-design subagent.
+- Planner stage progress events; nano logs surface in `soothe.log`.
+
+### Changed
+- Require `soothe-sdk>=1.0.7`.
+- Planner produces a solution report (goal-completion proposal) instead of an
+  investigation roadmap.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.8...v1.0.10
+
 ## [1.0.8] - 2026-07-25
 
 ### Added
