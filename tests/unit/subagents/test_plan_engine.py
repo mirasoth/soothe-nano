@@ -11,8 +11,11 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from soothe_nano.subagents.plan import engine as plan_engine
-from soothe_nano.subagents.plan.engine import build_plan_engine
-from soothe_nano.subagents.plan.schemas import PlanRefinement, PlanSubagentConfig
+from soothe_nano.subagents.plan.engine import (
+    PlanRefinement,
+    PlanSubagentConfig,
+    build_plan_engine,
+)
 
 
 def _patch_planner(
@@ -180,9 +183,7 @@ async def test_plan_engine_logs_tool_calls(
         await graph.ainvoke({"messages": [HumanMessage(content="inventory the workspace")]})
 
     assert any(e.get("name") == "ls" for e in emitted)
-    assert not any(
-        str(e.get("type") or "").startswith("soothe.subagent.planner.") for e in emitted
-    )
+    assert not any(str(e.get("type") or "").startswith("soothe.subagent.planner.") for e in emitted)
     assert any("[planner] tool ls" in r.message for r in caplog.records)
     assert any("[planner] tool ls →" in r.message for r in caplog.records)
 

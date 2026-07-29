@@ -1,6 +1,6 @@
 """Plan subagent package.
 
-Structured planning delegate for markdown execution plans.
+Intake planner: readonly grounding tools → Goal Completion Proposal for review.
 """
 
 from __future__ import annotations
@@ -9,25 +9,34 @@ from typing import Any
 
 from soothe_sdk.plugin import plugin, subagent
 
-from . import events as _events  # noqa: F401 — register soothe.subagent.planner.* wire types
-from .implementation import create_plan_subagent
-from .schemas import (
+from .engine import (  # noqa: F401 — register soothe.subagent.planner.* on import
+    PLANNER_READONLY_TOOL_NAMES,
+    SUBAGENT_PLANNER_PROGRESS,
+    PlannerProgressEvent,
     PlanRefinement,
     PlanSubagentConfig,
+    build_plan_engine,
+    create_plan_subagent,
+    get_planner_readonly_tools,
 )
 
 __all__ = [
+    "PLANNER_READONLY_TOOL_NAMES",
+    "PlanPlugin",
     "PlanRefinement",
     "PlanSubagentConfig",
-    "PlanPlugin",
+    "PlannerProgressEvent",
+    "SUBAGENT_PLANNER_PROGRESS",
+    "build_plan_engine",
     "create_plan_subagent",
+    "get_planner_readonly_tools",
 ]
 
 
 @plugin(
     name="planner",
     version="1.0.0",
-    description="Structured planning subagent",
+    description="Goal completion proposal planner subagent",
     trust_level="built-in",
 )
 class PlanPlugin:
@@ -40,10 +49,10 @@ class PlanPlugin:
     @subagent(
         name="planner",
         description=(
-            "Agentic planning delegate: multi-round markdown plan refinement; one report back "
-            "per task. Use for complex objectives needing a stable execution plan."
+            "Propose a reviewable goal completion solution using readonly workspace tools; "
+            "one Goal Completion Proposal per task for human Approve / Reject / comments."
         ),
-        triggers=["planner", "decompose", "roadmap", "break down"],
+        triggers=["planner", "propose plan", "completion plan", "roadmap", "break down"],
     )
     async def create_subagent(
         self,

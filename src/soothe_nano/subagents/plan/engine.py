@@ -1,9 +1,10 @@
-"""Plan subagent LangGraph.
+"""Plan subagent: grounded recon → goal completion proposal → emit for review.
 
-Readonly filesystem recon (optional), then agentic plan-design loops, then a
-single delegate final message. Mutating tools are never bound (RFC-633).
+Readonly filesystem tools only (no write/edit/delete/execute). Recon evidence
+stays internal; the final message is a Goal Completion Proposal for human
+Approve / Reject / More comments (RFC-633 / IG-659).
 
-Recon executes middleware tools via ``ToolNode`` so ``ToolRuntime`` is injected
+Recon runs middleware tools via ``ToolNode`` so ``ToolRuntime`` is injected
 (bare ``tool.ainvoke(args)`` fails FilesystemMiddleware tools).
 """
 
@@ -11,31 +12,185 @@ from __future__ import annotations
 
 import logging
 import operator
+import os
 import uuid
-from typing import TYPE_CHECKING, Annotated, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
+from pydantic import BaseModel, ConfigDict, Field
+from soothe_sdk.core.events import SootheEvent
+from soothe_sdk.core.verbosity import VerbosityTier
 from soothe_sdk.ux.stream_tool_wire import STREAM_TOOL_CALL_UPDATE
 
+from soothe_nano.config import SubagentConfig
+from soothe_nano.events.catalog import register_event
 from soothe_nano.utils.llm.structured import invoke_structured_chat_typed
 from soothe_nano.utils.progress import emit_progress
 from soothe_nano.utils.subagent_emit import emit_subagent_wire_event
 from soothe_nano.utils.text_preview import log_preview
 
-from .events import PlannerProgressEvent
-from .schemas import PlanRefinement, PlanSubagentConfig
-from .tools import get_planner_readonly_tools
-
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
+
+    from soothe_nano.config import SootheConfig
 
 logger = logging.getLogger(__name__)
 
 _FINDING_TRUNCATE = 4000
 _TOOL_ARGS_LOG_CHARS = 80
+
+PLANNER_READONLY_TOOL_NAMES: tuple[str, ...] = (
+    "glob",
+    "grep",
+    "ls",
+    "read_file",
+    "file_info",
+)
+
+SUBAGENT_PLANNER_PROGRESS = "soothe.subagent.planner.progress"
+
+
+# ---------------------------------------------------------------------------
+# Schemas & wire events
+# ---------------------------------------------------------------------------
+
+
+class PlanSubagentConfig(BaseModel):
+    """YAML configuration under ``subagents.planner.config``."""
+
+    max_plan_rounds: int = Field(
+        default=5,
+        ge=1,
+        le=24,
+        description="Maximum proposal-design iterations before the draft is emitted.",
+    )
+    enable_recon: bool = Field(
+        default=True,
+        description="When true, run readonly filesystem recon before drafting (RFC-633).",
+    )
+    max_recon_rounds: int = Field(
+        default=4,
+        ge=0,
+        le=16,
+        description="Maximum bind_tools recon rounds (0 skips recon even if enable_recon).",
+    )
+
+
+class PlanRefinement(BaseModel):
+    """Structured output for one goal-completion proposal iteration."""
+
+    plan_markdown: str = Field(
+        description=(
+            "Full Goal Completion Proposal markdown: Goal, Proposed solution, Plan "
+            "(ordered steps), Evidence, Risks & assumptions, Open questions."
+        ),
+    )
+    rationale: str = Field(
+        default="",
+        description="Why this solution completes the goal, or what changed this round.",
+    )
+    finish_planning: bool = Field(
+        description="Set true when the proposal is stable enough for human review.",
+    )
+
+
+class PlannerProgressEvent(SootheEvent):
+    """Planner stage signal for the orphan card status line (not activity notes)."""
+
+    type: Literal["soothe.subagent.planner.progress"] = SUBAGENT_PLANNER_PROGRESS  # type: ignore[assignment]
+    phase: str = ""
+    loop_count: int = 0
+    total_loops: int = 0
+    message: str = ""
+
+    model_config = ConfigDict(extra="allow")
+
+
+register_event(
+    PlannerProgressEvent,
+    verbosity=VerbosityTier.NORMAL,
+    summary_template="{phase}: {message}",
+)
+
+
+# ---------------------------------------------------------------------------
+# Readonly tools
+# ---------------------------------------------------------------------------
+
+
+def get_planner_readonly_tools(workspace: str | None = None) -> list[Any]:
+    """Build the planner recon tool surface (no write/edit/delete/execute).
+
+    Args:
+        workspace: Workspace root; defaults to the process cwd.
+
+    Returns:
+        Ordered langchain tool instances present on ``SootheFilesystemMiddleware``.
+    """
+    from soothe_deepagents.backends.filesystem import FilesystemBackend
+
+    from soothe_nano.middleware.filesystem import SootheFilesystemMiddleware
+
+    root = workspace or os.getcwd()
+    backend = FilesystemBackend(root_dir=Path(root), virtual_mode=False)
+    middleware = SootheFilesystemMiddleware(
+        backend=backend,
+        backup_enabled=False,
+        workspace_root=root,
+    )
+    by_name = {getattr(t, "name", ""): t for t in middleware.tools}
+    tools = [by_name[name] for name in PLANNER_READONLY_TOOL_NAMES if name in by_name]
+    missing = [n for n in PLANNER_READONLY_TOOL_NAMES if n not in by_name]
+    if missing:
+        logger.debug("Planner readonly tools missing from middleware: %s", missing)
+    return tools
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+
+def create_plan_subagent(
+    model: BaseChatModel,
+    config: SootheConfig,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the plan ``CompiledSubAgent`` spec.
+
+    Args:
+        model: Primary chat model for proposal-design loops (resolver passes
+            ``subagents.planner.model`` when set, else ``model_role``, default ``think``).
+        config: Soothe configuration.
+        context: Optional resolver context (``work_dir`` / ``workspace``).
+
+    Returns:
+        Dict with ``name``, ``description``, and ``runnable`` graph.
+    """
+    workspace = str(context.get("work_dir") or context.get("workspace") or "").strip() or None
+    sub_cfg = config.subagents.get("planner", SubagentConfig())
+    plan_opts = PlanSubagentConfig(**sub_cfg.config)
+
+    runnable = build_plan_engine(model, plan_opts, soothe_config=config, workspace=workspace)
+
+    return {
+        "name": "planner",
+        "description": (
+            "Propose a reviewable goal completion solution: readonly workspace recon, "
+            "then a Goal Completion Proposal (objective, solution, steps, evidence) "
+            "for human Approve / Reject / More comments."
+        ),
+        "runnable": runnable,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Graph helpers
+# ---------------------------------------------------------------------------
 
 
 def _emit_planner_stage(
@@ -104,25 +259,35 @@ class PlanEngineState(dict):
     finish_recon: bool
 
 
-_RECON_SYSTEM = """You are the **recon** phase of Soothe's plan subagent. Use readonly \
-filesystem tools (ls, glob, grep, read_file, file_info) to gather just enough workspace \
-context to draft a solid markdown plan for human review.
+_RECON_SYSTEM = """You are the **grounding** phase of Soothe's planner. Use readonly \
+filesystem tools (ls, glob, grep, read_file, file_info) only to learn just enough \
+about the workspace to propose how to **complete the user's goal**.
 
 Rules:
+- Tools exist to ground a solution, not to produce a findings report.
 - Prefer targeted searches; avoid huge dumps.
-- When you have enough context (or tools cannot help), respond with a short prose summary \
-and **no** tool calls.
+- Stop as soon as you can propose a concrete completion path (or tools cannot help): \
+respond with a short prose summary of what matters for the solution and **no** tool calls.
 - Never request write, edit, delete, or shell tools."""
 
-_PLANNER_SYSTEM = """You are the **plan design** phase of Soothe's plan subagent. Produce an \
-**execution-oriented markdown plan** for human discussion and approval: objective, ordered \
-steps, dependencies, risks, and open questions.
+_PLANNER_SYSTEM = """You are the **proposal** phase of Soothe's planner. Produce a \
+**Goal Completion Proposal** — a reviewable solution for how to complete the user's \
+goal — for human Approve / Reject / More comments.
+
+Required markdown sections (full document every round, not a diff):
+1. **Goal** — restated objective
+2. **Proposed solution** — 2–5 sentences: how completing this goal looks
+3. **Plan** — ordered, actionable steps grounded in the workspace
+4. **Evidence** — short citations from recon (paths/symbols), not raw tool dumps
+5. **Risks & assumptions**
+6. **Open questions** — only if blocking; prefer deciding with evidence
 
 Rules:
-- Output the **full** plan in `plan_markdown` each round (not a diff), refined as you learn.
-- Set `finish_planning` true when the plan is actionable and stable enough to hand to a human.
-- You may use recon findings below; do not invent file paths that contradict findings.
-- If context is thin, still produce the best plan you can and list assumptions explicitly."""
+- Output the full proposal in `plan_markdown` each round.
+- Set `finish_planning` true when the proposal is stable enough for human review.
+- Use recon evidence below as grounding only; do not invent paths that contradict it.
+- Never emit a findings dump as the proposal. If context is thin, still propose the \
+best solution and list assumptions explicitly."""
 
 
 def _truncate_finding(text: str) -> str:
@@ -151,7 +316,7 @@ def _tool_calls_from_message(msg: Any) -> list[dict[str, Any]]:
 
 
 def _format_tool_findings(ai: Any, tool_messages: list[ToolMessage]) -> list[str]:
-    """Build finding blocks from ToolNode outputs paired with the prior AI tool_calls."""
+    """Build grounding blocks from ToolNode outputs paired with the prior AI tool_calls."""
     by_id = {
         str(tc.get("id") or ""): tc
         for tc in _tool_calls_from_message(ai)
@@ -225,8 +390,8 @@ def build_plan_engine(
         rr = int(state.get("recon_round", 0)) + 1
         prior = "\n\n".join(state.get("findings") or []) or "(none yet)"
         user = (
-            f"## Delegated task\n{task}\n\n## Recon round\n{rr} / {plan_config.max_recon_rounds}\n\n"
-            f"## Findings so far\n{prior}"
+            f"## User goal\n{task}\n\n## Grounding round\n{rr} / {plan_config.max_recon_rounds}\n\n"
+            f"## Evidence so far (internal)\n{prior}"
         )
         logger.info("[planner] recon %d/%d", rr, plan_config.max_recon_rounds)
         _emit_planner_stage(
@@ -259,7 +424,7 @@ def build_plan_engine(
                 summary = content.strip()
             elif content:
                 summary = str(content).strip()
-            findings = [f"### Recon summary\n{summary}"] if summary else []
+            findings = [f"### Grounding summary\n{summary}"] if summary else []
             logger.info("[planner] recon done (no tools) round=%d", rr)
             return {
                 "recon_round": rr,
@@ -325,11 +490,12 @@ def build_plan_engine(
         task = state.get("task_text", "")
         pr = int(state.get("plan_round", 0)) + 1
         prev = (state.get("plan_markdown") or "").strip()
-        findings = "\n\n".join(state.get("findings") or []) or "(no recon findings)"
+        findings = "\n\n".join(state.get("findings") or []) or "(no grounding evidence)"
         user = (
-            f"## Delegated task\n{task}\n\n## Plan design round\n{pr} / {plan_config.max_plan_rounds}\n\n"
-            f"## Recon findings\n{findings}\n\n"
-            f"## Previous plan draft\n{prev or '(none — write initial plan)'}"
+            f"## User goal\n{task}\n\n"
+            f"## Proposal design round\n{pr} / {plan_config.max_plan_rounds}\n\n"
+            f"## Grounding evidence (internal; cite briefly in Evidence)\n{findings}\n\n"
+            f"## Previous proposal draft\n{prev or '(none — write initial Goal Completion Proposal)'}"
         )
         logger.info("[planner] drafting %d/%d", pr, plan_config.max_plan_rounds)
         _emit_planner_stage(
@@ -354,7 +520,14 @@ def build_plan_engine(
         except Exception:
             logger.exception("[planner] draft structured output failed")
             ref = PlanRefinement(
-                plan_markdown=f"## Plan\n\n1. Address: {task}\n",
+                plan_markdown=(
+                    f"## Goal\n\n{task}\n\n"
+                    f"## Proposed solution\n\nAddress the goal above.\n\n"
+                    f"## Plan\n\n1. Address: {task}\n\n"
+                    f"## Evidence\n\n(none — planner fallback)\n\n"
+                    f"## Risks & assumptions\n\nProposal generated after a draft failure.\n\n"
+                    f"## Open questions\n\nNone.\n"
+                ),
                 rationale="planner_failed_fallback",
                 finish_planning=True,
             )
@@ -375,7 +548,7 @@ def build_plan_engine(
         }
 
     def emit_final(state: dict[str, Any]) -> dict[str, Any]:
-        body = (state.get("plan_markdown") or "").strip() or "(no plan produced)"
+        body = (state.get("plan_markdown") or "").strip() or "(no proposal produced)"
         logger.info(
             "[planner] done rounds=%d md=%d",
             int(state.get("plan_round", 0) or 0),
