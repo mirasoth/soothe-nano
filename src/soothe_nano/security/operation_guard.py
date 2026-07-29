@@ -34,6 +34,17 @@ _BANNED_COMMAND_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\bpkill\b[^\n]*\bsoothe", "command.dangerous.pkill_soothe"),
     (r"\bkillall\b[^\n]*\bsoothe", "command.dangerous.killall_soothe"),
     (r"\bsoothed\s+(stop|restart)\b", "command.dangerous.soothed_lifecycle"),
+    # Bare `kill <pid>` of the live daemon (port / pidfile resolved via hooks below).
+    # Also block shell idioms that resolve the daemon PID then kill it.
+    (r"\bkill\b[^\n]*\b8765\b", "command.dangerous.kill_daemon_port"),
+    (r"\bkill\b[^\n]*soothed\.pid", "command.dangerous.kill_soothed_pidfile"),
+    (r"\bkill\b[^\n]*\bpgrep\b[^\n]*\bsoothe", "command.dangerous.kill_pgrep_soothe"),
+)
+
+# `kill [-signal…] <pid>…` fragments (not killall). Used to consult protected-kill hooks.
+_KILL_INVOCATION_RE = re.compile(
+    r"(?:^|[;&|\n])\s*kill\b(?!\s*all\b)(?P<args>[^\n;&|]*)",
+    re.IGNORECASE,
 )
 
 _SENSITIVE_SYSTEM_PATH_PATTERNS: tuple[str, ...] = (
@@ -172,7 +183,52 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
                     reason=f"Command blocked by security rule: {pattern}",
                     rule_id=rule_id,
                 )
+
+        protected = self._protected_kill_in_shell(command_text)
+        if protected is not None:
+            return protected
+
         return OperationSecurityDecision(verdict="allow", reason="Command checks passed")
+
+    @staticmethod
+    def _pids_from_kill_args(args: str) -> list[int]:
+        """Parse numeric PIDs from ``kill`` argument text (skip signal tokens)."""
+        pids: list[int] = []
+        tokens = args.split()
+        i = 0
+        while i < len(tokens):
+            token = tokens[i]
+            if token == "-s" and i + 1 < len(tokens):
+                i += 2
+                continue
+            if token.startswith("-"):
+                # Signal form: -9, -TERM, -SIGKILL — not a PID.
+                i += 1
+                continue
+            if token.isdigit():
+                pids.append(int(token))
+            i += 1
+        return pids
+
+    def _protected_kill_in_shell(self, command: str) -> OperationSecurityDecision | None:
+        """Deny ``kill <pid>`` when a protected-kill hook refuses the PID.
+
+        Closes the gap where agents bypass ``kill_process`` via ``run_command``
+        ``kill 12345`` against the live daemon / self / parent.
+        """
+        # Lazy import avoids a cycle: execution.py imports this module.
+        from soothe_nano.toolkits.execution import _protected_kill_refusal
+
+        for match in _KILL_INVOCATION_RE.finditer(command):
+            for pid in self._pids_from_kill_args(match.group("args") or ""):
+                refusal = _protected_kill_refusal(pid)
+                if refusal:
+                    return OperationSecurityDecision(
+                        verdict="deny",
+                        reason=refusal,
+                        rule_id="command.dangerous.kill_protected_pid",
+                    )
+        return None
 
     def evaluate(
         self, request: OperationSecurityRequest, context: OperationSecurityContext
