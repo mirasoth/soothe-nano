@@ -1,6 +1,6 @@
 """Plan subagent package.
 
-Intake planner: readonly grounding tools → Goal Completion Proposal for review.
+Intake planner: readonly grounding → solution report for human review.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ __all__ = [
 @plugin(
     name="planner",
     version="1.0.0",
-    description="Goal completion proposal planner subagent",
+    description="Solution-report planner subagent",
     trust_level="built-in",
 )
 class PlanPlugin:
@@ -49,10 +49,12 @@ class PlanPlugin:
     @subagent(
         name="planner",
         description=(
-            "Propose a reviewable goal completion solution using readonly workspace tools; "
-            "one Goal Completion Proposal per task for human Approve / Reject / comments."
+            "Write a reviewable solution report for the user goal using readonly "
+            "workspace tools: Solution, Design principles / Architecture changes when "
+            "needed, and concrete Changes (not an investigation roadmap) for "
+            "Approve / Reject / comments."
         ),
-        triggers=["planner", "propose plan", "completion plan", "roadmap", "break down"],
+        triggers=["planner", "solution report", "propose plan", "roadmap", "break down"],
     )
     async def create_subagent(
         self,

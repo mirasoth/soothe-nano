@@ -234,3 +234,36 @@ async def test_plan_engine_recon_disabled_skips_tools(monkeypatch: pytest.Monkey
     graph = build_plan_engine(model, _plan_only_config())
     await graph.ainvoke({"messages": [HumanMessage(content="t")]})
     bind.assert_not_called()
+
+
+def test_planner_prompts_require_solution_report_not_investigation() -> None:
+    """Prompt contract: solution report with Changes; forbid investigate-roadmap steps."""
+    assert "solution report" in plan_engine._PLANNER_SYSTEM.lower()
+    assert "**Solution**" in plan_engine._PLANNER_SYSTEM
+    assert "**Design principles**" in plan_engine._PLANNER_SYSTEM
+    assert "**Architecture changes**" in plan_engine._PLANNER_SYSTEM
+    assert "**Changes**" in plan_engine._PLANNER_SYSTEM
+    assert "Forbidden as steps" in plan_engine._PLANNER_SYSTEM
+    assert "diagnose" in plan_engine._PLANNER_SYSTEM.lower()
+    assert "Do the reading **now**" in plan_engine._RECON_SYSTEM
+    assert "investigation roadmap" in plan_engine._PLANNER_SYSTEM.lower()
+    assert "module boundaries" in plan_engine._RECON_SYSTEM.lower()
+
+
+@pytest.mark.asyncio
+async def test_plan_iteration_user_prompt_forbids_reread_as_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Draft user blob tells the model not to schedule re-reading as Changes."""
+    calls = _patch_planner(
+        monkeypatch,
+        planner_returns=PlanRefinement(
+            plan_markdown="## Goal\n\nx\n\n## Solution\n\ny\n\n## Changes\n\n1. Edit a.py\n",
+            finish_planning=True,
+        ),
+    )
+    graph = build_plan_engine(MagicMock(), _plan_only_config())
+    await graph.ainvoke({"messages": [HumanMessage(content="polish tips")]})
+    blob = str(calls[0]).lower()
+    assert "solution report" in blob
+    assert "do not schedule re-reading" in blob

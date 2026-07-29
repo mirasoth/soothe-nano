@@ -1,8 +1,9 @@
-"""Plan subagent: grounded recon → goal completion proposal → emit for review.
+"""Plan subagent: grounded recon → solution report → emit for review.
 
 Readonly filesystem tools only (no write/edit/delete/execute). Recon evidence
-stays internal; the final message is a Goal Completion Proposal for human
-Approve / Reject / More comments (RFC-633 / IG-659).
+stays internal; the final message is a **solution report** for the user goal
+(what to change and why), for human Approve / Reject / More comments
+(RFC-633 / IG-659). Not an investigation roadmap of further reads.
 
 Recon runs middleware tools via ``ToolNode`` so ``ToolRuntime`` is injected
 (bare ``tool.ainvoke(args)`` fails FilesystemMiddleware tools).
@@ -81,12 +82,14 @@ class PlanSubagentConfig(BaseModel):
 
 
 class PlanRefinement(BaseModel):
-    """Structured output for one goal-completion proposal iteration."""
+    """Structured output for one solution-report iteration."""
 
     plan_markdown: str = Field(
         description=(
-            "Full Goal Completion Proposal markdown: Goal, Proposed solution, Plan "
-            "(ordered steps), Evidence, Risks & assumptions, Open questions."
+            "Full solution report markdown for the user goal: Goal, Solution, "
+            "Design principles (or None), Architecture changes (or None), Changes "
+            "(concrete edit/remove/add steps — never read/diagnose steps), Evidence, "
+            "Risks & assumptions, Open questions."
         ),
     )
     rationale: str = Field(
@@ -94,7 +97,7 @@ class PlanRefinement(BaseModel):
         description="Why this solution completes the goal, or what changed this round.",
     )
     finish_planning: bool = Field(
-        description="Set true when the proposal is stable enough for human review.",
+        description="Set true when the solution report is stable enough for human review.",
     )
 
 
@@ -180,9 +183,10 @@ def create_plan_subagent(
     return {
         "name": "planner",
         "description": (
-            "Propose a reviewable goal completion solution: readonly workspace recon, "
-            "then a Goal Completion Proposal (objective, solution, steps, evidence) "
-            "for human Approve / Reject / More comments."
+            "Write a reviewable solution report for the user goal: readonly recon, "
+            "then Solution plus Design principles / Architecture changes when needed, "
+            "and concrete Changes (not an investigation roadmap) for Approve / Reject / "
+            "More comments."
         ),
         "runnable": runnable,
     }
@@ -260,34 +264,71 @@ class PlanEngineState(dict):
 
 
 _RECON_SYSTEM = """You are the **grounding** phase of Soothe's planner. Use readonly \
-filesystem tools (ls, glob, grep, read_file, file_info) only to learn just enough \
-about the workspace to propose how to **complete the user's goal**.
+filesystem tools (ls, glob, grep, read_file, file_info) to gather the facts needed \
+to write a **solution report** that completes the user's goal.
 
 Rules:
-- Tools exist to ground a solution, not to produce a findings report.
-- Prefer targeted searches; avoid huge dumps.
-- Stop as soon as you can propose a concrete completion path (or tools cannot help): \
-respond with a short prose summary of what matters for the solution and **no** tool calls.
+- Do the reading **now**. The next phase must already know enough to prescribe \
+concrete edits — and, when relevant, design principles and architecture deltas — \
+it must not schedule "read X / diagnose Y" as work.
+- Prefer targeted searches and short reads; avoid huge dumps.
+- When the goal implies structural work, note module boundaries, dependency \
+direction, and existing patterns that the solution must respect or change.
+- Stop when you can state the fix (which files change and how), or tools cannot help: \
+respond with a short prose summary of the solution-relevant facts and **no** tool calls.
 - Never request write, edit, delete, or shell tools."""
 
-_PLANNER_SYSTEM = """You are the **proposal** phase of Soothe's planner. Produce a \
-**Goal Completion Proposal** — a reviewable solution for how to complete the user's \
-goal — for human Approve / Reject / More comments.
+_PLANNER_SYSTEM = """You are the **solution report** writer for Soothe's planner. \
+Given the user goal and grounding evidence (already collected), write the **answer** \
+the human reviews: what will be done to complete the goal — not a research plan.
+
+The deliverable is a **solution report**, not an investigation roadmap.
 
 Required markdown sections (full document every round, not a diff):
-1. **Goal** — restated objective
-2. **Proposed solution** — 2–5 sentences: how completing this goal looks
-3. **Plan** — ordered, actionable steps grounded in the workspace
-4. **Evidence** — short citations from recon (paths/symbols), not raw tool dumps
-5. **Risks & assumptions**
-6. **Open questions** — only if blocking; prefer deciding with evidence
+1. **Goal** — restated user objective (one short paragraph)
+2. **Solution** — the decided design / outcome (2–6 sentences). State what will be \
+true when the goal is complete. Do **not** say "we will first read / diagnose / \
+investigate"; recon already happened.
+3. **Design principles** — concise bullets for product, UX, or engineering principles \
+this solution upholds or introduces (e.g. single surface for tips, no inner scroll, \
+package boundary). Use `None` when the change is purely mechanical with no principle \
+worth stating.
+4. **Architecture changes** — structural deltas when needed: module/layout moves, \
+new/removed components, dependency or data-flow shifts, API/contract changes. Prefer \
+workspace-relative paths. Use `None` when the work stays within existing structure \
+with no boundary or topology change.
+5. **Changes** — ordered implementation steps. Each step MUST be a concrete change \
+(edit / add / remove / rename / rewire) naming workspace-relative paths and the \
+intended delta. Forbidden as steps: read, open, inspect, understand, trace, \
+diagnose, "determine whether", "find out", or any further recon.
+6. **Evidence** — brief citations from grounding (paths/symbols already seen)
+7. **Risks & assumptions**
+8. **Open questions** — only if truly blocking; otherwise "None"
+
+When to fill Design principles / Architecture changes (not None):
+- Goal asks to polish, redesign, restructure, unify, or change behavior across \
+modules — state the governing principles and any structural moves.
+- Goal is a tiny local fix (typo, one-line bug) — `None` is correct for both.
+
+Anti-patterns (reject these shapes):
+- Solution/Changes that mostly schedule more reading of files already (or still) \
+reachable by recon tools.
+- Steps like "Read tips.py to understand…" or "Diagnose location issues…".
+- Dumping raw tool output instead of a solution.
+- Padding Design principles / Architecture with vague slogans unrelated to the goal.
+
+Good Changes example (shape only):
+1. Keep tip data in `…/tui/tips.py`; render tips only from the status footer widget.
+2. Remove tip mounting from welcome / startup surfaces so tips appear in one place.
+3. Adjust footer CSS for spacing and narrow-terminal wrapping.
 
 Rules:
-- Output the full proposal in `plan_markdown` each round.
-- Set `finish_planning` true when the proposal is stable enough for human review.
-- Use recon evidence below as grounding only; do not invent paths that contradict it.
-- Never emit a findings dump as the proposal. If context is thin, still propose the \
-best solution and list assumptions explicitly."""
+- Output the full report in `plan_markdown` each round.
+- Set `finish_planning` true when the report is stable enough for human review.
+- Ground paths in evidence; do not invent paths that contradict it. Prefer \
+workspace-relative paths over absolute machine paths.
+- If evidence is thin, still write the best solution and list assumptions — do not \
+pad with investigation steps."""
 
 
 def _truncate_finding(text: str) -> str:
@@ -493,9 +534,11 @@ def build_plan_engine(
         findings = "\n\n".join(state.get("findings") or []) or "(no grounding evidence)"
         user = (
             f"## User goal\n{task}\n\n"
-            f"## Proposal design round\n{pr} / {plan_config.max_plan_rounds}\n\n"
-            f"## Grounding evidence (internal; cite briefly in Evidence)\n{findings}\n\n"
-            f"## Previous proposal draft\n{prev or '(none — write initial Goal Completion Proposal)'}"
+            f"## Solution report round\n{pr} / {plan_config.max_plan_rounds}\n\n"
+            f"## Grounding evidence (already collected — cite in Evidence; do not "
+            f"schedule re-reading as Changes)\n{findings}\n\n"
+            f"## Previous solution report draft\n"
+            f"{prev or '(none — write the initial solution report: Goal, Solution, Design principles, Architecture changes, Changes, …)'}"
         )
         logger.info("[planner] drafting %d/%d", pr, plan_config.max_plan_rounds)
         _emit_planner_stage(
@@ -522,10 +565,12 @@ def build_plan_engine(
             ref = PlanRefinement(
                 plan_markdown=(
                     f"## Goal\n\n{task}\n\n"
-                    f"## Proposed solution\n\nAddress the goal above.\n\n"
-                    f"## Plan\n\n1. Address: {task}\n\n"
+                    f"## Solution\n\nComplete the goal above with the best available approach.\n\n"
+                    f"## Design principles\n\nNone\n\n"
+                    f"## Architecture changes\n\nNone\n\n"
+                    f"## Changes\n\n1. Implement the work required to satisfy: {task}\n\n"
                     f"## Evidence\n\n(none — planner fallback)\n\n"
-                    f"## Risks & assumptions\n\nProposal generated after a draft failure.\n\n"
+                    f"## Risks & assumptions\n\nReport generated after a draft failure.\n\n"
                     f"## Open questions\n\nNone.\n"
                 ),
                 rationale="planner_failed_fallback",
@@ -548,7 +593,7 @@ def build_plan_engine(
         }
 
     def emit_final(state: dict[str, Any]) -> dict[str, Any]:
-        body = (state.get("plan_markdown") or "").strip() or "(no proposal produced)"
+        body = (state.get("plan_markdown") or "").strip() or "(no solution report produced)"
         logger.info(
             "[planner] done rounds=%d md=%d",
             int(state.get("plan_round", 0) or 0),
