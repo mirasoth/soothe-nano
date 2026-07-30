@@ -60,18 +60,29 @@ _SCHEMA_REPAIR_HINT = (
 )
 
 
-def _ordered_structured_methods(chat: BaseChatModel) -> tuple[str | None, ...]:
-    """Return ``_STRUCTURED_METHODS`` with the cached working method moved to the front."""
+def _ordered_structured_methods(
+    chat: BaseChatModel,
+    *,
+    preferred: tuple[str | None, ...] | None = None,
+) -> tuple[str | None, ...]:
+    """Return method order with the cached working method moved to the front.
+
+    Args:
+        chat: Chat model used as the cache key.
+        preferred: Optional caller override of the default method walk. When set,
+            only these methods are tried (still reordered by cache hit).
+    """
+    base = preferred if preferred is not None else _STRUCTURED_METHODS
     try:
         cached = _METHOD_CACHE.get(chat, _MISSING)
     except TypeError:
         # Unhashable chat model (e.g., SootheTokenUsageChatModel wrapper) — skip cache
-        return _STRUCTURED_METHODS
-    if cached is _MISSING or cached == _STRUCTURED_METHODS[0]:
-        return _STRUCTURED_METHODS
-    if cached not in _STRUCTURED_METHODS:
-        return _STRUCTURED_METHODS
-    return (cached, *(m for m in _STRUCTURED_METHODS if m != cached))
+        return base
+    if cached is _MISSING or cached == base[0]:
+        return base
+    if cached not in base:
+        return base
+    return (cached, *(m for m in base if m != cached))
 
 
 def _remember_structured_method(chat: BaseChatModel, method: str | None) -> None:
@@ -222,6 +233,7 @@ async def invoke_structured_chat(
     strict: bool = True,
     config: dict[str, Any] | None = None,
     normalize: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    methods: tuple[str | None, ...] | None = None,
 ) -> dict[str, Any]:
     """Invoke chat with strict structured output enforced by ``json_schema``.
 
@@ -234,6 +246,10 @@ async def invoke_structured_chat(
             validation failure, retry once with a repair hint before raising.
         config: Optional RunnableConfig (Langfuse tracing, etc.).
         normalize: Optional pre-validation dict normalizer (e.g. coerce missing fields).
+        methods: Optional ordered structured-output methods to try. Defaults to
+            ``function_calling → None → json_schema → json_mode``. Prefer
+            ``json_schema`` first for JSON-only prompts (intake classifiers) so
+            content JSON succeeds without a wasted function_calling round-trip.
 
     Returns:
         Parsed and validated output as a dict.
@@ -248,8 +264,8 @@ async def invoke_structured_chat(
     schema_with_title = _schema_with_title(schema, name)
     invoke_cfg = merge_token_usage_callbacks(config)
 
-    methods = _ordered_structured_methods(chat)
-    last_method = methods[-1]
+    ordered = _ordered_structured_methods(chat, preferred=methods)
+    last_method = ordered[-1]
     prepared_messages = ensure_json_keyword_in_messages(messages)
     # When a normalizer is supplied, defer wire-schema validation until after it
     # runs — JsonSchemaModelWrapper validates on parse and would reject
@@ -257,7 +273,7 @@ async def invoke_structured_chat(
     bind_strict = strict if normalize is None else False
 
     last_exc: Exception | None = None
-    for method in methods:
+    for method in ordered:
         try:
             structured = _try_create_structured_runnable(
                 chat,
@@ -302,13 +318,10 @@ async def invoke_structured_chat(
                 raise StructuredOutputError(msg) from exc
 
             if result is None:
+                # function_calling + tool_choice=auto often returns content JSON
+                # without a tool call. Retrying the same method wastes a second
+                # LLM round-trip; fall through to json_schema/json_mode instead.
                 last_exc = StructuredOutputError(f"method={method!r} returned None")
-                if attempt + 1 < _MAX_METHOD_INVOKE_ATTEMPTS:
-                    logger.debug(
-                        "structured invoke: method=%s returned None, retrying",
-                        method,
-                    )
-                    continue
                 logger.debug(
                     "structured invoke: method=%s returned None, falling back",
                     method,
@@ -370,6 +383,7 @@ async def invoke_structured_chat_typed(
     strict: bool = True,
     config: dict[str, Any] | None = None,
     normalize: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    methods: tuple[str | None, ...] | None = None,
 ) -> T:
     """Invoke `invoke_structured_chat` and return a typed Pydantic instance.
 
@@ -384,6 +398,8 @@ async def invoke_structured_chat_typed(
         strict: Post-validate the parsed dict against the wire schema.
         config: Optional RunnableConfig (Langfuse tracing, etc.).
         normalize: Optional pre-validation dict normalizer.
+        methods: Optional ordered structured-output methods (see
+            `invoke_structured_chat`).
 
     Returns:
         Validated `schema` instance.
@@ -400,6 +416,7 @@ async def invoke_structured_chat_typed(
         strict=strict,
         config=config,
         normalize=normalize,
+        methods=methods,
     )
     return schema(**result_dict)
 

@@ -74,6 +74,71 @@ async def test_wrap_json_keyword_safe_injects_on_invoke() -> None:
 
 
 @pytest.mark.asyncio
+async def test_invoke_structured_chat_none_falls_back_without_same_method_retry() -> None:
+    """function_calling returning None should skip to the next method, not retry FC."""
+    chat = MagicMock()
+    invoke_counts: dict[str | None, int] = {}
+
+    def _with_structured_output(
+        _schema: object, method: str | None = None, **kwargs: object
+    ) -> MagicMock:
+        runnable = MagicMock()
+
+        async def _ainvoke(*_a: object, **_k: object) -> object:
+            invoke_counts[method] = invoke_counts.get(method, 0) + 1
+            if method == "json_schema":
+                return {"word": "OK"}
+            return None
+
+        runnable.ainvoke = _ainvoke
+        return runnable
+
+    chat.with_structured_output = MagicMock(side_effect=_with_structured_output)
+
+    out = await invoke_structured_chat(
+        chat,
+        [HumanMessage(content="Return JSON")],
+        json_schema=_WORD_SCHEMA,
+        schema_name="WordReply",
+    )
+    assert out == {"word": "OK"}
+    assert invoke_counts.get("function_calling") == 1
+    assert invoke_counts.get("json_schema") == 1
+
+
+@pytest.mark.asyncio
+async def test_invoke_structured_chat_honors_methods_override() -> None:
+    """Caller-preferred method order is tried first."""
+    chat = MagicMock()
+    json_schema_runnable = MagicMock()
+    json_schema_runnable.ainvoke = AsyncMock(return_value={"word": "OK"})
+    fc_runnable = MagicMock()
+    fc_runnable.ainvoke = AsyncMock(return_value={"word": "FC"})
+
+    def _with_structured_output(
+        _schema: object, method: str | None = None, **kwargs: object
+    ) -> MagicMock:
+        if method == "json_schema":
+            return json_schema_runnable
+        return fc_runnable
+
+    chat.with_structured_output = MagicMock(side_effect=_with_structured_output)
+
+    out = await invoke_structured_chat(
+        chat,
+        [HumanMessage(content="Return JSON")],
+        json_schema=_WORD_SCHEMA,
+        schema_name="WordReply",
+        methods=("json_schema", "function_calling"),
+    )
+    assert out == {"word": "OK"}
+    assert json_schema_runnable.ainvoke.await_count == 1
+    assert fc_runnable.ainvoke.await_count == 0
+    first_call_kwargs = chat.with_structured_output.call_args_list[0].kwargs
+    assert first_call_kwargs.get("method") == "json_schema"
+
+
+@pytest.mark.asyncio
 async def test_invoke_structured_chat_injects_json_keyword() -> None:
     chat = MagicMock()
     structured = MagicMock()
