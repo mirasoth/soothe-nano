@@ -196,6 +196,7 @@ def resolve_tools(
     *,
     lazy: bool = False,
     config: SootheConfig | None = None,
+    exclude_tool_groups: frozenset[str] | set[str] | None = None,
 ) -> list[BaseTool]:
     """Resolve tool groups from ToolsConfig to instantiated langchain BaseTool lists.
 
@@ -206,6 +207,8 @@ def resolve_tools(
             but those are incompatible with langgraph ToolNode's eager
             metadata probing.
         config: Optional Soothe config for tool configuration.
+        exclude_tool_groups: Optional tool group names to skip (e.g. Ask mode
+            omits ``execution`` and ``file_ops``).
 
     Returns:
         Flat list of fully-initialised `BaseTool` instances.
@@ -223,8 +226,11 @@ def resolve_tools(
         "http_requests",
         "deepxiv",
     ]
+    skipped = frozenset(exclude_tool_groups or ())
     enabled_tools = []
     for name in _tool_groups:
+        if name in skipped:
+            continue
         group_cfg = getattr(tools_config, name, None)
         if group_cfg and group_cfg.enabled:
             enabled_tools.append(name)

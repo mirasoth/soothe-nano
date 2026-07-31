@@ -9,6 +9,17 @@ from typing import TYPE_CHECKING, Any
 from soothe_sdk.protocols.core_agent import CoreAgentCapabilities
 
 from soothe_nano.agent.core_agent import SootheNanoAgent, ephemeral_execute_stream_enabled
+from soothe_nano.agent.interaction_mode import (
+    ASK_MUTATING_TOOL_GROUPS,
+    ASK_POLICY_PROFILE,
+    FILESYSTEM_TOOLS_AGENT,
+    FILESYSTEM_TOOLS_ASK,
+    InteractionMode,
+    append_ask_system_prompt,
+    ask_permissions,
+    filter_subagents_for_mode,
+    resolve_interaction_mode,
+)
 from soothe_nano.config import SootheConfig
 from soothe_nano.middleware import build_soothe_middleware_stack
 from soothe_nano.resolve import (
@@ -28,7 +39,6 @@ if TYPE_CHECKING:
     from langgraph.store.base import BaseStore
     from langgraph.types import Checkpointer
     from soothe_deepagents.backends.protocol import BackendProtocol
-    from soothe_deepagents.middleware.filesystem import FsToolName
     from soothe_deepagents.middleware.subagents import CompiledSubAgent, SubAgent
     from soothe_sdk.protocols.memory import MemoryProtocol
     from soothe_sdk.protocols.planner import PlannerProtocol
@@ -36,15 +46,6 @@ if TYPE_CHECKING:
 
 from langchain_core.language_models import BaseChatModel  # noqa: E402
 
-_FILESYSTEM_TOOLS_NO_EXECUTE: list[FsToolName] = [
-    "ls",
-    "read_file",
-    "write_file",
-    "edit_file",
-    "delete",
-    "glob",
-    "grep",
-]
 _PARENT_OWNED_STATE_KEYS = frozenset({"workspace"})
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ class AgentBuilder:
         policy: PolicyProtocol | None = None,
         mcp_registry: Any | None = None,
         core_agent_kind: str | None = None,
+        interaction_mode: InteractionMode | None = None,
     ) -> SootheNanoAgent:
         from soothe_deepagents import create_deep_agent
 
@@ -89,6 +91,9 @@ class AgentBuilder:
                 "Only 'coding' is currently implemented."
             )
             raise ValueError(msg)
+
+        mode = resolve_interaction_mode(interaction_mode, self._config)
+        is_ask = mode == "ask"
 
         resolved_model: str | BaseChatModel
         resolved_model = model if model is not None else self._config.create_chat_model("default")
@@ -110,6 +115,7 @@ class AgentBuilder:
             self._config.tools,
             lazy=True,
             config=self._config,
+            exclude_tool_groups=ASK_MUTATING_TOOL_GROUPS if is_ask else None,
         )
         all_tools: list[BaseTool | Callable | dict[str, Any]] = list(config_tools)
         if tools:
@@ -159,6 +165,7 @@ class AgentBuilder:
         all_subagents: list[SubAgent | CompiledSubAgent] = list(config_subagents)
         if subagents:
             all_subagents.extend(subagents)
+        all_subagents = filter_subagents_for_mode(all_subagents, mode)
         subagents_ms = (time.perf_counter() - subagents_start) * 1000
         logger.info(
             "[Init] Subagents resolved: %d agents (%.1fms)", len(all_subagents), subagents_ms
@@ -166,10 +173,12 @@ class AgentBuilder:
 
         resolved_backend = backend or self._initialize_backend(resolved_policy)
 
+        policy_profile = ASK_POLICY_PROFILE if is_ask else None
         default_middleware = build_soothe_middleware_stack(
             self._config,
             resolved_policy,
             mcp_registry=registry,
+            policy_profile_name=policy_profile,
         )
         if all_tools:
             from soothe_nano.middleware.mcp_activation import MCPActivationMiddleware
@@ -199,22 +208,30 @@ class AgentBuilder:
         graph_subagents = self._filter_subagents_for_graph(all_subagents)
         catalog_names = self._collect_subagent_names(graph_subagents)
 
+        system_prompt = self._config.resolve_system_prompt()
+        if is_ask:
+            system_prompt = append_ask_system_prompt(system_prompt)
+
+        filesystem_tools = FILESYSTEM_TOOLS_ASK if is_ask else FILESYSTEM_TOOLS_AGENT
+        fs_permissions = ask_permissions() if is_ask else None
+
         def _compile_deep_agent(cp: Checkpointer | None) -> Any:
-            gp_enabled = self._config.agent.runtime.general_purpose_subagent
+            gp_enabled = False if is_ask else self._config.agent.runtime.general_purpose_subagent
             return create_deep_agent(
                 model=resolved_model,
                 tools=all_tools or None,
-                system_prompt=self._config.resolve_system_prompt(),
+                system_prompt=system_prompt,
                 middleware=all_middleware,
                 subagents=graph_subagents or None,
                 skills=None,
                 memory=self._config.memory or None,
+                permissions=fs_permissions,
                 checkpointer=cp,
                 store=store,
                 backend=resolved_backend,
                 interrupt_on=interrupt_on,
                 enable_general_purpose_subagent=gp_enabled,
-                filesystem_tools=_FILESYSTEM_TOOLS_NO_EXECUTE,
+                filesystem_tools=filesystem_tools,
                 parent_owned_state_keys=_PARENT_OWNED_STATE_KEYS,
                 debug=self._config.debug,
                 recursion_limit=int(self._config.agent.runtime.recursion_limit),
@@ -223,7 +240,11 @@ class AgentBuilder:
         deep_agent_start = time.perf_counter()
         graph = _compile_deep_agent(checkpointer)
         deep_agent_ms = (time.perf_counter() - deep_agent_start) * 1000
-        logger.info("[Init] Deep agent graph created (%.1fms)", deep_agent_ms)
+        logger.info(
+            "[Init] Deep agent graph created (%.1fms, mode=%s)",
+            deep_agent_ms,
+            mode,
+        )
 
         execute_graph = None
         execute_graph_compiler = None
@@ -245,6 +266,7 @@ class AgentBuilder:
             ),
             metadata={
                 "runtime_kind": "coding",
+                "interaction_mode": mode,
                 "tool_count": len(all_tools),
                 "subagent_count": len(graph_subagents),
             },
@@ -260,10 +282,11 @@ class AgentBuilder:
             capabilities=capabilities,
             execute_graph=execute_graph,
             execute_graph_compiler=execute_graph_compiler,
+            interaction_mode=mode,
         )
 
         total_ms = (time.perf_counter() - create_start) * 1000
-        logger.info("[Init] CoreAgent ready (%.1fms total)", total_ms)
+        logger.info("[Init] CoreAgent ready (%.1fms total, mode=%s)", total_ms, mode)
         return agent
 
     def _filter_subagents_for_graph(
@@ -414,6 +437,7 @@ def create_nano_agent(
     planner: PlannerProtocol | None = None,
     policy: PolicyProtocol | None = None,
     core_agent_kind: str | None = None,
+    interaction_mode: InteractionMode | None = None,
 ) -> SootheNanoAgent:
     return AgentBuilder(config).build(
         model=model,
@@ -428,4 +452,5 @@ def create_nano_agent(
         planner=planner,
         policy=policy,
         core_agent_kind=core_agent_kind,
+        interaction_mode=interaction_mode,
     )

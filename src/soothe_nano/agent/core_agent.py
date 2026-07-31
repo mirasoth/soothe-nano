@@ -151,6 +151,7 @@ class SootheNanoAgent:
         capabilities: CoreAgentCapabilities | None = None,
         execute_graph: CompiledStateGraph | None = None,
         execute_graph_compiler: Callable[[], CompiledStateGraph] | None = None,
+        interaction_mode: str = "agent",
     ) -> None:
         self._graph = graph
         self._execute_graph = execute_graph
@@ -160,6 +161,9 @@ class SootheNanoAgent:
         self._planner = planner
         self._policy = policy
         self._subagents = list(subagents) if subagents else []
+        self._interaction_mode = (
+            interaction_mode if interaction_mode in ("agent", "ask") else "agent"
+        )
         if capabilities is None:
             capabilities = CoreAgentCapabilities(
                 subagents=tuple(str(getattr(subagent, "name", "")) for subagent in self._subagents),
@@ -209,6 +213,11 @@ class SootheNanoAgent:
     @property
     def policy(self) -> Any | None:
         return self._policy
+
+    @property
+    def interaction_mode(self) -> str:
+        """Active interaction mode for this compiled agent (``agent`` or ``ask``)."""
+        return self._interaction_mode
 
     @property
     def subagents(self) -> list[SubAgent | CompiledSubAgent]:
@@ -370,7 +379,3 @@ class SootheNanoAgent:
             config or {},
             **_langgraph_durability_kwargs(graph, durability),
         )
-
-
-# Compatibility alias — prefer SootheNanoAgent for new code.
-CodingCoreAgent = SootheNanoAgent

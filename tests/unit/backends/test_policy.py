@@ -433,6 +433,22 @@ class TestReadonlyProfile:
         assert READONLY_PROFILE.approvable.contains(Permission("shell", "execute", "*"))
 
 
+class TestAskProfile:
+    """Tests for the hard Ask profile."""
+
+    def test_ask_in_default_profiles(self) -> None:
+        assert "ask" in DEFAULT_PROFILES
+        assert DEFAULT_PROFILES["ask"].name == "ask"
+
+    def test_ask_denies_write_without_approval(self) -> None:
+        from soothe_nano.security.policy_profiles import ASK_PROFILE
+
+        assert ASK_PROFILE.permissions.contains(Permission("fs", "read", "*"))
+        assert not ASK_PROFILE.permissions.contains(Permission("fs", "write", "*"))
+        assert not ASK_PROFILE.approvable.contains(Permission("fs", "write", "*"))
+        assert not ASK_PROFILE.approvable.contains(Permission("shell", "execute", "*"))
+
+
 class TestPrivilegedProfile:
     """Tests for the PRIVILEGED profile."""
 

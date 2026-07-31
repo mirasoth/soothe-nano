@@ -19,6 +19,7 @@ from .policy_models import (
     SecurityPolicy,
 )
 from .policy_profiles import (
+    ASK_PROFILE,
     DEFAULT_PROFILES,
     PERMISSIVE_POLICY,
     PRIVILEGED_PROFILE,
@@ -58,6 +59,7 @@ __all__ = [
     "ConfigDrivenPolicy",
     "STANDARD_PROFILE",
     "READONLY_PROFILE",
+    "ASK_PROFILE",
     "PRIVILEGED_PROFILE",
     "DEFAULT_PROFILES",
     "_extract_required_permission",

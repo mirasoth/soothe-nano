@@ -5,6 +5,24 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-07-31
+
+### Added
+- Dual ASK / AGENT interaction modes (opt-in). Default remains AGENT and is
+  behavior-compatible for existing callers.
+  - `create_nano_agent(..., interaction_mode="ask"|"agent")` and
+    `agent.runtime.interaction_mode` config (default `agent`).
+  - Hard Ask: read-only `filesystem_tools`, write-deny permissions, `ask`
+    policy profile, no `execution`/`file_ops` tool groups, planner-only
+    subagent allowlist, Ask system-prompt suffix.
+  - Opt-in `DualModeCoreAgent` / `create_dual_mode_nano_agent` with per-thread
+    mode pin.
+
+### Removed
+- `CodingCoreAgent` compatibility alias; use `SootheNanoAgent`.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.0...v1.1.1
+
 ## [1.1.0] - 2026-07-31
 
 ### Fixed

@@ -1413,6 +1413,7 @@ class AgentRuntimeConfig(BaseModel):
         general_purpose_subagent: Expose soothe_deepagents ``general-purpose`` delegate via ``task``.
         recursion_limit: LangGraph recursion limit for CoreAgent graph execution.
         role_routing: Per-hop orchestration vs generation model roles.
+        interaction_mode: Default CoreAgent interaction mode (``agent`` or ``ask``).
     """
 
     lazy_core_agent: bool = Field(
@@ -1438,6 +1439,14 @@ class AgentRuntimeConfig(BaseModel):
     role_routing: RoleRoutingConfig = Field(
         default_factory=RoleRoutingConfig,
         description="Per-hop model role routing for CoreAgent ReAct loop",
+    )
+    interaction_mode: Literal["agent", "ask"] = Field(
+        default="agent",
+        description=(
+            "Default CoreAgent interaction mode. ``agent`` allows mutating tools; "
+            "``ask`` is hard read-only (no writes/shell). Overridable per "
+            "``create_nano_agent(..., interaction_mode=...)``."
+        ),
     )
 
 

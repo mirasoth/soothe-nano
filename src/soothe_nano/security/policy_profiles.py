@@ -69,6 +69,23 @@ READONLY_PROFILE = PolicyProfile(
     deny_rules=[],
 )
 
+ASK_PROFILE = PolicyProfile(
+    name="ask",
+    permissions=PermissionSet(
+        frozenset(
+            [
+                Permission("fs", "read", "*"),
+                Permission("net", "outbound", "*"),
+                Permission("mcp", "connect", "*"),
+                Permission("subagent", "spawn", "*"),
+            ]
+        )
+    ),
+    approvable=PermissionSet(frozenset()),
+    deny_rules=[],
+)
+"""Hard Ask profile: read/network/MCP/subagent only; write and shell are denied."""
+
 PRIVILEGED_PROFILE = PolicyProfile(
     name="privileged",
     permissions=PermissionSet(
@@ -90,6 +107,7 @@ PRIVILEGED_PROFILE = PolicyProfile(
 DEFAULT_PROFILES: dict[str, PolicyProfile] = {
     "standard": STANDARD_PROFILE,
     "readonly": READONLY_PROFILE,
+    "ask": ASK_PROFILE,
     "privileged": PRIVILEGED_PROFILE,
 }
 

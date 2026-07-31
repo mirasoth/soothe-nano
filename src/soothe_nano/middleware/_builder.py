@@ -60,6 +60,8 @@ def build_soothe_middleware_stack(
     config: SootheConfig,
     policy: PolicyProtocol | None,
     mcp_registry: Any | None = None,
+    *,
+    policy_profile_name: str | None = None,
 ) -> tuple[AgentMiddleware, ...]:
     """Build Soothe middleware stack in correct order.
 
@@ -79,6 +81,8 @@ def build_soothe_middleware_stack(
         config: SootheConfig with performance settings.
         policy: PolicyProtocol instance for safety enforcement.
         mcp_registry: Optional MCPRegistry for MCP tool integration.
+        policy_profile_name: Optional override for ``SoothePolicyMiddleware``
+            profile (defaults to ``config.agent.protocols.policy.profile``).
     Returns:
         Tuple of middleware instances in execution order.
     """
@@ -112,13 +116,14 @@ def build_soothe_middleware_stack(
 
     # 2. Policy enforcement (must be first policy gate)
     if policy:
+        profile_name = policy_profile_name or config.agent.protocols.policy.profile
         stack.append(
             SoothePolicyMiddleware(
                 policy=policy,
-                profile_name=config.agent.protocols.policy.profile,
+                profile_name=profile_name,
             )
         )
-        logger.debug("[Middleware] Policy enforcement enabled")
+        logger.debug("[Middleware] Policy enforcement enabled (profile=%s)", profile_name)
 
     # 3. Skill activation (activates conditional skills on file-op path match)
     from soothe_nano.skills.index import SkillIndex
