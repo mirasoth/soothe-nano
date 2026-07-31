@@ -5,6 +5,18 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-31
+
+### Fixed
+- `delete` tool no longer crashes with `TypeError: async_delete() missing 1
+  required positional argument: 'runtime'`. `SootheFilesystemMiddleware` wrapped
+  the tool's `func`/`coroutine` in `*args, **kwargs` closures to supply the
+  default `backup_dir`, which erased the `ToolRuntime` annotation that `ToolNode`
+  reads to decide what to inject. The default is now supplied only through
+  `wrap_tool_call` / `awrap_tool_call`, leaving tool signatures intact.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.15...v1.1.0
+
 ## [1.0.15] - 2026-07-31
 
 ### Fixed

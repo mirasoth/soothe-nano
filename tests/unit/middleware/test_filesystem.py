@@ -5,10 +5,12 @@ from __future__ import annotations
 import importlib
 import re
 from datetime import datetime
+from inspect import signature
 from pathlib import Path
 
 import pytest
 from langchain.tools import ToolRuntime
+from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
@@ -156,13 +158,36 @@ def _runtime(tool_call_id: str = "tc") -> ToolRuntime:
     )
 
 
-def _invoke_tool(tool: BaseTool, args: dict[str, object], *, tool_call_id: str = "tc") -> object:
-    try:
-        return tool.invoke(args)
-    except TypeError as exc:
-        if "missing 1 required positional argument: 'runtime'" not in str(exc):
-            raise
-        return tool.func(runtime=_runtime(tool_call_id), **args)
+def _invoke_tool(
+    middleware: SootheFilesystemMiddleware,
+    tool: BaseTool,
+    args: dict[str, object],
+    *,
+    tool_call_id: str = "tc",
+) -> object:
+    """Run a tool through the middleware, standing in for `ToolNode`.
+
+    `BaseTool.invoke()` never injects `ToolRuntime`, so the runtime is supplied
+    here the way `ToolNode` would, and the call is routed through
+    `wrap_tool_call` so middleware argument injection is exercised.
+    """
+    runtime = _runtime(tool_call_id)
+    request = ToolCallRequest(
+        tool_call={
+            "name": tool.name,
+            "args": dict(args),
+            "id": tool_call_id,
+            "type": "tool_call",
+        },
+        tool=tool,
+        state=runtime.state,
+        runtime=runtime,
+    )
+
+    def handler(req: ToolCallRequest) -> object:
+        return req.tool.func(runtime=runtime, **req.tool_call["args"])
+
+    return middleware.wrap_tool_call(request, handler)
 
 
 class TestSootheFilesystemMiddlewareToolCreation:
@@ -229,6 +254,29 @@ class TestDeleteTool:
     def _get_tool(self, middleware: SootheFilesystemMiddleware, name: str = "delete") -> BaseTool:
         return next(t for t in middleware.tools if t.name == name)
 
+    def test_every_tool_keeps_runtime_injectable(
+        self, middleware: SootheFilesystemMiddleware
+    ) -> None:
+        """`ToolNode` reads `ToolRuntime` off the function signature, not the schema.
+
+        Wrapping a tool's `func`/`coroutine` with `*args, **kwargs` hides that
+        annotation and `ToolNode` then calls the tool without `runtime`.
+        """
+        from langgraph.prebuilt.tool_node import _get_all_injected_args
+
+        for tool in middleware.tools:
+            for attr in ("func", "coroutine"):
+                impl = getattr(tool, attr, None)
+                if impl is None:
+                    continue
+                params = signature(impl).parameters
+                assert "runtime" in params, (
+                    f"Tool {tool.name}.{attr} lost its runtime parameter: {params}"
+                )
+            assert _get_all_injected_args(tool).runtime == "runtime", (
+                f"Tool {tool.name} no longer receives an injected ToolRuntime"
+            )
+
     def test_delete_with_backup(
         self, tmp_path: Path, middleware: SootheFilesystemMiddleware
     ) -> None:
@@ -236,7 +284,7 @@ class TestDeleteTool:
         test_file.write_text("content")
 
         tool = self._get_tool(middleware)
-        result = _invoke_tool(tool, {"file_path": str(test_file), "backup": True})
+        result = _invoke_tool(middleware, tool, {"file_path": str(test_file), "backup": True})
         text = _tool_output_text(result)
 
         assert "Deleted" in text
@@ -252,7 +300,7 @@ class TestDeleteTool:
         test_file.write_text("content")
 
         tool = self._get_tool(middleware_no_backup)
-        result = _invoke_tool(tool, {"file_path": str(test_file)})
+        result = _invoke_tool(middleware_no_backup, tool, {"file_path": str(test_file)})
         text = _tool_output_text(result)
 
         assert "Deleted" in text
@@ -265,7 +313,7 @@ class TestDeleteTool:
         self, tmp_path: Path, middleware: SootheFilesystemMiddleware
     ) -> None:
         tool = self._get_tool(middleware)
-        result = _invoke_tool(tool, {"file_path": str(tmp_path / "nonexistent.txt")})
+        result = _invoke_tool(middleware, tool, {"file_path": str(tmp_path / "nonexistent.txt")})
         text = _tool_output_text(result)
 
         assert "Error" in text
@@ -279,7 +327,7 @@ class TestDeleteTool:
         (test_dir / "nested.txt").write_text("x")
 
         tool = self._get_tool(middleware)
-        result = _invoke_tool(tool, {"file_path": str(test_dir)})
+        result = _invoke_tool(middleware, tool, {"file_path": str(test_dir)})
         text = _tool_output_text(result)
 
         assert "Deleted" in text
@@ -292,7 +340,7 @@ class TestDeleteTool:
         test_file.write_text("content")
 
         tool = self._get_tool(middleware)
-        _invoke_tool(tool, {"file_path": str(test_file), "backup": True})
+        _invoke_tool(middleware, tool, {"file_path": str(test_file), "backup": True})
 
         backup_files = list((tmp_path / ".soothe" / "backups").glob("*"))
         assert len(backup_files) == 1
@@ -330,6 +378,7 @@ class TestApplyDiffTool:
 
         tool = self._get_tool(middleware)
         result = _invoke_tool(
+            middleware,
             tool,
             {
                 "file_path": str(test_file),
@@ -353,6 +402,7 @@ class TestApplyDiffTool:
 
         tool = self._get_tool(middleware)
         result = _invoke_tool(
+            middleware,
             tool,
             {"file_path": str(test_file), "diff": diff},
             tool_call_id="ad_basic",
@@ -367,6 +417,7 @@ class TestApplyDiffTool:
     ) -> None:
         tool = self._get_tool(middleware)
         result = _invoke_tool(
+            middleware,
             tool,
             {
                 "file_path": str(tmp_path / "nonexistent.txt"),
@@ -389,6 +440,7 @@ class TestApplyDiffTool:
 
         tool = self._get_tool(middleware)
         result = _invoke_tool(
+            middleware,
             tool,
             {"file_path": str(test_file), "diff": "invalid diff"},
             tool_call_id="ad_bad",
@@ -416,6 +468,7 @@ class TestCustomBackupDir:
         tool = next(t for t in middleware.tools if t.name == "delete")
         # Omit backup_dir in the tool call — middleware should inject the configured dir.
         _invoke_tool(
+            middleware,
             tool,
             {
                 "file_path": str(test_file),
@@ -433,5 +486,5 @@ class TestCustomBackupDir:
         test_file = tmp_path / "x.txt"
         test_file.write_text("x")
         tool = next(t for t in middleware.tools if t.name == "delete")
-        _invoke_tool(tool, {"file_path": str(test_file), "backup": True})
+        _invoke_tool(middleware, tool, {"file_path": str(test_file), "backup": True})
         assert any((tmp_path / ".soothe" / "backups").glob("x.txt.*.bak"))

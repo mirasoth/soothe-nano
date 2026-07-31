@@ -220,7 +220,6 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
         self._backup_dir = configured
         self._workspace_root = workspace_root
         self._workspace_backend_factory = workspace_backend_factory
-        self._wrap_delete_tool_backup_dir()
 
     def _resolved_delete_backup_dir(self) -> str:
         """Return backup_dir path suitable for the current backend mode."""
@@ -231,36 +230,6 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
             backend=self.backend,
             workspace_root=self._workspace_root,
         )
-
-    def _wrap_delete_tool_backup_dir(self) -> None:
-        """Inject product default ``backup_dir`` when the delete tool omits it."""
-        delete_tool = next(
-            (tool for tool in self.tools if getattr(tool, "name", None) == "delete"),
-            None,
-        )
-        if delete_tool is None:
-            return
-
-        def _inject(kwargs: dict[str, Any]) -> dict[str, Any]:
-            if kwargs.get("backup_dir") is not None:
-                return kwargs
-            return {**kwargs, "backup_dir": self._resolved_delete_backup_dir()}
-
-        orig_func = getattr(delete_tool, "func", None)
-        if callable(orig_func):
-
-            def wrapped_func(*args: Any, **kwargs: Any) -> Any:
-                return orig_func(*args, **_inject(kwargs))
-
-            delete_tool.func = wrapped_func  # type: ignore[method-assign]
-
-        orig_coro = getattr(delete_tool, "coroutine", None)
-        if callable(orig_coro):
-
-            async def wrapped_coro(*args: Any, **kwargs: Any) -> Any:
-                return await orig_coro(*args, **_inject(kwargs))
-
-            delete_tool.coroutine = wrapped_coro  # type: ignore[method-assign]
 
     def wrap_tool_call(
         self,
