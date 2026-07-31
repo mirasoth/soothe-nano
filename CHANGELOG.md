@@ -5,6 +5,16 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.14] - 2026-07-31
+
+### Changed
+- File-operation backups now default to workspace `.soothe/backups` (configured
+  in nano) instead of scattered `.backups` folders. `SootheFilesystemMiddleware`
+  injects this path when delete omits `backup_dir`; soothe-deepagents remains
+  brand-neutral with its own `.backups` default.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.0.13...v1.0.14
+
 ## [1.0.13] - 2026-07-31
 
 ### Fixed
