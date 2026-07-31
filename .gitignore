@@ -36,4 +36,5 @@ ENV/
 env/
 .DS_Store
 
+# Legacy tool backups; current default is .soothe/backups/
 .backups/

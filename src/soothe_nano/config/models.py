@@ -1148,7 +1148,7 @@ class FilesystemMiddlewareConfig(BaseModel):
     """Enable automatic file backup on delete operations."""
 
     backup_dir: str | None = None
-    """Directory for backup files. Defaults to .backups in each file's parent."""
+    """Directory for backup files. Defaults to workspace `.soothe/backups`."""
 
     workspace_root: str | None = None
     """Root directory for workspace operations."""

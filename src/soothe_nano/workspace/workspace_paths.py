@@ -8,6 +8,9 @@ from typing import Any
 from soothe_nano.config import SootheConfig
 from soothe_nano.workspace.workspace_runtime import resolve_process_workspace_root
 
+# Product layout under the workspace (not soothe-deepagents defaults).
+WORKSPACE_BACKUP_DIR = ".soothe/backups"
+
 _UNIX_HOST_ROOT_TOP_NAMES: frozenset[str] = frozenset(
     {
         "Applications",
@@ -143,3 +146,45 @@ def max_file_size_mb_for_filesystem_backend(config: SootheConfig) -> int:
     ):
         max_file_size_mb = int(config.filesystem_middleware.max_file_size_mb)
     return max_file_size_mb
+
+
+def resolve_workspace_backup_dir(
+    configured: str | Path | None = None,
+    *,
+    backend: Any | None = None,
+    workspace_root: str | Path | None = None,
+) -> str:
+    """Resolve product backup directory for tool/backend use.
+
+    Defaults to workspace ``.soothe/backups``. Returns a virtual absolute path
+    when the backend is in virtual mode; otherwise a host path under the
+    workspace root.
+    """
+    raw = str(configured).strip() if configured is not None else ""
+    rel = raw or WORKSPACE_BACKUP_DIR
+    path = Path(rel)
+    virtual = bool(getattr(backend, "virtual_mode", False)) if backend is not None else False
+    if virtual:
+        if path.is_absolute():
+            cwd = getattr(backend, "cwd", None)
+            if cwd is not None:
+                try:
+                    rel_to_cwd = path.resolve().relative_to(Path(str(cwd)).resolve())
+                    return "/" + rel_to_cwd.as_posix()
+                except ValueError:
+                    return str(path)
+            return str(path)
+        return "/" + rel.replace("\\", "/").lstrip("/")
+
+    if path.is_absolute():
+        return str(path)
+
+    cwd = getattr(backend, "cwd", None) if backend is not None else None
+    root: Path | None = None
+    if cwd is not None:
+        root = Path(str(cwd))
+    elif workspace_root is not None:
+        root = Path(workspace_root)
+    if root is not None:
+        return str(root / path)
+    return rel

@@ -156,8 +156,10 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
     without using deprecated callable backend pattern.
 
     Args:
-        backup_enabled: Backward-compatible no-op parameter retained for callers.
-        backup_dir: Backward-compatible no-op parameter retained for callers.
+        backup_enabled: Whether delete backups are preferred when callers omit
+            an explicit ``backup`` flag (retained for compatibility).
+        backup_dir: Workspace-relative or absolute backup directory. Defaults to
+            ``.soothe/backups``. Injected into delete tool calls when omitted.
         workspace_root: Root directory for workspace operations.
         workspace_backend_factory: Optional factory for creating workspace backends.
         **kwargs: Additional arguments passed to FilesystemMiddleware.
@@ -175,14 +177,16 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
         """Initialize SootheFilesystemMiddleware.
 
         Args:
-            backup_enabled: Enable automatic backup before deletion.
-            backup_dir: Custom backup directory path (legacy no-op).
+            backup_enabled: Compatibility flag for delete backup preference.
+            backup_dir: Custom backup directory (default ``.soothe/backups``).
             workspace_root: Workspace root directory for path resolution.
             workspace_backend_factory: Factory function that takes a workspace path
                 and returns a BackendProtocol instance. Used for thread workspace
                 resolution without callable backend deprecation.
             **kwargs: Passed to FilesystemMiddleware (backend, system_prompt, etc.)
         """
+        from soothe_nano.workspace.workspace_paths import WORKSPACE_BACKUP_DIR
+
         _ensure_upstream_apply_diff_support()
         custom_descriptions = dict(kwargs.pop("custom_tool_descriptions", None) or {})
         custom_descriptions.setdefault("glob", GLOB_TOOL_DESCRIPTION)
@@ -211,10 +215,85 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
         if not any(getattr(tool, "name", None) == "apply_diff" for tool in self.tools):
             raise ImportError(_apply_diff_requirement_message())
 
-        # Retain constructor compatibility while delegating delete behavior upstream.
-        _ = backup_enabled, backup_dir
+        self._backup_enabled = backup_enabled
+        configured = (backup_dir or "").strip() or WORKSPACE_BACKUP_DIR
+        self._backup_dir = configured
         self._workspace_root = workspace_root
         self._workspace_backend_factory = workspace_backend_factory
+        self._wrap_delete_tool_backup_dir()
+
+    def _resolved_delete_backup_dir(self) -> str:
+        """Return backup_dir path suitable for the current backend mode."""
+        from soothe_nano.workspace.workspace_paths import resolve_workspace_backup_dir
+
+        return resolve_workspace_backup_dir(
+            self._backup_dir,
+            backend=self.backend,
+            workspace_root=self._workspace_root,
+        )
+
+    def _wrap_delete_tool_backup_dir(self) -> None:
+        """Inject product default ``backup_dir`` when the delete tool omits it."""
+        delete_tool = next(
+            (tool for tool in self.tools if getattr(tool, "name", None) == "delete"),
+            None,
+        )
+        if delete_tool is None:
+            return
+
+        def _inject(kwargs: dict[str, Any]) -> dict[str, Any]:
+            if kwargs.get("backup_dir") is not None:
+                return kwargs
+            return {**kwargs, "backup_dir": self._resolved_delete_backup_dir()}
+
+        orig_func = getattr(delete_tool, "func", None)
+        if callable(orig_func):
+
+            def wrapped_func(*args: Any, **kwargs: Any) -> Any:
+                return orig_func(*args, **_inject(kwargs))
+
+            delete_tool.func = wrapped_func  # type: ignore[method-assign]
+
+        orig_coro = getattr(delete_tool, "coroutine", None)
+        if callable(orig_coro):
+
+            async def wrapped_coro(*args: Any, **kwargs: Any) -> Any:
+                return await orig_coro(*args, **_inject(kwargs))
+
+            delete_tool.coroutine = wrapped_coro  # type: ignore[method-assign]
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
+    ) -> ToolMessage | Command[Any]:
+        """Inject default backup_dir for delete, then coerce provider-safe results."""
+        request = self._request_with_default_backup_dir(request)
+        result = super().wrap_tool_call(request, handler)
+        return coerce_provider_safe_tool_message(result)
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+    ) -> ToolMessage | Command[Any]:
+        """Async variant of delete backup_dir injection + provider-safe coercion."""
+        request = self._request_with_default_backup_dir(request)
+        result = await super().awrap_tool_call(request, handler)
+        return coerce_provider_safe_tool_message(result)
+
+    def _request_with_default_backup_dir(self, request: ToolCallRequest) -> ToolCallRequest:
+        tool_call = getattr(request, "tool_call", None)
+        if not isinstance(tool_call, dict) or tool_call.get("name") != "delete":
+            return request
+        args = tool_call.get("args")
+        if not isinstance(args, dict) or args.get("backup_dir") is not None:
+            return request
+        modified = {
+            **tool_call,
+            "args": {**args, "backup_dir": self._resolved_delete_backup_dir()},
+        }
+        return request.override(tool_call=modified)
 
     def _get_backend(self, runtime: ToolRuntime | None = None) -> BackendProtocol:
         """Get backend, resolving the effective stream workspace when available.
@@ -262,25 +341,3 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
             virtual_mode=virtual_mode,
             max_file_size_mb=max_mb,
         )
-
-    def wrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
-    ) -> ToolMessage | Command[Any]:
-        """Evict oversized tool results and coerce unsupported multimodal blocks.
-
-        Keep this shim until upstream deepagents adds provider-safe coercion for
-        unsupported tool-result block types.
-        """
-        result = super().wrap_tool_call(request, handler)
-        return coerce_provider_safe_tool_message(result)
-
-    async def awrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
-    ) -> ToolMessage | Command[Any]:
-        """Async variant of provider-safe multimodal block coercion shim."""
-        result = await super().awrap_tool_call(request, handler)
-        return coerce_provider_safe_tool_message(result)

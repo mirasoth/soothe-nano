@@ -147,7 +147,7 @@ class TestUnifiedFilesystem:
         result = temp_workspace.write("backup.txt", "Updated", backup=True)
 
         assert result.backup_path is not None
-        assert ".backups/" in result.backup_path
+        assert ".soothe/backups/" in result.backup_path.replace("\\", "/")
 
         # Verify backup exists
         backup_full = temp_workspace.workspace / result.backup_path

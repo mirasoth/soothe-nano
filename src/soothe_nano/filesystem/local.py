@@ -36,6 +36,8 @@ from soothe_deepagents.backends.protocol import (
     WriteResult,
 )
 
+from soothe_nano.workspace.workspace_paths import WORKSPACE_BACKUP_DIR
+
 from .exceptions import (
     DirectoryNotEmptyError,
     FilesystemError,
@@ -66,7 +68,7 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         virtual_mode: bool = True,
         max_file_size_mb: int = 10,
-        backup_dir: str | Path = ".backups",
+        backup_dir: str | Path = WORKSPACE_BACKUP_DIR,
     ) -> None:
         """Initialize local filesystem.
 
@@ -74,8 +76,11 @@ class LocalFilesystem(UnifiedFilesystem):
             workspace: Root workspace directory.
             virtual_mode: Whether to sandbox paths to workspace.
             max_file_size_mb: Maximum file size in MB.
-            backup_dir: Directory for backup files.
+            backup_dir: Directory for backup files. Relative paths are resolved
+                under ``workspace`` (default ``.soothe/backups``).
         """
+        if isinstance(backup_dir, str) and not backup_dir.strip():
+            backup_dir = WORKSPACE_BACKUP_DIR
         super().__init__(
             workspace=workspace,
             virtual_mode=virtual_mode,

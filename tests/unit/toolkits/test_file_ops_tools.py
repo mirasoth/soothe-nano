@@ -37,7 +37,7 @@ def middleware(tmp_path):
     return SootheFilesystemMiddleware(
         backend=backend,
         backup_enabled=True,
-        backup_dir=str(tmp_path / ".backups"),
+        backup_dir=str(tmp_path / ".soothe" / "backups"),
     )
 
 

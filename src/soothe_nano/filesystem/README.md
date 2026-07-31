@@ -183,7 +183,7 @@ async def process_files():
 Destructive operations support automatic backups:
 
 ```python
-# Creates backup in .backups/ directory
+# Creates backup in .soothe/backups/ directory
 result = fs.write("important.txt", "new content", backup=True)
 print(f"Backup created: {result.backup_path}")
 
@@ -260,7 +260,7 @@ fs = LocalFilesystem(
     workspace="/workspace",
     virtual_mode=True,  # Enable sandboxing
     max_file_size_mb=10,  # Max file size
-    backup_dir=".backups",  # Backup directory
+    backup_dir=".soothe/backups",  # Backup directory under workspace .soothe/
 )
 ```
 

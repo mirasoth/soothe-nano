@@ -12,6 +12,8 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from soothe_nano.workspace.workspace_paths import WORKSPACE_BACKUP_DIR
+
 from .exceptions import FilesystemError, InvalidPathError
 from .local import LocalFilesystem
 from .unified import UnifiedFilesystem
@@ -109,7 +111,7 @@ class FilesystemConfig:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     path_validation: PathValidationConfig = field(default_factory=PathValidationConfig)
     backup_enabled: bool = True
-    backup_dir: Path = field(default_factory=lambda: Path(".backups"))
+    backup_dir: Path = field(default_factory=lambda: Path(WORKSPACE_BACKUP_DIR))
     cache_enabled: bool = False
     cache_size: int = 1000
     encoding: str = "utf-8"
@@ -199,7 +201,7 @@ class FilesystemConfig:
             security=security,
             path_validation=path_validation,
             backup_enabled=data.get("backup_enabled", True),
-            backup_dir=Path(data.get("backup_dir", ".backups")),
+            backup_dir=Path(data.get("backup_dir") or WORKSPACE_BACKUP_DIR),
             cache_enabled=data.get("cache_enabled", False),
             cache_size=data.get("cache_size", 1000),
             encoding=data.get("encoding", "utf-8"),

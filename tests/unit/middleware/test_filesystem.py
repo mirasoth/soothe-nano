@@ -242,7 +242,8 @@ class TestDeleteTool:
         assert "Deleted" in text
         assert "backup:" in text
         assert not test_file.exists()
-        assert any(tmp_path.glob(".backups/*"))
+        assert any((tmp_path / ".soothe" / "backups").glob("*"))
+        assert not any(tmp_path.glob(".backups/*"))
 
     def test_delete_without_backup(
         self, tmp_path: Path, middleware_no_backup: SootheFilesystemMiddleware
@@ -258,6 +259,7 @@ class TestDeleteTool:
         assert "backup:" not in text
         assert not test_file.exists()
         assert not any(tmp_path.glob(".backups/*"))
+        assert not any((tmp_path / ".soothe" / "backups").glob("*"))
 
     def test_delete_nonexistent_file(
         self, tmp_path: Path, middleware: SootheFilesystemMiddleware
@@ -292,7 +294,7 @@ class TestDeleteTool:
         tool = self._get_tool(middleware)
         _invoke_tool(tool, {"file_path": str(test_file), "backup": True})
 
-        backup_files = list(tmp_path.glob(".backups/*"))
+        backup_files = list((tmp_path / ".soothe" / "backups").glob("*"))
         assert len(backup_files) == 1
 
         # Check backup naming format: original_name.YYYYMMDD_HHMMSS.bak
@@ -412,15 +414,24 @@ class TestCustomBackupDir:
         test_file.write_text("content")
 
         tool = next(t for t in middleware.tools if t.name == "delete")
+        # Omit backup_dir in the tool call — middleware should inject the configured dir.
         _invoke_tool(
             tool,
             {
                 "file_path": str(test_file),
                 "backup": True,
-                "backup_dir": str(backup_dir),
             },
         )
 
-        # Backup should be in custom dir, not .backups
         assert not any(tmp_path.glob(".backups/*"))
+        assert not any((tmp_path / ".soothe" / "backups").glob("*"))
         assert any(backup_dir.glob("*"))
+
+    def test_default_backup_dir_is_workspace_soothe(self, tmp_path: Path) -> None:
+        backend = FilesystemBackend(root_dir=tmp_path, virtual_mode=False)
+        middleware = SootheFilesystemMiddleware(backend=backend, backup_enabled=True)
+        test_file = tmp_path / "x.txt"
+        test_file.write_text("x")
+        tool = next(t for t in middleware.tools if t.name == "delete")
+        _invoke_tool(tool, {"file_path": str(test_file), "backup": True})
+        assert any((tmp_path / ".soothe" / "backups").glob("x.txt.*.bak"))

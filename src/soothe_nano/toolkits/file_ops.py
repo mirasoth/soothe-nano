@@ -41,6 +41,7 @@ class FileOpsPlugin:
         from soothe_deepagents.backends.filesystem import FilesystemBackend
 
         from soothe_nano.workspace.workspace_paths import (
+            WORKSPACE_BACKUP_DIR,
             filesystem_virtual_mode_from_soothe_config,
             max_file_size_mb_for_filesystem_backend,
         )
@@ -55,17 +56,19 @@ class FileOpsPlugin:
         max_file_size_mb = fs_config.get(
             "max_file_size_mb", max_file_size_mb_for_filesystem_backend(sc)
         )
+        backup_dir = fs_config.get("backup_dir") or WORKSPACE_BACKUP_DIR
 
         backend = FilesystemBackend(
             root_dir=workspace_root or None,
             virtual_mode=virtual_mode,
             max_file_size_mb=max_file_size_mb,
+            backup_dir=backup_dir,
         )
 
         self._tools = build_surgical_file_ops_tools(
             backend=backend,
             backup_enabled=fs_config.get("backup_enabled", True),
-            backup_dir=fs_config.get("backup_dir"),
+            backup_dir=backup_dir,
             workspace_root=workspace_root or None,
             tool_token_limit_before_evict=fs_config.get("tool_token_limit_before_evict", 20000),
         )
