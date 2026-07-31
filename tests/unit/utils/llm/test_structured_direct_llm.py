@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import jsonschema
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
@@ -200,6 +201,59 @@ async def test_invoke_structured_chat_repairs_after_schema_validation_failure() 
     assert any(
         "schema validation" in str(getattr(m, "content", "")).lower() for m in repair_messages
     )
+
+
+@pytest.mark.asyncio
+async def test_invoke_structured_chat_repairs_after_bind_time_validation_failure() -> None:
+    """Bind-time strict validation must retry with a repair hint, not fail the call."""
+    chat = MagicMock()
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(
+        side_effect=[
+            jsonschema.ValidationError("'word' is a required property"),
+            {"word": "OK"},
+        ]
+    )
+    chat.with_structured_output = MagicMock(return_value=structured)
+
+    out = await invoke_structured_chat(
+        chat,
+        [HumanMessage(content="Return JSON")],
+        json_schema=_WORD_SCHEMA,
+        schema_name="WordReply",
+        strict=True,
+    )
+    assert out == {"word": "OK"}
+    assert structured.ainvoke.await_count == 2
+    repair_messages = structured.ainvoke.await_args_list[1].args[0]
+    assert any(
+        "schema validation" in str(getattr(m, "content", "")).lower() for m in repair_messages
+    )
+
+
+@pytest.mark.asyncio
+async def test_invoke_structured_chat_recovers_from_empty_object_payload() -> None:
+    """A reasoning model emitting bare ``{}`` recovers instead of failing the caller.
+
+    Mirrors thinking models that spend the completion budget on reasoning tokens
+    and return an empty object through the strict json_schema wrapper.
+    """
+    inner = MagicMock()
+    inner.ainvoke = AsyncMock(
+        side_effect=[AIMessage(content="{}"), AIMessage(content='{"word": "OK"}')]
+    )
+    chat = OpenAICompatModelWrapper(inner, provider_name="test")
+
+    out = await invoke_structured_chat(
+        chat,
+        [HumanMessage(content="Return JSON")],
+        json_schema=_WORD_SCHEMA,
+        schema_name="WordReply",
+        strict=True,
+        methods=("json_schema",),
+    )
+    assert out == {"word": "OK"}
+    assert inner.ainvoke.await_count == 2
 
 
 @pytest.mark.asyncio

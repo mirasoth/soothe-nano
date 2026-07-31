@@ -295,6 +295,32 @@ async def invoke_structured_chat(
                 result = await structured.ainvoke(prepared_messages, config=invoke_cfg)
             except StructuredOutputError:
                 raise
+            except jsonschema.ValidationError as exc:
+                # Bind-time strict validation inside JsonSchemaModelWrapper. Handle it
+                # like post-validation below: one repair turn, then the next method,
+                # so a single malformed payload does not fail the whole call.
+                last_exc = exc
+                if attempt + 1 < _MAX_METHOD_INVOKE_ATTEMPTS:
+                    logger.debug(
+                        "structured invoke: method=%s attempt=%d bind-time validation "
+                        "failed, retrying with repair hint",
+                        method,
+                        attempt + 1,
+                    )
+                    prepared_messages = [
+                        *prepared_messages,
+                        HumanMessage(content=_SCHEMA_REPAIR_HINT.format(error=exc.message)),
+                    ]
+                    continue
+                if method != last_method:
+                    logger.debug(
+                        "structured invoke: method=%s bind-time validation failed, falling back",
+                        method,
+                    )
+                    method_failed = True
+                    break
+                msg = f"structured model invoke failed: {exc.message}"
+                raise StructuredOutputError(msg) from exc
             except Exception as exc:
                 last_exc = exc
                 if (
