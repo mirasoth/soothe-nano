@@ -87,6 +87,7 @@ exclude = [
 ]
 
 [tool.ruff]
+extend-exclude = ["**/*.md"]
 line-length = 100
 target-version = "py311"
 

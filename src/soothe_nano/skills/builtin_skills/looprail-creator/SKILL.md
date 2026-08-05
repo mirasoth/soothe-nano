@@ -140,6 +140,7 @@ If the host package is available, prefer validating via:
 
 ```python
 from soothe.rails import LoopRailCatalog, load_rail_file
+
 load_rail_file(path)  # or LoopRailCatalog(workspace=...).resolve("<id>")
 ```
 
