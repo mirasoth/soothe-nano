@@ -63,10 +63,40 @@ Prefer checkable stop conditions for `job_complete` (suite green, path removed).
 
 ## CE builtins
 
+Core:
+
 `decompose_parallel` · `plan_and_implement` · `review` · `qa_verify` ·
 `retry_branch` · `merge_branches` · `pause_for_user` · `complete_job`
 
+Greenfield / wave:
+
+`plan_milestones` · `spawn_wave_makers` · `spawn_integrate` ·
+`commit_milestone` · `spawn_feedback_cycle`
+
 Unknown `then:` → load-time validation error.
+
+### Feedback loops
+
+Use `spawn_feedback_cycle` for find → optimize → verify until a checkable
+acceptance condition (or a round cap). Typical pattern:
+
+1. Wave QA (or prior verify) completes / fails.
+2. `when: needs_feedback` → `then: spawn_feedback_cycle`.
+3. Repeat on verify completion until acceptance; then next wave or
+   `complete_job`.
+
+Do not invent custom verbs for “find bugs” / “optimize” / “re-verify”.
+
+### Commit-before-review
+
+Architecture rails that call `commit_milestone` must define `needs_review` so
+it matches **commit** completion, not bare maker `implementation`. Premature
+review skips integrate/commit and stalls the pipeline.
+
+### Job-root dependencies
+
+Never design flows that assume children `depends_on` the job root. Roots may
+wait on children; children must not wait on the root.
 
 ## Catalog tiers
 

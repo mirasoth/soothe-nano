@@ -2,6 +2,9 @@
 
 Copy, rename `id` / filename, and edit NL conditions. Always use `event:` (not `on:`).
 
+Shipped builtins to mirror: `feature-dev`, `bugfix`, `maker-checker`,
+`hotfix`, `spike`, `pr-review`, `migration`, `greenfield-system`.
+
 ## Scout → implement → review → QA
 
 Same shape as builtin `feature-dev`.
@@ -131,6 +134,72 @@ flow:
   - event: goal_completed
     when: needs_human
     then: pause_for_user
+  - event: dag_idle
+    when: job_complete
+    then: complete_job
+```
+
+## Greenfield + feedback (find → optimize → verify)
+
+Same shape as builtin `greenfield-system`. Commit gate before review; feedback
+cycle until acceptance before next wave / complete.
+
+```yaml
+id: greenfield-custom
+version: "1.0"
+summary: |
+  Architecture milestones, parallel makers, integrate, commit, review, QA,
+  then find→optimize→verify until system acceptance.
+applies_when: |
+  Building a multi-module system from scratch (not a feature in a mature repo).
+conditions:
+  architecture_ready: |
+    Architecture / milestone map finished; first maker wave not spawned yet.
+  wave_makers_done: |
+    All makers for the current wave completed.
+  needs_integrate: |
+    Makers done; cross-module integrate remains.
+  needs_commit: |
+    Integrate finished; milestone commit gate should run before review.
+  needs_review: |
+    Commit milestone completed; independent diff-scoped review should run.
+  needs_qa: |
+    Review passed; wave acceptance tests should run.
+  needs_feedback: |
+    QA or prior feedback verify finished; acceptance not met; another
+    find→optimize→verify round should close remaining gaps.
+  ready_for_next_wave: |
+    Feedback verify (or exhausted feedback) shows the wave is ready; more
+    milestones remain.
+  job_complete: |
+    System acceptance holds; DAG idle with no pending children.
+flow:
+  - event: job_start
+    then: plan_milestones
+  - event: goal_completed
+    when: architecture_ready
+    then: spawn_wave_makers
+  - event: goal_completed
+    when: wave_makers_done
+    then: spawn_integrate
+  - event: goal_completed
+    when: needs_commit
+    then: commit_milestone
+  - event: goal_completed
+    when: needs_review
+    then: review
+  - event: goal_completed
+    when: needs_qa
+    then: qa_verify
+  - event: goal_completed
+    when: needs_feedback
+    then: spawn_feedback_cycle
+  - event: goal_failed
+    when: needs_feedback
+    then: spawn_feedback_cycle
+  - event: goal_completed
+    when: ready_for_next_wave
+    then: spawn_wave_makers
   - event: dag_idle
     when: job_complete
     then: complete_job

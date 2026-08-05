@@ -4,7 +4,7 @@ description: >
   Author and validate Soothe LoopRail YAML workflow patterns for Autopilot.
   Use whenever the user wants to create, draft, distill, edit, review, or
   promote a LoopRail (rail), autopilot workflow pattern, job-scoped orchestration
-  policy, feature-dev/bugfix/maker-checker style rail, or files under
+  policy, feature-dev/bugfix/maker-checker/greenfield style rail, or files under
   .soothe/rails/, ~/.soothe/rails/, or soothe/rails/builtin_rails/. Also use when
   converting a skill or multi-step SOP into a rail, or when checking that a rail
   matches the Soothe LoopRail protocol (event/when/then, CE builtins only).
@@ -19,7 +19,7 @@ builtins.
 
 ## When to use
 
-- New rail for a team workflow (feature, bugfix, hotfix, spike, review, …)
+- New rail for a team workflow (feature, bugfix, hotfix, spike, review, greenfield, …)
 - Distill a skill / SOP into a rail draft
 - Fix or review an existing `.yml` rail for protocol compliance
 - Promote a draft from `rails/drafts/` into the active catalog
@@ -36,6 +36,9 @@ builtins.
    **no `rail_id`** instead of shipping a `default` rail.
 5. **StrangeLoop executes one goal; LoopRail shapes the DAG; AutopilotService
    schedules** — rails must not dispatch workers or drive StrangeLoop prompts.
+6. **Rail-bound job roots are coordinators** — children execute; never design
+   rails that require the job root to be a maker, and never wire child
+   `depends_on` to the job root.
 
 Load details as needed: [references/looprail-protocol.md](references/looprail-protocol.md).
 
@@ -45,6 +48,11 @@ Load details as needed: [references/looprail-protocol.md](references/looprail-pr
 |---------|---------|
 | `decompose_parallel` | Parallel exploration / scout goals |
 | `plan_and_implement` | Plan then implement (often after scouts) |
+| `plan_milestones` | Architecture / milestone map (greenfield) |
+| `spawn_wave_makers` | Parallel makers; git worktrees when available |
+| `spawn_integrate` | Cross-module integrate after a maker wave |
+| `commit_milestone` | Git commit gate before review |
+| `spawn_feedback_cycle` | Find → optimize → verify until acceptance |
 | `review` | Independent review goal |
 | `qa_verify` | Tests / verification goal |
 | `retry_branch` | Prune stuck branch; salvage completed via `informs`; replant |
@@ -84,7 +92,8 @@ Ask (or infer): what hard gate or topology does no-rail lack?
 
 Examples that qualify: scout barrier before implement; repro gate before fix;
 maker ≠ checker; explore-then-human-stop; review-only; wave migration until a
-checkable condition; mandatory security review; human pause on irreversible ops.
+checkable condition; mandatory security review; human pause on irreversible ops;
+greenfield milestones + commit gate + feedback until acceptance.
 
 If none — **do not create a rail**.
 
@@ -135,6 +144,9 @@ Checklist:
       heuristics in the rail body)
 - [ ] Stop condition (`job_complete` / human pause) is explicit
 - [ ] Rail is not a re-statement of default Monitor/CE opportunistic behavior
+- [ ] If using a commit gate (`commit_milestone`), `needs_review` must not fire
+      on bare maker `implementation` — only after commit
+- [ ] Feedback loops use `spawn_feedback_cycle` + `needs_feedback`, not custom verbs
 
 If the host package is available, prefer validating via:
 
@@ -171,9 +183,12 @@ When converting a skill / SOP:
   `conditions` for structured guard evaluation)
 - Operator knobs (`max_parallel_goals`, worktrees) inside rail YAML — those stay
   in config
+- **Review on maker `implementation` when a commit gate exists** — architecture
+  rails must gate `needs_review` on commit completion
+- Child goals `depends_on` the job root (deadlocks integrate/review/QA)
 
 ## Quick templates
 
 See [references/templates.md](references/templates.md) for starter rails
 aligned with shipped builtins (`feature-dev`, `bugfix`, `maker-checker`,
-`hotfix`, `spike`, `pr-review`, `migration`).
+`hotfix`, `spike`, `pr-review`, `migration`, `greenfield-system`).
