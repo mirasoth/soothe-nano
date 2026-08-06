@@ -5,7 +5,13 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.3] - 2026-08-06
+## [1.1.4] - 2026-08-06
+
+### Fixed
+- Pin `langchain-mcp-adapters<0.3.1` and `mcp<2.0.0` so standalone CI lock
+  resolution stays compatible (mcp 2.0 broke `RequestContext` imports).
+- MCP auth transport unit tests import `langchain_mcp_adapters.client` before
+  `patch()`.
 
 ### Changed
 - Web search/crawl (`wizsearch_search` / `wizsearch_crawl`) now call `tarzi>=0.2.3`
@@ -16,11 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tavily → google_serper → duckduckgo → bing → brave` (API engines plus
   tarzi's built-in web defaults).
 
-### Fixed
-- MCP auth transport unit tests import `langchain_mcp_adapters.client` before
-  `patch()` so CI works with langchain-mcp-adapters 0.3.x.
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.2...v1.1.4
 
-[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.2...v1.1.3
+## [1.1.3] - 2026-08-06
+
+Yanked / not published (CI lock pulled mcp 2.0 incompatibly). See 1.1.4.
 
 ## [1.1.2] - 2026-08-04
 
