@@ -10,7 +10,12 @@ from typing import TYPE_CHECKING, Any
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from soothe_nano.config.env import _expand_env_in_config, _resolve_env, _resolve_provider_env
+from soothe_nano.config.env import (
+    _ENV_VAR_RE,
+    _expand_env_in_config,
+    _resolve_env,
+    _resolve_provider_env,
+)
 from soothe_nano.config.models import (
     AgentConfig,
     ConsoleLoggingConfig,
@@ -585,36 +590,38 @@ class SootheConfig(BaseSettings):
         Raises:
             ValueError: If db_key is not in postgres_databases mapping.
         """
-        # Check for multi-database configuration
-        if self.persistence.postgres_base_dsn:
-            base_dsn = _resolve_env(self.persistence.postgres_base_dsn)
-
-            # Get database name for the key
-            db_name = self.persistence.postgres_databases.get(db_key)
-            if not db_name:
-                raise ValueError(
-                    f"Database key '{db_key}' not found in postgres_databases mapping. "
-                    f"Available keys: {list(self.persistence.postgres_databases.keys())}"
-                )
-
-            # Construct full DSN: base_dsn/database_name
-            return f"{base_dsn}/{db_name}"
+        # Prefer multi-database base DSN when set and fully resolved (plain or ${ENV}).
+        # Unresolved ``${VAR}`` placeholders (template defaults) fall through to
+        # ``soothe_postgres_dsn`` — same dual-support rule as Langfuse/deepxiv.
+        base_raw = self.persistence.postgres_base_dsn
+        if base_raw:
+            base_dsn = _resolve_env(base_raw)
+            if not _ENV_VAR_RE.search(base_dsn):
+                db_name = self.persistence.postgres_databases.get(db_key)
+                if not db_name:
+                    raise ValueError(
+                        f"Database key '{db_key}' not found in postgres_databases mapping. "
+                        f"Available keys: {list(self.persistence.postgres_databases.keys())}"
+                    )
+                return f"{base_dsn}/{db_name}"
 
         return _resolve_env(self.persistence.soothe_postgres_dsn)
 
     def resolve_persistence_postgres_dsn(self) -> str:
         """Resolve the effective PostgreSQL DSN for persistence components.
 
-        Uses the multi-database PostgreSQL architecture when ``postgres_base_dsn`` is set;
-        otherwise uses ``soothe_postgres_dsn``.
+        Uses multi-database architecture when ``postgres_base_dsn`` is set and
+        resolved; otherwise uses ``soothe_postgres_dsn``. Both fields accept a
+        plain DSN or ``${ENV_VAR}``.
 
         Returns:
             The configured DSN for context/memory/durability/checkpointer.
         """
-        # Prefer multi-database configuration
-        if self.persistence.postgres_base_dsn:
-            # Use checkpoints database as default for checkpointer
-            return self.resolve_postgres_dsn_for_database("checkpoints")
+        base_raw = self.persistence.postgres_base_dsn
+        if base_raw:
+            base_dsn = _resolve_env(base_raw)
+            if not _ENV_VAR_RE.search(base_dsn):
+                return self.resolve_postgres_dsn_for_database("checkpoints")
 
         return _resolve_env(self.persistence.soothe_postgres_dsn)
 

@@ -46,7 +46,7 @@ class ModelProviderConfig(BaseModel):
     Args:
         name: Provider name (e.g., ``openai``, ``openrouter``, ``ollama``).
         api_base_url: Base URL for the provider's API endpoint.
-        api_key: API key. Supports ``${ENV_VAR}`` syntax for env var references.
+        api_key: API key. Plain string or ``${ENV_VAR}`` (same dual rule as other secrets).
         provider_type: langchain provider type for ``init_chat_model`` /
             ``init_embeddings``. Supported values:
             - ``openai``: OpenAI API (official or compatible). Custom ``api_base_url``
@@ -69,10 +69,10 @@ class VectorStoreProviderConfig(BaseModel):
     Args:
         name: Provider identifier (used in router).
         provider_type: Backend type (pgvector, weaviate, in_memory).
-        dsn: PostgreSQL DSN (pgvector). Supports ${ENV_VAR}.
+        dsn: PostgreSQL DSN (pgvector). Plain string or ``${ENV_VAR}``.
         index_type: Index type (pgvector): hnsw, ivfflat, none.
-        url: Weaviate server URL. Supports ${ENV_VAR}.
-        api_key: Weaviate Cloud API key. Supports ${ENV_VAR}.
+        url: Weaviate server URL. Plain string or ``${ENV_VAR}``.
+        api_key: Weaviate Cloud API key. Plain string or ``${ENV_VAR}``.
         grpc_port: Weaviate gRPC port.
     """
 
@@ -403,7 +403,8 @@ class DeepxivToolsConfig(ToolConfig):
 
     Args:
         enabled: Whether DeepXiv tools are enabled.
-        token: API token, ``${DEEPXIV_API_KEY}`` / ``${DEEPXIV_TOKEN}``, or null for env lookup.
+        token: API token as a plain string, ``${DEEPXIV_API_KEY}`` / ``${DEEPXIV_TOKEN}``,
+            or null for env lookup (``DEEPXIV_API_KEY`` / ``DEEPXIV_TOKEN``).
         timeout: Request timeout in seconds.
         max_retries: Maximum retry attempts per request.
     """
@@ -554,13 +555,15 @@ class PersistenceConfig(BaseModel):
 
     Args:
         postgres_base_dsn: Base PostgreSQL DSN without database name.
-            Example: "postgresql://user:pass@host:port"
+            Plain string or ``${ENV_VAR}`` (e.g. ``postgresql://user:pass@host:port``).
             Used with postgres_databases to construct full DSNs for each component.
+            Unresolved placeholders are treated as unset at resolve time.
         postgres_databases: Named database mapping for each component.
             Maps component names to database names.
             Default: {"checkpoints": "soothe_checkpoints", "metadata": "soothe_metadata",
                       "vectors": "soothe_vectors", "memory": "soothe_memory"}
         soothe_postgres_dsn: Single-database PostgreSQL DSN when ``postgres_base_dsn`` is unset.
+            Plain string or ``${ENV_VAR}``.
         default_backend: Default backend for new protocols (can be overridden).
         postgres: Shared PostgreSQL pool tuning.
         sqlite: Optional SqliteStoreRuntime tuning.
@@ -969,15 +972,15 @@ class LangfuseIntegrationConfig(BaseModel):
     """Langfuse OpenTelemetry + LangChain callback integration (install ``langfuse`` package).
 
     When ``enabled`` is true, Soothe attaches Langfuse's LangChain ``CallbackHandler`` to
-    LangGraph ``astream`` calls. Credentials may be set here (values support ``${ENV}``) or
-    omitted to use standard Langfuse environment variables (``LANGFUSE_PUBLIC_KEY``,
-    ``LANGFUSE_SECRET_KEY``, ``LANGFUSE_HOST``).
+    LangGraph ``astream`` calls. Credentials may be set here as a plain string or
+    ``${ENV_VAR}``, or omitted/null to use standard Langfuse environment variables
+    (``LANGFUSE_PUBLIC_KEY``, ``LANGFUSE_SECRET_KEY``, ``LANGFUSE_HOST``).
 
     Args:
         enabled: Turn Langfuse tracing on for graph runs.
-        public_key: Langfuse public key (optional if set via environment).
-        secret_key: Langfuse secret key (optional if set via environment).
-        host: Langfuse API base URL (e.g. ``https://cloud.langfuse.com`` or self-hosted origin).
+        public_key: Langfuse public key (plain string, ``${ENV_VAR}``, or omit for env).
+        secret_key: Langfuse secret key (plain string, ``${ENV_VAR}``, or omit for env).
+        host: Langfuse API base URL (plain string, ``${ENV_VAR}``, or omit for env).
         environment: Langfuse ``environment`` tag (e.g. ``production``, ``dev``).
         release: Langfuse ``release`` tag for deployment correlation.
         sample_rate: Client-side sampling rate ``0.0``–``1.0`` (passed to the Langfuse client).
@@ -994,15 +997,15 @@ class LangfuseIntegrationConfig(BaseModel):
     )
     public_key: str | None = Field(
         default=None,
-        description="Langfuse public key; supports ${ENV_VAR}",
+        description="Langfuse public key; plain string or ${ENV_VAR}",
     )
     secret_key: str | None = Field(
         default=None,
-        description="Langfuse secret key; supports ${ENV_VAR}",
+        description="Langfuse secret key; plain string or ${ENV_VAR}",
     )
     host: str | None = Field(
         default=None,
-        description="Langfuse API host / base URL; supports ${ENV_VAR}",
+        description="Langfuse API host / base URL; plain string or ${ENV_VAR}",
     )
     environment: str | None = Field(
         default=None,
