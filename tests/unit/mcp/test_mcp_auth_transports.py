@@ -14,6 +14,7 @@ import os
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import langchain_mcp_adapters.client  # noqa: F401 — load submodule for patch()
 import pytest
 
 from soothe_nano.config.models import MCPAuthHeaders, MCPServerConfig, MCPTransport
