@@ -1,8 +1,8 @@
-"""Wizsearch toolkit -- enhanced multi-engine search and headless crawl.
+"""Wizsearch toolkit -- multi-engine search and crawl powered by tarzi.
 
-Provides advanced web search and crawl capabilities:
-- wizsearch_search: Multi-engine search (tavily, duckduckgo, brave, etc.)
-- wizsearch_crawl: Headless browser crawl via wizsearch PageCrawler
+Provides web search and crawl capabilities (tool names kept for config/wire compat):
+- wizsearch_search: Ordered multi-engine failover via tarzi SearchEngine
+- wizsearch_crawl: Page fetch via tarzi WebFetcher (plain HTTP → browser cascade)
 
 Tool names are prefixed with `wizsearch_` to avoid collision with base tools.
 """
@@ -16,6 +16,7 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 from soothe_sdk.plugin import plugin
 
+from soothe_nano.config.models import DEFAULT_WIZSEARCH_ENGINES
 from soothe_nano.toolkits._internal.wizsearch import (
     _run_coro,
     perform_wizsearch_crawl,
@@ -97,22 +98,23 @@ def _resolve_max_results_per_engine(
 
 
 class WizsearchSearchTool(BaseTool):
-    """Multi-engine web search powered by wizsearch.
+    """Multi-engine web search powered by tarzi.
 
-    Uses engines configured via wizsearch.default_engines in config.yml.
-    Common engines: tavily, duckduckgo, serper, googleai, brave, bing.
-    Use `research` for deep multi-source investigation.
+    Uses engines configured via wizsearch.default_engines in config.yml as an
+    ordered failover list (first success wins). Common engines: tavily,
+    duckduckgo, google_serper (alias serper), googleai, brave, bing.
 
     name: str = "wizsearch_search"
     """
 
     name: str = "wizsearch_search"
     description: str = (
-        "Search the web using multiple engines (tavily, duckduckgo, brave, etc.). "
+        "Search the web using multiple engines (tavily, duckduckgo, brave, etc.) "
+        "with ordered failover. "
         "For time-sensitive queries (e.g., 'latest news', 'recent events'), "
         "first use the current_datetime tool to know today's date, then include appropriate "
         "time qualifiers (year, month) in your search query to get the most recent results. "
-        "Inputs: `query` (required), `limit` (default: 10 results per engine), "
+        "Inputs: `query` (required), `limit` (default: 10 results), "
         "`timeout_seconds` (default: 30). "
         "Returns a text summary of search results with titles, URLs, and content snippets. "
         "Use these results to compose your answer; do NOT echo the raw results to the user."
@@ -121,7 +123,7 @@ class WizsearchSearchTool(BaseTool):
 
     default_max_results_per_engine: int = Field(default=10)
     default_timeout: int = Field(default=30)
-    default_engines: list[str] = Field(default_factory=lambda: ["tavily"])
+    default_engines: list[str] = Field(default_factory=lambda: list(DEFAULT_WIZSEARCH_ENGINES))
     proxy: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     debug_mode: bool = False
@@ -227,18 +229,18 @@ class WizsearchSearchTool(BaseTool):
 
 
 class WizsearchCrawlTool(BaseTool):
-    """Web content extraction using headless browser crawl.
+    """Web content extraction via tarzi WebFetcher.
 
-    Uses wizsearch PageCrawler for JavaScript-rendered content extraction.
-    Returns clean, readable content stripped of navigation, ads, and boilerplate.
+    Uses tarzi's plain HTTP → headless browser cascade for content extraction.
+    Returns converted page content (markdown/html/text).
 
     name: str = "wizsearch_crawl"
     """
 
     name: str = "wizsearch_crawl"
     description: str = (
-        "Extract clean, readable content from a web page URL using headless browser. "
-        "Returns the main text content stripped of navigation, ads, and boilerplate. "
+        "Extract clean, readable content from a web page URL "
+        "(plain HTTP with headless browser fallback). "
         "Useful for reading articles, documentation, and web pages. "
         "Inputs: `url` (required), `content_format` ('markdown', 'html', 'text'), "
         "`only_text` (default: false)."
@@ -374,11 +376,11 @@ class WizsearchToolkit:
 @plugin(
     name="wizsearch",
     version="1.0.0",
-    description="Enhanced multi-engine search and headless crawl toolkit",
+    description="Multi-engine search and crawl toolkit (tarzi backend)",
     trust_level="built-in",
 )
 class WizsearchPlugin:
-    """Wizsearch tools plugin.
+    """Wizsearch tools plugin (tarzi-backed).
 
     Provides wizsearch_search and wizsearch_crawl tools.
     """
@@ -403,7 +405,7 @@ class WizsearchPlugin:
         context.logger.info(
             "Loaded %d wizsearch tools (engines=%s)",
             len(self._tools),
-            wizsearch_config.get("default_engines", ["tavily"]),
+            wizsearch_config.get("default_engines", list(DEFAULT_WIZSEARCH_ENGINES)),
         )
 
     def get_tools(self) -> list[BaseTool]:

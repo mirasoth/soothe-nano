@@ -1,4 +1,4 @@
-"""Web search capability via wizsearch, with Tavily / DuckDuckGo fallbacks."""
+"""Web search capability via tarzi-backed wizsearch tools, with Tavily / DuckDuckGo fallbacks."""
 
 from __future__ import annotations
 

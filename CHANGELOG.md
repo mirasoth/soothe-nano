@@ -5,6 +5,19 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-08-06
+
+### Changed
+- Web search/crawl (`wizsearch_search` / `wizsearch_crawl`) now call `tarzi>=0.2.3`
+  directly. Dropped the `wizsearch` package dependency. Tool names and
+  `tools.wizsearch` config keys are unchanged for compatibility. Engines are an
+  ordered failover list; crawl uses tarzi WebFetcher (plain HTTP → browser).
+- Default `tools.wizsearch.default_engines` is now
+  `tavily → google_serper → duckduckgo → bing → brave` (API engines plus
+  tarzi's built-in web defaults).
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.2...v1.1.3
+
 ## [1.1.2] - 2026-08-04
 
 ### Added

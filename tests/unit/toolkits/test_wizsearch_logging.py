@@ -1,9 +1,9 @@
-"""Unit tests for wizsearch lifecycle logging."""
+"""Unit tests for wizsearch lifecycle logging (tarzi backend)."""
 
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -17,6 +17,13 @@ def test_normalize_proxy_url_adds_scheme() -> None:
     assert wiz_internal.normalize_proxy_url("http://127.0.0.1:7890") == "http://127.0.0.1:7890"
     assert wiz_internal.normalize_proxy_url(None) is None
     assert wiz_internal.normalize_proxy_url("  ") is None
+
+
+def test_engines_to_tarzi_csv_aliases_and_dedupes() -> None:
+    assert wiz_internal.engines_to_tarzi_csv(["serper", "tavily", "serper"]) == (
+        "google_serper,tavily"
+    )
+    assert wiz_internal.normalize_engine_name("google_ai") == "googleai"
 
 
 def test_wizsearch_proxy_env_sets_and_restores() -> None:
@@ -45,30 +52,19 @@ def test_wizsearch_proxy_env_preserves_existing() -> None:
 async def test_perform_wizsearch_search_logs_start_and_done(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Search logs lifecycle lines when wizsearch returns results."""
+    """Search logs lifecycle lines when tarzi returns results."""
     caplog.set_level("INFO", logger="soothe_nano.toolkits._internal.wizsearch")
 
-    mock_result = MagicMock()
-    mock_result.query = "world cup teams"
-    mock_result.answer = None
-    mock_result.response_time = 2.5
-    mock_result.metadata = {
-        "engine_status": {"tavily": {"engine": "tavily", "status": "success", "result_count": 2}}
-    }
-    mock_result.sources = [
-        MagicMock(title="A", url="https://a.example", content="snippet a"),
-        MagicMock(title="B", url="https://b.example", content="snippet b"),
-    ]
+    hit_a = MagicMock(title="A", url="https://a.example", snippet="snippet a")
+    hit_b = MagicMock(title="B", url="https://b.example", snippet="snippet b")
 
     with (
         _TAVILY_ENV,
-        patch.object(wiz_internal, "_check_wizsearch_available", return_value=True),
+        patch.object(wiz_internal, "_check_tarzi_available", return_value=True),
         patch.object(wiz_internal, "_maybe_apply_tavily_key"),
-        patch("wizsearch.WizSearch") as mock_cls,
-        patch("wizsearch.WizSearchConfig"),
+        patch.object(wiz_internal, "_search_blocking", return_value=[hit_a, hit_b]),
         patch("soothe_nano.utils.output_capture.capture_subagent_output"),
     ):
-        mock_cls.return_value.search = AsyncMock(return_value=mock_result)
         await wiz_internal.perform_wizsearch_search(
             query="world cup teams",
             engines=["tavily"],
@@ -79,23 +75,25 @@ async def test_perform_wizsearch_search_logs_start_and_done(
     messages = [r.message for r in caplog.records]
     assert any("[Wizsearch] search start" in m for m in messages)
     assert any("[Wizsearch] search done" in m for m in messages)
-    assert any("[Wizsearch] engine tavily:" in m for m in messages)
+    assert any("engine failover=tavily:" in m for m in messages)
 
 
 @pytest.mark.asyncio
 async def test_perform_wizsearch_search_logs_failure(caplog: pytest.LogCaptureFixture) -> None:
-    """Search logs failure with elapsed time when wizsearch raises."""
+    """Search logs failure with elapsed time when tarzi raises."""
     caplog.set_level("WARNING", logger="soothe_nano.toolkits._internal.wizsearch")
 
     with (
         _TAVILY_ENV,
-        patch.object(wiz_internal, "_check_wizsearch_available", return_value=True),
+        patch.object(wiz_internal, "_check_tarzi_available", return_value=True),
         patch.object(wiz_internal, "_maybe_apply_tavily_key"),
-        patch("wizsearch.WizSearch") as mock_cls,
-        patch("wizsearch.WizSearchConfig"),
+        patch.object(
+            wiz_internal,
+            "_search_blocking",
+            side_effect=RuntimeError("network down"),
+        ),
         patch("soothe_nano.utils.output_capture.capture_subagent_output"),
     ):
-        mock_cls.return_value.search = AsyncMock(side_effect=RuntimeError("network down"))
         result = await wiz_internal.perform_wizsearch_search(
             query="timeout query",
             engines=["tavily"],

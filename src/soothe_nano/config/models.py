@@ -365,22 +365,34 @@ class ExecutionToolsConfig(ToolConfig):
     )
 
 
+# Ordered tarzi failover: API engines first, then tarzi's default web cascade.
+DEFAULT_WIZSEARCH_ENGINES: list[str] = [
+    "tavily",
+    "google_serper",
+    "duckduckgo",
+    "bing",
+    "brave",
+]
+
+
 class WebSearchConfig(ToolConfig):
     """Configuration for web search tools.
 
     Args:
         enabled: Whether web search tools are enabled.
-        default_engines: List of default search engines to use.
+        default_engines: Ordered engine failover list (first success wins).
         max_results_per_engine: Maximum results per search engine.
         timeout: Request timeout in seconds.
-        proxy: Optional HTTP(S) proxy URL for wizsearch engines/crawl
+        proxy: Optional HTTP(S) proxy URL for tarzi search/crawl
             (e.g. ``http://127.0.0.1:7890``). Applied for the duration of each
             search/crawl call; process-wide ``HTTP(S)_PROXY`` still wins if set.
 
-    Note: The crawler runs in headless mode by default (BrowserConfig default in wizsearch backend).
+    Note: Default is tavily → google_serper → duckduckgo → bing → brave
+    (API engines plus tarzi's built-in web defaults). Crawl uses tarzi
+    WebFetcher (plain HTTP → browser cascade when enabled).
     """
 
-    default_engines: list[str] = Field(default_factory=lambda: ["tavily"])
+    default_engines: list[str] = Field(default_factory=lambda: list(DEFAULT_WIZSEARCH_ENGINES))
     max_results_per_engine: int = 10
     timeout: int = 30
     proxy: str | None = None
@@ -436,7 +448,8 @@ class ToolsConfig(BaseModel):
         file_ops: File operation tools config.
         datetime: DateTime tool config.
         data: Data inspection tools config.
-        wizsearch: Wizsearch multi-engine search tools config.
+        wizsearch: Tarzi-backed multi-engine search/crawl tools config
+            (tool names ``wizsearch_*`` kept for wire/config compatibility).
         http_requests: LangChain Requests toolkit (HTTP GET/POST/PATCH/PUT/DELETE).
         deepxiv: DeepXiv academic paper search tools (disabled by default).
     """
