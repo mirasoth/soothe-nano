@@ -1,6 +1,7 @@
 # LoopRail protocol reference
 
-Canonical design: `docs/drafts/2026-07-11-loop-rail-design.md` (host monorepo).
+Canonical spec: `docs/specs/RFC-231-looprail-rail-exec.md` (LoopRail + Rail Exec).
+Historical design: `docs/drafts/2026-07-11-loop-rail-design.md` (promoted).
 Runtime loader: `soothe.rails.catalog` / `soothe.rails.LoopRailCatalog`.
 
 ## Document schema
@@ -11,12 +12,14 @@ Runtime loader: `soothe.rails.catalog` / `soothe.rails.LoopRailCatalog`.
 | `version` | yes | Semver string |
 | `summary` | yes | NL overview; auto-pick + docs |
 | `applies_when` | yes | NL rail-selection condition |
-| `conditions` | no | Named NL guards (`str → str`) |
+| `conditions` | no | Named NL guards (`str → str`); RFC-231 may add `structural:` |
 | `flow` | no* | NL-first hooks |
 | `rules` | no* | Explicit rules (*need `flow` and/or `rules`) |
+| `fanout` | no | Wave contract (`artifact`, `require_plan`, `max_waves`, …) |
+| `verbs` | no | Catalog verb body: `brief`/`tags`/`role` (M2) and/or `do:` L0 list (M3) |
 | `flow[].event` | yes | Trigger name (canonical; not `on`) |
 | `flow[].when` | no | Condition name, NL string, or structured when |
-| `flow[].then` | yes | CE builtin name |
+| `flow[].then` | yes | Catalog verb name (recipe) |
 | `rules[].id` | no | Stable rule id for traces |
 | `rules[].priority` | no | Lower first; default 100 (explicit rules prefer ~99) |
 | `rules[].allow_multiple` | no | If true, do not stop after first match |
@@ -61,7 +64,16 @@ Prefer checkable stop conditions for `job_complete` (suite green, path removed).
 | `worker_timeout` | AutopilotService |
 | `user_intervention` | CLI / TUI / human ack |
 
-## CE builtins
+## Catalog verbs (Rail Exec)
+
+`then:` names catalog **recipes**. Default bodies ship with the host; rails may
+override via `verbs:` (RFC-231). Bodies may set opaque `brief`/`tags`/`role`
+(M2) and/or a multi-step `do:` list of CE **primitives** (`spawn_goal`,
+`wire_deps`, `gate`, `bump`, `pause_job`, `complete_job`, … — IG-717 subset).
+Optional later: `intent` → ActionPlan (M4).
+
+When `verbs.<name>.do` is present, Rail Exec runs that recipe instead of the
+Python `_do_*` handler for that verb.
 
 Core:
 
@@ -71,9 +83,11 @@ Core:
 Greenfield / wave:
 
 `plan_milestones` · `spawn_wave_makers` · `spawn_integrate` ·
-`commit_milestone` · `spawn_feedback_cycle`
+`commit_milestone` · `spawn_feedback_cycle` · `retry_maker` ·
+`retry_architecture`
 
-Unknown `then:` → load-time validation error.
+Unknown `then:` → load-time validation error (must resolve to default recipe or
+rail `verbs:` entry).
 
 ### Feedback loops
 
@@ -85,7 +99,8 @@ acceptance condition (or a round cap). Typical pattern:
 3. Repeat on verify completion until acceptance; then next wave or
    `complete_job`.
 
-Do not invent custom verbs for “find bugs” / “optimize” / “re-verify”.
+Do not invent custom L0 ops for “find bugs” / “optimize” / “re-verify” — override
+the recipe body or compose existing primitives (RFC-231).
 
 ### Commit-before-review
 
