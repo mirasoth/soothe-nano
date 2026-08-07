@@ -50,7 +50,7 @@ Load details as needed: [references/looprail-protocol.md](references/looprail-pr
 | `plan_and_implement` | Plan then implement (often after scouts) |
 | `plan_milestones` | Architecture / milestone map (greenfield) |
 | `spawn_wave_makers` | Parallel makers; git worktrees when available |
-| `spawn_integrate` | Cross-module integrate after a maker wave |
+| `spawn_integrate` | Cross-slice integrate after a maker wave |
 | `commit_milestone` | Git commit gate before review |
 | `spawn_feedback_cycle` | Find → optimize → verify until acceptance |
 | `review` | Independent review goal |

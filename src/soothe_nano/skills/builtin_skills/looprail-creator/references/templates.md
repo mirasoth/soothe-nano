@@ -151,14 +151,14 @@ summary: |
   Architecture milestones, parallel makers, integrate, commit, review, QA,
   then find→optimize→verify until system acceptance.
 applies_when: |
-  Building a multi-module system from scratch (not a feature in a mature repo).
+  Building a multi-slice system from scratch (not a feature in a mature repo).
 conditions:
   architecture_ready: |
     Architecture / milestone map finished; first maker wave not spawned yet.
   wave_makers_done: |
     All makers for the current wave completed.
   needs_integrate: |
-    Makers done; cross-module integrate remains.
+    Makers done; cross-slice integrate remains.
   needs_commit: |
     Integrate finished; milestone commit gate should run before review.
   needs_review: |
