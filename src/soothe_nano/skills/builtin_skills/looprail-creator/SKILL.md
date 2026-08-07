@@ -31,9 +31,9 @@ builtins.
 2. **Event-driven, no named phases** — no `intake → implement → review` enums.
 3. **Soft state** — policy lives in `flow` / `rules` + live goal DAG + rail
    trace; do not store a phase counter in the YAML.
-4. **A rail must differ from no-rail Monitor/CE behavior** — if the policy is
-   only “maybe decompose, maybe retry, stop when idle”, tell the user to use
-   **no `rail_id`** instead of shipping a `default` rail.
+4. **A rail must add hard gates or topology** — if the policy is only “maybe
+   decompose, maybe retry, stop when idle”, tell the user to use **no
+   `rail_id`** instead of shipping a `default` rail.
 5. **StrangeLoop executes one goal; LoopRail shapes the DAG; AutopilotService
    schedules** — rails must not dispatch workers or drive StrangeLoop prompts.
 6. **Rail-bound job roots are coordinators** — children execute; never design
@@ -48,7 +48,7 @@ Load details as needed: [references/looprail-protocol.md](references/looprail-pr
 |---------|---------|
 | `decompose_parallel` | Parallel exploration / scout goals |
 | `plan_and_implement` | Plan then implement (often after scouts) |
-| `plan_milestones` | Architecture / milestone map (greenfield) |
+| `plan_milestones` | Architecture / milestone map (fan-out rails) |
 | `spawn_wave_makers` | Parallel makers; git worktrees when available |
 | `spawn_integrate` | Cross-slice integrate after a maker wave |
 | `commit_milestone` | Git commit gate before review |
@@ -56,9 +56,13 @@ Load details as needed: [references/looprail-protocol.md](references/looprail-pr
 | `review` | Independent review goal |
 | `qa_verify` | Tests / verification goal |
 | `retry_branch` | Prune stuck branch; salvage completed via `informs`; replant |
-| `merge_branches` | Merge compatible parallel branches |
+| `retry_maker` | Replant a failed fan-out maker slice |
+| `retry_architecture` | Replant a failed architecture / WavePlan planner |
+| `merge_branches` | Reserved (not used by shipped builtins) |
 | `pause_for_user` | Human gate |
 | `complete_job` | Mark job done; stop scheduling |
+
+`then:` must be a **single verb string** (lists are rejected by the catalog).
 
 ## Trigger field: `event` (not `on`)
 
@@ -86,25 +90,28 @@ Allowed event names:
 
 ## Authoring workflow
 
-### 1. Clarify the *difference* from no-rail
+### 1. Clarify the hard gate or topology
 
-Ask (or infer): what hard gate or topology does no-rail lack?
+Ask (or infer): what hard gate or DAG topology is required?
 
 Examples that qualify: scout barrier before implement; repro gate before fix;
 maker ≠ checker; explore-then-human-stop; review-only; wave migration until a
 checkable condition; mandatory security review; human pause on irreversible ops;
-greenfield milestones + commit gate + feedback until acceptance.
+milestones + commit gate + feedback until acceptance.
 
 If none — **do not create a rail**.
 
 ### 2. Draft NL-first YAML (Style A)
+
+Keep `summary` / `applies_when` **self-contained**: describe this rail’s
+pipeline and when to pick it. Do not compare to other rails or host internals.
 
 ```yaml
 id: my-workflow
 version: "1.0"
 
 summary: |
-  One paragraph: what the rail does and how it differs from no-rail.
+  One paragraph: what this rail’s pipeline does.
 
 applies_when: |
   When auto-pick / humans should choose this rail.
@@ -160,8 +167,9 @@ load_rail_file(path)  # or LoopRailCatalog(workspace=...).resolve("<id>")
 
 1. Write under `rails/drafts/` first when unsure.
 2. After human review, copy/rename to `rails/<id>.yml` (or builtin path).
-3. Tell the user how to run: `soothe autopilot run "…" --rail <id>` (or project
-   `.rail-default`).
+3. Tell the user how to run:
+   `soothe autopilot submit --file GOAL.md --rail <id> -w /path/to/repo`
+   (or project `.rail-default`).
 
 ## Distill from a skill
 
@@ -175,15 +183,17 @@ When converting a skill / SOP:
 
 ## Anti-patterns
 
-- Shipping `default.yml` that mirrors no-rail
+- Shipping `default.yml` with only opportunistic Monitor/CE behavior
 - Using `on:` instead of `event:`
+- List `then:` values (must be a single verb string)
 - Custom `then:` verbs or StrangeLoop prompt injection from the rail
 - Phase enums (`phase: implement`)
 - Keyword/regex content judgment inside the rail (put judgment in NL
   `conditions` for structured guard evaluation)
+- Cross-rail comparisons or host internals in `summary` / `applies_when`
 - Operator knobs (`max_parallel_goals`, worktrees) inside rail YAML — those stay
   in config
-- **Review on maker `implementation` when a commit gate exists** — architecture
+- **Review on maker `implementation` when a commit gate exists** — fan-out
   rails must gate `needs_review` on commit completion
 - Child goals `depends_on` the job root (deadlocks integrate/review/QA)
 

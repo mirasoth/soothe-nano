@@ -78,16 +78,18 @@ Python `_do_*` handler for that verb.
 Core:
 
 `decompose_parallel` · `plan_and_implement` · `review` · `qa_verify` ·
-`retry_branch` · `merge_branches` · `pause_for_user` · `complete_job`
+`retry_branch` · `pause_for_user` · `complete_job`
 
-Greenfield / wave:
+Fan-out / wave:
 
 `plan_milestones` · `spawn_wave_makers` · `spawn_integrate` ·
 `commit_milestone` · `spawn_feedback_cycle` · `retry_maker` ·
 `retry_architecture`
 
+Reserved (not used by shipped builtins): `merge_branches`
+
 Unknown `then:` → load-time validation error (must resolve to default recipe or
-rail `verbs:` entry).
+rail `verbs:` entry). `then:` must be a single verb string (lists rejected).
 
 ### Feedback loops
 
@@ -104,7 +106,7 @@ the recipe body or compose existing primitives (RFC-231).
 
 ### Commit-before-review
 
-Architecture rails that call `commit_milestone` must define `needs_review` so
+Fan-out rails that call `commit_milestone` must define `needs_review` so
 it matches **commit** completion, not bare maker `implementation`. Premature
 review skips integrate/commit and stalls the pipeline.
 

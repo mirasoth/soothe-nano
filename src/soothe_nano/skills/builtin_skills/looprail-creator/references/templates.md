@@ -1,6 +1,7 @@
 # LoopRail starter templates
 
 Copy, rename `id` / filename, and edit NL conditions. Always use `event:` (not `on:`).
+Keep summary/applies_when self-contained (no cross-rail or host-internals prose).
 
 Shipped builtins to mirror: `feature-dev`, `bugfix`, `maker-checker`,
 `hotfix`, `spike`, `pr-review`, `migration`, `greenfield-system`.
@@ -15,7 +16,7 @@ version: "1.0"
 summary: |
   Parallel exploration, then plan/implement, independent review, and QA.
 applies_when: |
-  Build or change application functionality (not a one-line fix or spike).
+  Build or change functionality in an existing codebase.
 conditions:
   ready_to_plan: |
     All exploration scouts finished with enough findings to plan.
@@ -24,7 +25,7 @@ conditions:
   needs_qa: |
     Review passed; automated verification should run.
   branch_is_stuck: |
-    Review or execution failed twice, or approach conflicts with architecture.
+    A maker or implementation goal failed, or approach conflicts with architecture.
   job_complete: |
     Review and QA passed; no pending children.
 flow:
@@ -109,22 +110,22 @@ flow:
     then: complete_job
 ```
 
-## Review-only
+## Review + QA
 
 ```yaml
 id: pr-review-custom
 version: "1.0"
 summary: |
-  Review an existing diff; optional QA; no implementation branch.
+  Review an existing diff, then run QA; no implementation branch.
 applies_when: |
   Review a PR, patch, or diff the user already produced.
 conditions:
   needs_qa: |
-    Review found issues tests can catch, or user asked for verification.
+    Review completed; automated verification should run after review.
   needs_human: |
     Blocking design or security concern needs an owner decision.
   job_complete: |
-    Review (and optional QA / human ack) finished; no pending children.
+    Review, QA, and any human ack finished; no pending children.
 flow:
   - event: job_start
     then: review
@@ -151,16 +152,34 @@ summary: |
   Architecture milestones, parallel makers, integrate, commit, review, QA,
   then find→optimize→verify until system acceptance.
 applies_when: |
-  Building a multi-slice system from scratch (not a feature in a mature repo).
+  Building a multi-slice system or large scaffold from scratch.
+fanout:
+  artifact: "{job_id}/wave-plan.json"
+  require_plan: true
+  max_waves: 3
+verbs:
+  plan_milestones:
+    do:
+      - spawn_goal:
+          id: planner
+          role: planner
+          tags: [architecture, planning, milestones]
+          priority: 80
+          brief: |
+            Architecture and milestone map for job {job_id}. Define Slice
+            boundaries, wave-1 slices, acceptance criteria, and commit
+            milestones. REQUIRED: one findings entry that is exactly a WavePlan
+            JSON object. Do not write the plan into the project workspace tree.
+          wire:
+            root_waits_on: self
 conditions:
   architecture_ready: |
     Architecture / milestone map finished; first maker wave not spawned yet.
   wave_makers_done: |
     All makers for the current wave completed.
-  needs_integrate: |
-    Makers done; cross-slice integrate remains.
   needs_commit: |
-    Integrate finished; milestone commit gate should run before review.
+    Integrate finished (or makers finished when integrate skipped); commit gate
+    should run before review.
   needs_review: |
     Commit milestone completed; independent diff-scoped review should run.
   needs_qa: |
@@ -171,8 +190,124 @@ conditions:
   ready_for_next_wave: |
     Feedback verify (or exhausted feedback) shows the wave is ready; more
     milestones remain.
+  branch_is_stuck: |
+    A maker or implementation goal failed.
+  architecture_failed: |
+    Architecture / WavePlan planner failed; replant.
   job_complete: |
     System acceptance holds; DAG idle with no pending children.
+flow:
+  - event: job_start
+    then: plan_milestones
+  - event: goal_completed
+    when: architecture_ready
+    then: spawn_wave_makers
+  - event: dag_idle
+    when: architecture_ready
+    then: spawn_wave_makers
+  - event: goal_completed
+    when: wave_makers_done
+    then: spawn_integrate
+  - event: goal_completed
+    when: needs_commit
+    then: commit_milestone
+  - event: dag_idle
+    when: needs_commit
+    then: commit_milestone
+  - event: goal_completed
+    when: needs_review
+    then: review
+  - event: dag_idle
+    when: needs_review
+    then: review
+  - event: goal_completed
+    when: needs_qa
+    then: qa_verify
+  - event: dag_idle
+    when: needs_qa
+    then: qa_verify
+  - event: goal_completed
+    when: needs_feedback
+    then: spawn_feedback_cycle
+  - event: goal_failed
+    when: needs_feedback
+    then: spawn_feedback_cycle
+  - event: goal_completed
+    when: ready_for_next_wave
+    then: spawn_wave_makers
+  - event: dag_idle
+    when: ready_for_next_wave
+    then: spawn_wave_makers
+  - event: goal_failed
+    when: branch_is_stuck
+    then: retry_maker
+  - event: goal_failed
+    when: architecture_failed
+    then: retry_architecture
+  - event: dag_idle
+    when: wave_makers_done
+    then: spawn_integrate
+  - event: dag_idle
+    when: needs_feedback
+    then: spawn_feedback_cycle
+  - event: dag_idle
+    when: job_complete
+    then: complete_job
+```
+
+## Migration + cutover pause
+
+Same fan-out shape as greenfield, plus human pause on irreversible cutover.
+
+```yaml
+id: migration-custom
+version: "1.0"
+summary: |
+  Migration milestones with WavePlan slices, makers, integrate, commit,
+  review, QA, feedback, and pause on irreversible cutover.
+applies_when: |
+  Framework upgrade, schema migration, or multi-file mechanical migration
+  with a clear done condition.
+fanout:
+  artifact: "{job_id}/wave-plan.json"
+  require_plan: true
+  max_waves: 3
+verbs:
+  plan_milestones:
+    do:
+      - spawn_goal:
+          id: planner
+          role: planner
+          tags: [architecture, planning, milestones]
+          priority: 80
+          brief: |
+            Migration architecture for job {job_id}. Partition into independent
+            WavePlan slices. REQUIRED: one WavePlan JSON findings entry.
+          wire:
+            root_waits_on: self
+conditions:
+  architecture_ready: |
+    Migration milestone map finished; first maker wave not spawned yet.
+  wave_makers_done: |
+    All makers for the current wave completed.
+  needs_commit: |
+    Integrate finished; commit gate before review.
+  needs_review: |
+    Commit completed; independent review should run.
+  needs_qa: |
+    Review passed; migration invariant checks should run.
+  needs_feedback: |
+    QA finished; acceptance not met; another feedback round.
+  ready_for_next_wave: |
+    Wave ready; more migration slices remain.
+  needs_human: |
+    Next step is irreversible cutover (tag goals with needs_human or cutover).
+  branch_is_stuck: |
+    A maker or implementation goal failed.
+  architecture_failed: |
+    Migration planner failed; replant.
+  job_complete: |
+    Migration success condition holds; DAG idle.
 flow:
   - event: job_start
     then: plan_milestones
@@ -194,12 +329,21 @@ flow:
   - event: goal_completed
     when: needs_feedback
     then: spawn_feedback_cycle
-  - event: goal_failed
-    when: needs_feedback
-    then: spawn_feedback_cycle
   - event: goal_completed
     when: ready_for_next_wave
     then: spawn_wave_makers
+  - event: goal_completed
+    when: needs_human
+    then: pause_for_user
+  - event: dag_idle
+    when: needs_human
+    then: pause_for_user
+  - event: goal_failed
+    when: branch_is_stuck
+    then: retry_maker
+  - event: goal_failed
+    when: architecture_failed
+    then: retry_architecture
   - event: dag_idle
     when: job_complete
     then: complete_job
