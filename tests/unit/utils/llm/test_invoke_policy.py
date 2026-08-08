@@ -37,6 +37,30 @@ def test_llm_rate_limit_config_from_defaults() -> None:
     assert llm_rate_limit_config_from(None).retry_on_rate_limit is True
 
 
+def test_llm_rate_limit_config_from_reads_agent_middleware() -> None:
+    """Direct LLM paths must use agent.middleware.llm_rate_limit, not agent.loop."""
+    from types import SimpleNamespace
+
+    configured = LLMRateLimitConfig(
+        rpm_limit=42,
+        concurrent_limit=3,
+        global_concurrent_limit=7,
+        call_timeout_seconds=120,
+    )
+    soothe_config = SimpleNamespace(
+        agent=SimpleNamespace(
+            middleware=SimpleNamespace(llm_rate_limit=configured),
+            loop=SimpleNamespace(llm_rate_limit=LLMRateLimitConfig(rpm_limit=1)),
+        )
+    )
+
+    resolved = llm_rate_limit_config_from(soothe_config)
+
+    assert resolved is configured
+    assert resolved.rpm_limit == 42
+    assert resolved.global_concurrent_limit == 7
+
+
 @pytest.mark.asyncio
 async def test_invoke_policy_returns_on_success() -> None:
     factory = AsyncMock(return_value="ok")

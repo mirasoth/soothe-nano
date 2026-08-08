@@ -5,6 +5,15 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.6] - 2026-08-08
+
+### Fixed
+- `llm_rate_limit_config_from` reads `agent.middleware.llm_rate_limit` instead
+  of the removed `agent.loop` path, so direct LLM calls (planner, classifiers,
+  autopilot reasoners) honor configured timeouts, retries, and concurrency.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.5...v1.1.6
+
 ## [1.1.5] - 2026-08-08
 
 ### Added

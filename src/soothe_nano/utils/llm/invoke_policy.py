@@ -26,11 +26,17 @@ T = TypeVar("T")
 
 
 def llm_rate_limit_config_from(soothe_config: Any | None) -> LLMRateLimitConfig:
-    """Resolve direct-call timeout/retry policy from ``SootheConfig``."""
+    """Resolve direct-call timeout/retry policy from ``SootheConfig``.
+
+    Reads ``agent.middleware.llm_rate_limit`` (nano). Legacy ``agent.loop``
+    rate-limit keys are rejected by host config validation and are not used.
+    """
     if soothe_config is not None:
         agent = getattr(soothe_config, "agent", None)
-        loop = getattr(agent, "loop", None) if agent is not None else None
-        llm_rate_limit = getattr(loop, "llm_rate_limit", None) if loop is not None else None
+        middleware = getattr(agent, "middleware", None) if agent is not None else None
+        llm_rate_limit = (
+            getattr(middleware, "llm_rate_limit", None) if middleware is not None else None
+        )
         if isinstance(llm_rate_limit, LLMRateLimitConfig):
             return llm_rate_limit
     return LLMRateLimitConfig()
