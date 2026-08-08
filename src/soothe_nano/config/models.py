@@ -781,7 +781,11 @@ class LLMRateLimitConfig(BaseModel):
     Args:
         enabled: When false, LLM rate-limit middleware is not installed.
         rpm_limit: Soft cap on LLM HTTP requests per minute.
-        concurrent_limit: Max concurrent in-flight LLM calls per thread.
+        concurrent_limit: Max concurrent in-flight LLM calls per budget key
+            (per asyncio event loop).
+        global_concurrent_limit: Process-wide max concurrent in-flight LLM calls
+            across all budget keys and event loops. ``0`` means no global cap
+            (per-budget ``concurrent_limit`` still applies).
         call_timeout_seconds: Per-LLM-call timeout.
         call_timeout_max_seconds: Upper bound for retry timeout escalation.
         retry_on_timeout: Enable retry with timeout escalation.
@@ -801,6 +805,15 @@ class LLMRateLimitConfig(BaseModel):
     )
     rpm_limit: int = Field(default=60, ge=1, le=10_000)
     concurrent_limit: int = Field(default=8, ge=1, le=500)
+    global_concurrent_limit: int = Field(
+        default=0,
+        ge=0,
+        le=500,
+        description=(
+            "Process-wide max concurrent in-flight LLM HTTP calls "
+            "(0 = no global limit)"
+        ),
+    )
     # Increased timeouts for robust step execution (600s default)
     call_timeout_seconds: int = Field(default=600, ge=30, le=3600)
     call_timeout_max_seconds: int = Field(default=900, ge=60, le=3600)

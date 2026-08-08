@@ -240,6 +240,7 @@ def build_soothe_middleware_stack(
             LLMRateLimitMiddleware(
                 requests_per_minute=llm_rl.rpm_limit,
                 max_concurrent_requests_per_thread=llm_rl.concurrent_limit,
+                max_concurrent_requests_global=llm_rl.global_concurrent_limit,
                 call_timeout_seconds=llm_rl.call_timeout_seconds,
                 call_timeout_max_seconds=llm_rl.call_timeout_max_seconds,
                 retry_on_timeout=llm_rl.retry_on_timeout,
@@ -255,12 +256,14 @@ def build_soothe_middleware_stack(
             )
         )
         logger.info(
-            "[Middleware] LLM rate limiting enabled (thread-local): rpm=%d, concurrent=%d, "
+            "[Middleware] LLM rate limiting enabled: rpm=%d, concurrent=%d, "
+            "global_concurrent=%d, "
             "timeout=%ds timeout_cap=%ds retry_timeout=%s max_timeout_retries=%d multiplier=%.1f "
             "retry_429=%s max_429_retries=%d backoff_base=%.1fs backoff_max=%.1fs "
             "retry_after_header=%s rate_limit_retry_timeout=%ds",
             llm_rl.rpm_limit,
             llm_rl.concurrent_limit,
+            llm_rl.global_concurrent_limit,
             llm_rl.call_timeout_seconds,
             llm_rl.call_timeout_max_seconds,
             llm_rl.retry_on_timeout,
