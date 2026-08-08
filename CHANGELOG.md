@@ -5,12 +5,17 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [1.1.5] - 2026-08-08
 
 ### Added
 - `agent.middleware.llm_rate_limit.global_concurrent_limit` (default `0` =
   no global cap), wired to `soothe-deepagents` process-wide LLM concurrency
   slots; per-budget `concurrent_limit` still applies
+
+### Changed
+- Require `soothe-deepagents>=0.8.5` for loop-safe LLM rate-limit registry
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.4...v1.1.5
 
 ## [1.1.4] - 2026-08-06
 

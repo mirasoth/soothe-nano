@@ -809,10 +809,7 @@ class LLMRateLimitConfig(BaseModel):
         default=0,
         ge=0,
         le=500,
-        description=(
-            "Process-wide max concurrent in-flight LLM HTTP calls "
-            "(0 = no global limit)"
-        ),
+        description=("Process-wide max concurrent in-flight LLM HTTP calls (0 = no global limit)"),
     )
     # Increased timeouts for robust step execution (600s default)
     call_timeout_seconds: int = Field(default=600, ge=30, le=3600)
