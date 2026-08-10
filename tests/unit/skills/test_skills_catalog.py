@@ -108,6 +108,67 @@ def test_try_expand_slash_skill_user_line(tmp_path: Path) -> None:
     assert try_expand_slash_skill_user_line("/skill:missing-skill x", cfg) is None
 
 
+def _write_skill(skill_dir: Path, name: str, description: str = "desc") -> Path:
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: {description}\n---\n# {name}\n",
+        encoding="utf-8",
+    )
+    return skill_dir
+
+
+def test_wire_entries_full_scan_labels_agents_source(tmp_path: Path) -> None:
+    """Fallback (no-index) scan labels .agents/skills as 'agents'."""
+    ws = tmp_path / "project"
+    ws.mkdir()
+    agents_skill = _write_skill(ws / ".agents" / "skills" / "claude-skill", "claude-skill")
+
+    cfg = SootheConfig()
+    cfg.skills = [str(agents_skill)]
+    rows = wire_entries_for_agent_config(cfg, workspace=str(ws))
+    row = next(r for r in rows if r["name"] == "claude-skill")
+    assert row["source"] == "agents"
+
+
+def test_wire_entries_full_scan_labels_project_source(tmp_path: Path) -> None:
+    """Fallback (no-index) scan labels .soothe/skills as 'project'."""
+    ws = tmp_path / "project"
+    ws.mkdir()
+    _write_skill(ws / ".soothe" / "skills" / "local-skill", "local-skill")
+
+    cfg = SootheConfig()
+    rows = wire_entries_for_agent_config(cfg, workspace=str(ws))
+    row = next(r for r in rows if r["name"] == "local-skill")
+    assert row["source"] == "project"
+
+
+def test_wire_entries_full_scan_agents_vs_project_precedence(tmp_path: Path) -> None:
+    """In fallback scan, .soothe/skills (project) overrides .agents/skills (agents)."""
+    ws = tmp_path / "project"
+    ws.mkdir()
+    _write_skill(ws / ".agents" / "skills" / "shared", "shared", "from-agents")
+    _write_skill(ws / ".soothe" / "skills" / "shared", "shared", "from-project")
+
+    cfg = SootheConfig()
+    rows = wire_entries_for_agent_config(cfg, workspace=str(ws))
+    row = next(r for r in rows if r["name"] == "shared")
+    assert row["description"] == "from-project"
+    assert row["source"] == "project"
+
+
+def test_resolve_skill_directory_labels_agents_source(tmp_path: Path) -> None:
+    """resolve_skill_directory labels .agents/skills as 'agents'."""
+    ws = tmp_path / "project"
+    ws.mkdir()
+    agents_skill = _write_skill(ws / ".agents" / "skills" / "resolver", "resolver")
+
+    cfg = SootheConfig()
+    cfg.skills = [str(agents_skill)]
+    meta = resolve_skill_directory(cfg, "resolver", workspace=str(ws))
+    assert meta is not None
+    assert meta["source"] == "agents"
+
+
 class TestFrontmatterPathsAndWhenToUse:
     def test_paths_block_list(self) -> None:
         content = "---\nname: py-skill\ndescription: d\npaths:\n  - '*.py'\n  - '*.pyx'\n---\nbody"

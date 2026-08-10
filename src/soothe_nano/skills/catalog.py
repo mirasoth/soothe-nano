@@ -9,12 +9,52 @@ from typing import TYPE_CHECKING, Any
 
 from soothe_nano.config import SootheConfig
 from soothe_nano.skills.builtins import is_builtin_skill_directory
-from soothe_nano.skills.workspace_sync import skill_directories_for_resolution
+from soothe_nano.skills.workspace_sync import (
+    skill_directories_for_resolution,
+    workspace_skills_mirror_root,
+)
 
 if TYPE_CHECKING:
     from soothe_nano.skills.index import SkillIndex
 
 logger = logging.getLogger(__name__)
+
+
+def _source_label_for_path(skill_dir: str | Path, workspace: str | Path) -> str:
+    """Return the source label for a skill directory relative to ``workspace``.
+
+    Labels mirror the index path so the fallback (no-index) scan is consistent:
+
+    - ``builtin``  — package-bundled or host-registered skill root
+    - ``agents``   — ``<workspace>/.agents/skills/<skill>``
+    - ``project``  — ``<workspace>/.soothe/skills/<skill>``
+    - ``user``     — any other user/config-provided directory
+
+    Args:
+        skill_dir: Resolved skill directory path.
+        workspace: Resolved workspace root.
+
+    Returns:
+        One of ``builtin``, ``agents``, ``project``, ``user``.
+    """
+    resolved = Path(skill_dir).expanduser().resolve()
+    if is_builtin_skill_directory(resolved):
+        return "builtin"
+    try:
+        ws = Path(workspace).expanduser().resolve()
+    except (OSError, ValueError):
+        return "user"
+    agents_root = ws / ".agents" / "skills"
+    project_root = workspace_skills_mirror_root(ws)
+    try:
+        if resolved == agents_root or resolved.is_relative_to(agents_root):
+            return "agents"
+        if resolved == project_root or resolved.is_relative_to(project_root):
+            return "project"
+    except (ValueError, OSError):
+        pass
+    return "user"
+
 
 # ---------------------------------------------------------------------------
 # Skill directory parsing (deepagents public skill APIs)
@@ -166,7 +206,6 @@ def _wire_entries_from_index(
     # Workspace-local skills (filesystem scan, small set)
     ws = workspace or str(Path.cwd().resolve())
     ws_path = Path(ws)
-    from soothe_nano.skills.workspace_sync import workspace_skills_mirror_root
 
     # Scan .agents/skills (Claude-style) and .soothe/skills (last-wins)
     project_skill_roots = [
@@ -219,10 +258,7 @@ def _wire_entries_full_scan(
         if meta is None:
             continue
 
-        if is_builtin_skill_directory(dir_path):
-            source = "builtin"
-        else:
-            source = "user"
+        source = _source_label_for_path(dir_path, ws)
 
         entry: dict[str, Any] = {
             "name": meta["name"],
@@ -301,11 +337,7 @@ def resolve_skill_directory(
         if meta is None:
             continue
         if meta["name"] == skill_name:
-            # Determine source label
-            if is_builtin_skill_directory(dir_path):
-                meta["source"] = "builtin"
-            else:
-                meta["source"] = "user"
+            meta["source"] = _source_label_for_path(dir_path, ws)
             result = meta
 
     return result
