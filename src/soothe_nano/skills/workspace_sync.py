@@ -21,9 +21,15 @@ def skill_directories_for_resolution(
 ) -> list[str]:
     """Skill directory search order; workspace mirror paths are last (win on name clash)."""
     ws = str(Path(workspace).expanduser().resolve())
+    ws_path = Path(ws)
     dirs: list[str] = list(get_built_in_skills_paths(ws))
     if config.skills:
         dirs.extend(config.skills)
+    # Add .agents/skills (Claude-style) before .soothe/skills
+    agents_skills = ws_path / ".agents" / "skills"
+    if agents_skills.is_dir():
+        for skill_md in agents_skills.glob("*/SKILL.md"):
+            dirs.append(str(skill_md.parent.resolve()))
     mirror = workspace_skills_mirror_root(ws)
     if mirror.is_dir():
         for skill_md in mirror.glob("*/SKILL.md"):

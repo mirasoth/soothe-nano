@@ -165,11 +165,19 @@ def _wire_entries_from_index(
 
     # Workspace-local skills (filesystem scan, small set)
     ws = workspace or str(Path.cwd().resolve())
+    ws_path = Path(ws)
     from soothe_nano.skills.workspace_sync import workspace_skills_mirror_root
 
-    mirror = workspace_skills_mirror_root(ws)
-    if mirror.is_dir():
-        for skill_md in mirror.glob("*/SKILL.md"):
+    # Scan .agents/skills (Claude-style) and .soothe/skills (last-wins)
+    project_skill_roots = [
+        (ws_path / ".agents" / "skills", "agents"),
+        (workspace_skills_mirror_root(ws), "project"),
+    ]
+
+    for skill_root, source_label in project_skill_roots:
+        if not skill_root.is_dir():
+            continue
+        for skill_md in skill_root.glob("*/SKILL.md"):
             meta = _parse_skill_directory(str(skill_md.parent.resolve()))
             if meta is None:
                 continue
@@ -181,7 +189,7 @@ def _wire_entries_from_index(
             entry = {
                 "name": name,
                 "description": meta["description"],
-                "source": "project",
+                "source": source_label,
             }
             if meta.get("version"):
                 entry["version"] = meta["version"]

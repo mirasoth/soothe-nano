@@ -118,6 +118,7 @@ def get_built_in_skills_paths(workspace: str | None = None) -> list[str]:
 
     if workspace:
         ws_path = Path(workspace).expanduser().resolve()
+        candidate_roots.append(ws_path / ".agents" / "skills")
         candidate_roots.append(ws_path / ".soothe" / "skills")
 
     by_name: dict[str, str] = {}
