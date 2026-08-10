@@ -214,35 +214,27 @@ def discover_all_plugins(
     """
     discovered: dict[str, tuple[str, dict, PluginDiscoverySource]] = {}
 
-    # Built-in subagent plugins (new module structure)
-    for subagent_name, module_suffix in (
-        ("planner", "plan"),
-        ("deep_research", "deep_research"),
-        ("academic_research", "academic_research"),
-        ("browser_use", "browser_use"),
-    ):
-        module_path = f"soothe_nano.subagents.{module_suffix}"
-        discovered[subagent_name] = (module_path, {}, "built-in")
-        logger.debug("Discovered built-in subagent plugin: %s", subagent_name)
-
-    # Built-in tool plugins (new module structure).
-    # Entries with ClassName can be loaded by PluginLoader; bare module paths
-    # remain for stubs that are not yet implemented.
-    _builtin_tool_plugins: list[tuple[str, str]] = [
-        ("execution", "soothe_nano.toolkits.execution"),
-        ("file_ops", "soothe_nano.toolkits.file_ops"),
-        ("data", "soothe_nano.toolkits.data"),
-        ("datetime", "soothe_nano.toolkits.datetime"),
-        ("goals", "soothe_nano.toolkits.goals"),
-        ("wizsearch", "soothe_nano.toolkits.wizsearch"),
-        ("http_requests", "soothe_nano.toolkits.http_requests"),
+    # Built-in plugins must use ``module:ClassName`` — PluginLoader rejects bare paths.
+    # Do not list removed/never-shipped toolkits (goals, audio, video).
+    _builtin_plugins: list[tuple[str, str]] = [
+        ("planner", "soothe_nano.subagents.plan:PlanPlugin"),
+        ("deep_research", "soothe_nano.subagents.deep_research:DeepResearchPlugin"),
+        (
+            "academic_research",
+            "soothe_nano.subagents.academic_research:AcademicResearchPlugin",
+        ),
+        ("browser_use", "soothe_nano.subagents.browser_use:BrowserUsePlugin"),
+        ("execution", "soothe_nano.toolkits.execution:ExecutionPlugin"),
+        ("file_ops", "soothe_nano.toolkits.file_ops:FileOpsPlugin"),
+        ("data", "soothe_nano.toolkits.data:DataPlugin"),
+        ("datetime", "soothe_nano.toolkits.datetime:DatetimePlugin"),
+        ("wizsearch", "soothe_nano.toolkits.wizsearch:WizsearchPlugin"),
+        ("http_requests", "soothe_nano.toolkits.http_requests:HttpRequestsPlugin"),
         ("image", "soothe_nano.toolkits.image:ImagePlugin"),
-        ("audio", "soothe_nano.toolkits.audio"),
-        ("video", "soothe_nano.toolkits.video"),
     ]
-    for tool_name, module_path in _builtin_tool_plugins:
-        discovered[tool_name] = (module_path, {}, "built-in")
-        logger.debug("Discovered built-in tool plugin: %s", tool_name)
+    for plugin_name, module_path in _builtin_plugins:
+        discovered[plugin_name] = (module_path, {}, "built-in")
+        logger.debug("Discovered built-in plugin: %s", plugin_name)
 
     # Entry points (no config available)
     for module_path in discover_entry_points():

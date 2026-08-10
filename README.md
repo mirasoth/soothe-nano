@@ -39,7 +39,7 @@ create_nano_agent(config)
 
 | Area | What nano provides |
 |---|---|
-| Tools | Builtin groups: shell, file ops, HTTP, search, data, … |
+| Tools | Builtin groups: shell, file ops, HTTP, search, data, image, … |
 | Subagents | Ready: plan, deep/academic research, browser |
 | Skills / tools in context | Progressive loading — activate what the turn needs |
 | Workspace | Scoped workspace + security defaults |

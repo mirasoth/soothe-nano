@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import platform as platform_module
 from pathlib import Path
@@ -141,7 +140,6 @@ def build_soothe_thread_section(thread_context: dict[str, Any]) -> str:
     Optimized for prompt caching - removed version attribute.
     """
     thread_id = thread_context.get("thread_id", "unknown")
-    goals = thread_context.get("active_goals", [])
     turns = thread_context.get("conversation_turns", 0)
     plan = thread_context.get("current_plan")
 
@@ -149,9 +147,6 @@ def build_soothe_thread_section(thread_context: dict[str, Any]) -> str:
         f"<thread_id>{_xml_text(thread_id)}</thread_id>",
         f"<conversation_turns>{int(turns)}</conversation_turns>",
     ]
-    if goals:
-        goals_preview = goals[:5]
-        parts.append(f"<active_goals>{_xml_text(json.dumps(goals_preview))}</active_goals>")
     if plan:
         parts.append(f"<current_plan>{_xml_text(preview_first(str(plan), 100))}</current_plan>")
     inner = "\n".join(parts)

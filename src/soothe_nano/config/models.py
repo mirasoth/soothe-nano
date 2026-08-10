@@ -94,7 +94,7 @@ ModelRole = Literal["default", "fast", "think", "image", "ocr", "embedding"]
 
 - ``default``: Main orchestrator reasoning (CoreAgent, failure analysis, system context).
 - ``fast``: Cheap/fast operations (intent classification, routing, scenario classification,
-  deep_research subagents, memory extraction, document/audio tooling).
+  deep_research subagents, memory extraction, document tooling).
 - ``think``: Stronger reasoning (planning, consensus validation, backoff reasoning).
 - ``image``: Vision-capable model (image analysis, vision preflight).
 - ``ocr``: Dedicated OCR / document text extraction model.
@@ -652,7 +652,6 @@ class MemUConfig(BaseModel):
         {"name": "preferences", "description": "User preferences and interests"},
         {"name": "knowledge", "description": "Facts and learned information"},
         {"name": "experiences", "description": "Past experiences and events"},
-        {"name": "goals", "description": "Goals and objectives"},
     ]
 
 

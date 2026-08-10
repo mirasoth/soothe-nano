@@ -35,8 +35,7 @@ def create_plugin_context(
         soothe_config: Soothe configuration instance.
         emit_event_callback: Optional callback for event emission.
             If None, events are logged but not emitted.
-        **extra_context: Additional context fields to attach.
-            Used for special cases like GoalEngine injection.
+        **extra_context: Additional context fields to attach to the context.
 
     Returns:
         Configured PluginContext instance.
@@ -44,10 +43,9 @@ def create_plugin_context(
     Example:
         ```python
         context = create_plugin_context(
-            plugin_name="goals",
-            config={"max_goals": 10},
+            plugin_name="datetime",
+            config={},
             soothe_config=config,
-            goal_engine=goal_engine,  # Special injection
         )
         ```
     """
