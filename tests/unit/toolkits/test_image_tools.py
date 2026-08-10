@@ -12,10 +12,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from soothe_nano.toolkits.image import (
-    AnalyzeImageTool,
-    ImageToolkit,
     _DEFAULT_VISION_INSTRUCTION,
     _EMPTY_REPLY_FALLBACK,
+    AnalyzeImageTool,
+    ImageToolkit,
     mime_for_path,
     normalize_mime_type,
 )
