@@ -225,20 +225,22 @@ def discover_all_plugins(
         discovered[subagent_name] = (module_path, {}, "built-in")
         logger.debug("Discovered built-in subagent plugin: %s", subagent_name)
 
-    # Built-in tool plugins (new module structure)
-    for tool_name in [
-        "execution",
-        "file_ops",
-        "data",
-        "datetime",
-        "goals",
-        "wizsearch",
-        "http_requests",
-        "image",
-        "audio",
-        "video",
-    ]:
-        module_path = f"soothe_nano.toolkits.{tool_name}"
+    # Built-in tool plugins (new module structure).
+    # Entries with ClassName can be loaded by PluginLoader; bare module paths
+    # remain for stubs that are not yet implemented.
+    _builtin_tool_plugins: list[tuple[str, str]] = [
+        ("execution", "soothe_nano.toolkits.execution"),
+        ("file_ops", "soothe_nano.toolkits.file_ops"),
+        ("data", "soothe_nano.toolkits.data"),
+        ("datetime", "soothe_nano.toolkits.datetime"),
+        ("goals", "soothe_nano.toolkits.goals"),
+        ("wizsearch", "soothe_nano.toolkits.wizsearch"),
+        ("http_requests", "soothe_nano.toolkits.http_requests"),
+        ("image", "soothe_nano.toolkits.image:ImagePlugin"),
+        ("audio", "soothe_nano.toolkits.audio"),
+        ("video", "soothe_nano.toolkits.video"),
+    ]
+    for tool_name, module_path in _builtin_tool_plugins:
         discovered[tool_name] = (module_path, {}, "built-in")
         logger.debug("Discovered built-in tool plugin: %s", tool_name)
 

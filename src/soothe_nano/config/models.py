@@ -449,6 +449,7 @@ class ToolsConfig(BaseModel):
         file_ops: File operation tools config.
         datetime: DateTime tool config.
         data: Data inspection tools config.
+        image: Image understanding tools config (``analyze_image``).
         wizsearch: Tarzi-backed multi-engine search/crawl tools config
             (tool names ``wizsearch_*`` kept for wire/config compatibility).
         http_requests: LangChain Requests toolkit (HTTP GET/POST/PATCH/PUT/DELETE).
@@ -459,6 +460,7 @@ class ToolsConfig(BaseModel):
     file_ops: ToolConfig = Field(default_factory=ToolConfig)
     datetime: ToolConfig = Field(default_factory=ToolConfig)
     data: ToolConfig = Field(default_factory=ToolConfig)
+    image: ToolConfig = Field(default_factory=ToolConfig)
     wizsearch: WebSearchConfig = Field(default_factory=WebSearchConfig)
     http_requests: HttpRequestsToolsConfig = Field(default_factory=HttpRequestsToolsConfig)
     deepxiv: DeepxivToolsConfig = Field(default_factory=lambda: DeepxivToolsConfig(enabled=False))

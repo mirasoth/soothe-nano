@@ -222,6 +222,7 @@ def resolve_tools(
         "file_ops",
         "datetime",
         "data",
+        "image",
         "wizsearch",
         "http_requests",
         "deepxiv",
@@ -458,6 +459,22 @@ def _resolve_single_tool_group_uncached(
 
         toolkit = DataToolkit(config=config)
         return toolkit.get_tools()
+
+    if name == "image":
+        from soothe_nano.toolkits.image import ImageToolkit
+
+        toolkit = ImageToolkit(config=config)
+        return toolkit.get_tools()
+
+    if name == "analyze_image":
+        from soothe_nano.toolkits.image import ImageToolkit
+
+        toolkit = ImageToolkit(config=config)
+        tool_map = {tool.name: tool for tool in toolkit.get_tools()}
+        if name in tool_map:
+            return [tool_map[name]]
+        logger.warning("Tool '%s' not found in ImageToolkit", name)
+        return []
 
     if name == "deepxiv":
         from soothe_nano.toolkits.deepxiv import DeepxivToolkit, resolve_deepxiv_token
