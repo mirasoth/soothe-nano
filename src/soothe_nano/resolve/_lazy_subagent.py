@@ -20,6 +20,12 @@ _BUILTIN_DESCRIPTIONS: dict[str, str] = {
         "without doing every recon and rewrite itself."
     ),
     "deep_research": ("Public-domain research subagent for web, academic, and URL sources."),
+    "computer_use": (
+        "Desktop automation specialist for GUI tasks. Can take screenshots, "
+        "click at screen coordinates, type text, press keyboard keys and "
+        "hotkeys, and scroll. Use for desktop application control, visual "
+        "UI interaction, and screen-based automation."
+    ),
 }
 
 

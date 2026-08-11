@@ -94,6 +94,7 @@ def _get_subagent_factories() -> dict[str, Callable[..., SubAgent | CompiledSubA
     """
     from soothe_nano.subagents.academic_research import create_academic_research_subagent
     from soothe_nano.subagents.browser_use import create_browser_use_subagent
+    from soothe_nano.subagents.computer_use import create_computer_use_subagent
     from soothe_nano.subagents.deep_research import create_deep_research_subagent
     from soothe_nano.subagents.plan import create_plan_subagent
 
@@ -102,6 +103,7 @@ def _get_subagent_factories() -> dict[str, Callable[..., SubAgent | CompiledSubA
         "deep_research": create_deep_research_subagent,
         "academic_research": create_academic_research_subagent,
         "browser_use": create_browser_use_subagent,
+        "computer_use": create_computer_use_subagent,
     }
 
 
@@ -578,7 +580,7 @@ def resolve_subagents(
             model_override = _resolve_subagent_chat_model(config, sub_cfg, default_role="fast")
         elif name == "planner":
             model_override = _resolve_subagent_chat_model(config, sub_cfg, default_role="think")
-        elif name == "browser_use":
+        elif name in ("browser_use", "computer_use"):
             model_override = None
         else:
             model_override = sub_cfg.model or default_model or config.resolve_model("default")
@@ -611,13 +613,22 @@ def resolve_subagents(
             extra_kwargs.clear()
             extra_kwargs["config"] = config
             extra_kwargs["context"] = {"work_dir": resolved_cwd}
-        elif name == "browser_use":
-            from soothe_nano.subagents.browser_use.config_model import BrowserUseSubagentConfig
+        elif name in ("browser_use", "computer_use"):
+            if name == "browser_use":
+                from soothe_nano.subagents.browser_use.config_model import BrowserUseSubagentConfig
+
+                cfg_cls = BrowserUseSubagentConfig
+            else:
+                from soothe_nano.subagents.computer_use.config_model import (
+                    ComputerUseSubagentConfig,
+                )
+
+                cfg_cls = ComputerUseSubagentConfig
 
             extra_kwargs.clear()
             cfg_dict = dict(sub_cfg.config)
             if cfg_dict:
-                extra_kwargs["config"] = BrowserUseSubagentConfig(**cfg_dict)
+                extra_kwargs["config"] = cfg_cls(**cfg_dict)
             extra_kwargs["soothe_config"] = config
             pending.append((name, factory, extra_kwargs))
             continue

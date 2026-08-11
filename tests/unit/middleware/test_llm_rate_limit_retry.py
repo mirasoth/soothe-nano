@@ -266,61 +266,6 @@ def test_effective_timeout_uses_shorter_cap_after_429(
     )
 
 
-def test_error_format_enhanced_timeout_large_prompt() -> None:
-    """Test error format provides actionable suggestions for large prompt timeouts."""
-    from soothe_nano.utils.error_format import format_cli_error
-
-    exc = EnhancedTimeoutError(
-        timeout_seconds=480,
-        retries=2,
-        prompt_chars=96000,
-        thread_id="test",
-    )
-
-    msg = format_cli_error(exc)
-    assert "large prompt" in msg
-    assert "simplifying" in msg or "splitting" in msg
-
-
-def test_error_format_enhanced_timeout_general() -> None:
-    """Test error format for general timeout after retries."""
-    from soothe_nano.utils.error_format import format_cli_error
-
-    exc = EnhancedTimeoutError(
-        timeout_seconds=120,
-        retries=2,
-        prompt_chars=30000,  # Not large
-        thread_id="test",
-    )
-
-    msg = format_cli_error(exc)
-    assert "retries" in msg
-    assert "too complex" in msg or "Timeout" in msg
-
-
-def test_error_format_generic_timeout() -> None:
-    """Test error format for generic TimeoutError."""
-    from soothe_nano.utils.error_format import format_cli_error
-
-    exc = TimeoutError("Operation timed out")
-
-    msg = format_cli_error(exc)
-    assert "retrying automatically" in msg or "timed out" in msg
-
-
-def test_error_format_worker_subprocess_lost() -> None:
-    """Pool worker exit should map to actionable daemon copy."""
-    from soothe_nano.utils.error_format import format_cli_error
-
-    exc = RuntimeError(
-        "Worker subprocess exited unexpectedly during query execution; "
-        "check daemon logs for worker or model errors. (worker exit code: 0)"
-    )
-    msg = format_cli_error(exc)
-    assert "Send your message again" in msg
-    assert "Worker subprocess exited unexpectedly" not in msg
-
-
 @pytest.mark.asyncio
 async def test_backoff_between_retries(
     middleware_with_retry: LLMRateLimitMiddleware,

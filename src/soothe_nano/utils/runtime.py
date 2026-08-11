@@ -216,3 +216,45 @@ def cleanup_browser_temp_files(session_id: str | None = None) -> None:
                     )
                     if is_temp_dir:
                         shutil.rmtree(subdir, ignore_errors=True)
+
+
+# ─── Computer-use runtime directories ────────────────────────────────────
+
+
+def get_computer_runtime_dir() -> Path:
+    """Get computer_use runtime directory under virtual home or SOOTHE_HOME."""
+    return get_subagent_runtime_dir("computer")
+
+
+def get_computer_screenshots_dir() -> Path:
+    """Get computer_use screenshots directory."""
+    screenshots_dir = get_computer_runtime_dir() / "screenshots"
+    return _ensure_dir_with_backend(screenshots_dir)
+
+
+def cleanup_computer_temp_files(session_id: str | None = None) -> None:
+    """Clean up temporary computer_use files from completed sessions.
+
+    Args:
+        session_id: Optional specific session ID to clean up.
+            If None, cleans up old screenshot files.
+    """
+    screenshots_dir = get_computer_screenshots_dir()
+    if not screenshots_dir.exists():
+        return
+
+    if session_id:
+        for f in screenshots_dir.iterdir():
+            if session_id in f.name:
+                if f.is_file():
+                    f.unlink(missing_ok=True)
+                elif f.is_dir():
+                    shutil.rmtree(f, ignore_errors=True)
+    else:
+        # Clean up old screenshot files (keep directory structure)
+        for f in screenshots_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in {".png", ".jpg", ".jpeg"}:
+                try:
+                    f.unlink(missing_ok=True)
+                except OSError:
+                    pass

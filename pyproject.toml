@@ -54,6 +54,7 @@ dependencies = [
     "tarzi>=0.2.3,<0.3.0",
     "deepxiv-sdk>=0.2.5",
     "browser-use>=0.11.0,<0.13.0",
+    "pyautogui>=0.9.54",
     "psycopg[binary,pool]>=3.2.0,<4.0.0",
     "pandas>=2.0.0",
     "openpyxl>=3.1.0",

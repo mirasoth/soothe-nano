@@ -51,7 +51,6 @@ def _has_valid_api_key() -> bool:
         os.getenv("OPENAI_API_KEY")
         or os.getenv("ANTHROPIC_API_KEY")
         or os.getenv("DASHSCOPE_API_KEY")
-        or (os.getenv("DASHSCOPE_CP_API_KEY") and os.getenv("DASHSCOPE_CP_BASE_URL"))
     )
 
 
@@ -99,7 +98,7 @@ def requires_llm_api(integration_config: SootheConfig):
     if not _has_valid_api_key():
         pytest.skip(
             "Test requires LLM API key (set OPENAI_API_KEY, ANTHROPIC_API_KEY, "
-            "DASHSCOPE_API_KEY, or DASHSCOPE_CP_API_KEY + DASHSCOPE_CP_BASE_URL)"
+            "or DASHSCOPE_API_KEY)"
         )
     # Verify the resolved default model can actually be created with the
     # current environment; a provider-key mismatch would otherwise surface

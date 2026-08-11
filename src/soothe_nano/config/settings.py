@@ -456,6 +456,7 @@ class SootheConfig(BaseSettings):
             "deep_research": SubagentConfig(),
             "academic_research": SubagentConfig(),
             "browser_use": SubagentConfig(enabled=True, model_role="default"),
+            "computer_use": SubagentConfig(enabled=True, model_role="default"),
         }
 
         # Import here to avoid circular dependency

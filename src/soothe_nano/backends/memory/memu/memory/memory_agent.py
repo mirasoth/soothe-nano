@@ -103,7 +103,6 @@ class MemoryAgent:
 
     Uses independent action modules for each memory operation:
     - add_activity_memory: Add new activity memory content with strict formatting
-    - get_available_categories: Get available categories (excluding activity)
     - link_related_memories: Find and link related memories using embedding search
     - generate_memory_suggestions: Generate suggestions for memory categories
     - update_memory_with_suggestions: Update memory categories based on suggestions
@@ -515,10 +514,6 @@ respond with "PROCESSING_COMPLETE"."""
     # ================================
     # Direct Method Access (Compatibility)
     # ================================
-
-    def get_available_categories(self) -> dict[str, Any]:
-        """Get available memory categories."""
-        return self.actions["get_available_categories"].execute()
 
     def link_related_memories(
         self,
