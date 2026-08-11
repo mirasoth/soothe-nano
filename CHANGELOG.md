@@ -5,6 +5,33 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.12] - 2026-08-11
+
+### Fixed
+- `computer_use` subagent: add missing `CallbackManagerForToolRun` import to
+  `tools.py` (fixes F821 undefined name at 4 sites) and apply ruff format to
+  subagent files and tests (fixes format-check on 6 files). CI verified:
+  ruff check passed, ruff format --check clean (444 files), pytest unit
+  1596 passed / 42 skipped / 0 failed.
+- LLM stack: strip inline thinking tokens (`<think>`, `<thinking>`,
+  `<reasoning>`) from DeepSeek-R1-style local model output. Adds
+  `thinking_filter.py` with `strip_thinking` (stateless, complete blocks) and
+  `ThinkingStreamFilter` (stateful, buffers partial tag fragments split across
+  streaming chunks). Stripped content is logged at DEBUG before removal.
+- Wire the thinking filter through the LLM stack:
+  - `SootheConfig.hide_thinking_tokens` (default `True`; env override
+    `SOOTHE_HIDE_THINKING_TOKENS`).
+  - `LLMFactory._apply_wrapper_chain` passes the flag to both
+    `OpenAICompatModelWrapper` and `SootheTokenUsageChatModel`.
+  - `OpenAICompatModelWrapper` strips blocks in `_generate/_agenerate` and
+    filters streaming deltas in `_stream/_astream` with per-stream
+    `ThinkingStreamFilter` instances.
+  - `SootheTokenUsageChatModel` carries the flag for consistent downstream use.
+  - `llm_response_text` strips thinking from assembled responses.
+  - Export `strip_thinking`/`ThinkingStreamFilter` from the llm package.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.11...v1.1.12
+
 ## [1.1.11] - 2026-08-10
 
 ### Fixed
