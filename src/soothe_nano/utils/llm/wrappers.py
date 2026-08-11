@@ -24,6 +24,7 @@ from soothe_nano.utils.llm.schema_wire import (
     build_json_schema_response_format,
     validate_response_schema,
 )
+from soothe_nano.utils.llm.thinking_filter import ThinkingStreamFilter, strip_thinking
 from soothe_nano.utils.text_preview import preview_first
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,95 @@ def _strip_json_text(raw: str) -> str:
         # Leading prose before the first object — slice it off.
         text = text[start:]
     return text
+
+
+# --- thinking-token chunk/result helpers -------------------------------------
+#
+# ``OpenAICompatModelWrapper`` sits between a local OpenAI-compatible provider
+# and the rest of the system, so it is the natural place to strip inline
+# ``<think>...`` blocks emitted by reasoning models (DeepSeek-R1, QwQ, GLM).
+# The stateless :func:`strip_thinking` is used for fully-assembled non-streaming
+# responses (complete blocks only); the stateful
+# :class:`ThinkingStreamFilter` buffers partial ``<think`` / ``</think``
+# fragments split across streaming chunk boundaries so no tag fragments leak.
+
+
+def _chunk_text(chunk: Any) -> str | None:
+    """Return the text delta carried by a streamed *chunk*, or ``None``.
+
+    LangChain streaming yields :class:`ChatGenerationChunk` objects whose
+    ``.message`` is an :class:`AIMessageChunk` with a string ``content`` (the
+    delta text). Chunks that carry no textual delta (tool-call deltas, empty
+    tail chunks, or the plain strings used by the contract test) return
+    ``None`` so callers pass them through unchanged.
+    """
+    msg = getattr(chunk, "message", None)
+    if msg is None:
+        return None
+    content = getattr(msg, "content", None)
+    if isinstance(content, str):
+        return content
+    return None
+
+
+def _set_chunk_text(chunk: Any, text: str) -> Any:
+    """Replace the textual delta on *chunk* in place and return it.
+
+    Falls back to returning *text* directly when *chunk* does not expose a
+    ``message.content`` slot (e.g. plain strings in the contract test), so the
+    filtered text still reaches the consumer.
+    """
+    msg = getattr(chunk, "message", None)
+    if msg is not None and hasattr(msg, "content"):
+        msg.content = text
+        return chunk
+    return text
+
+
+def _make_text_tail_chunk(text: str) -> Any:
+    """Build a minimal text-only tail chunk flushing leftover filtered text."""
+    try:
+        from langchain_core.messages import AIMessageChunk
+        from langchain_core.outputs import ChatGenerationChunk
+
+        return ChatGenerationChunk(message=AIMessageChunk(content=text))
+    except Exception:
+        # Never let a langchain import failure break the stream's tail.
+        logger.debug("thinking tail-chunk construction failed", exc_info=True)
+        return text
+
+
+def _strip_thinking_from_chat_result(result: Any) -> Any:
+    """Strip complete thinking blocks from every message in a non-streaming result.
+
+    Handles both result shapes LangChain uses:
+
+    - :class:`~langchain_core.outputs.ChatResult` (``generations`` is a flat
+      ``list[ChatGeneration]``), returned by ``_generate``.
+    - :class:`~langchain_core.outputs.LLMResult` (``generations`` is a nested
+      ``list[list[ChatGeneration]]``), surfaced via callbacks.
+
+    Each generation's ``message.content`` is stripped in place when it is text.
+    The "record before strip" rule is honoured by :func:`strip_thinking` itself
+    (it logs each block at ``DEBUG`` before removal).
+    """
+    generations = getattr(result, "generations", None)
+    if not generations:
+        return result
+    for entry in generations:
+        # LLMResult rows are lists of ChatGeneration; ChatResult entries are
+        # a single ChatGeneration. Normalize so both shapes share one path.
+        gens = entry if isinstance(entry, list) else [entry]
+        for gen in gens:
+            msg = getattr(gen, "message", None)
+            if msg is None:
+                continue
+            content = getattr(msg, "content", None)
+            if isinstance(content, str) and content:
+                filtered = strip_thinking(content)
+                if filtered != content:
+                    msg.content = filtered
+    return result
 
 
 def _build_json_schema_model_wrapper(
@@ -315,15 +405,28 @@ class OpenAICompatModelWrapper(BaseChatModel):
     - ``bind_tools``: sanitize object-form ``tool_choice`` to string values.
     """
 
-    def __init__(self, model: BaseChatModel, provider_name: str = "unknown") -> None:
+    def __init__(
+        self,
+        model: BaseChatModel,
+        provider_name: str = "unknown",
+        *,
+        hide_thinking_tokens: bool = True,
+    ) -> None:
         """Initialize the wrapper.
 
         Args:
             model: The original BaseChatModel to wrap.
             provider_name: Provider name for logging purposes.
+            hide_thinking_tokens: When True (default), strip inline
+                ``</think>...<thinking>`` reasoning blocks from this provider's text output
+                so chain-of-thought never surfaces to the agent/UI. Passed
+                through from ``SootheConfig.hide_thinking_tokens`` by the
+                ``LLMFactory``; the actual stripping lives in
+                ``soothe_nano.utils.llm.thinking_filter``.
         """
         self._model = model
         self._provider_name = provider_name
+        self._hide_thinking_tokens = hide_thinking_tokens
 
     def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
         """Structured output with provider-specific method routing.
@@ -419,8 +522,17 @@ class OpenAICompatModelWrapper(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ) -> Any:
-        """Delegate generation to wrapped model."""
-        return self._model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        """Delegate generation to wrapped model.
+
+        When ``hide_thinking_tokens`` is set, complete inline ``<think>``/
+        ``<thinking>``/``<reasoning>`` blocks are stripped from each returned
+        message's text content (reasoning is logged at ``DEBUG`` first via
+        :func:`strip_thinking`).
+        """
+        result = self._model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        if self._hide_thinking_tokens:
+            _strip_thinking_from_chat_result(result)
+        return result
 
     async def _agenerate(
         self,
@@ -429,8 +541,13 @@ class OpenAICompatModelWrapper(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ) -> Any:
-        """Delegate async generation to wrapped model."""
-        return await self._model._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        """Delegate async generation to wrapped model with thinking stripping."""
+        result = await self._model._agenerate(
+            messages, stop=stop, run_manager=run_manager, **kwargs
+        )
+        if self._hide_thinking_tokens:
+            _strip_thinking_from_chat_result(result)
+        return result
 
     def _stream(
         self,
@@ -439,8 +556,35 @@ class OpenAICompatModelWrapper(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ) -> Any:
-        """Delegate streaming to wrapped model."""
-        return self._model._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
+        """Delegate streaming to wrapped model with thinking-token filtering.
+
+        When ``hide_thinking_tokens`` is set, each chunk's text delta is fed
+        through a :class:`ThinkingStreamFilter` so partial ``<think`` /
+        ``</think`` fragments split across chunk boundaries are buffered and
+        never leak; any final leftover text is flushed as a tail chunk.
+        Chunks with no textual delta (tool calls, empty chunks, plain strings)
+        pass through unchanged.
+        """
+        gen = self._model._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
+        if not self._hide_thinking_tokens:
+            yield from gen
+            return
+        filt = ThinkingStreamFilter()
+        for chunk in gen:
+            text = _chunk_text(chunk)
+            if text is None:
+                yield chunk
+                continue
+            safe = filt.feed(text)
+            if safe:
+                yield _set_chunk_text(chunk, safe)
+            else:
+                # Filter swallowed this chunk's text; drop it so the partial
+                # tag fragment it carried does not surface.
+                continue
+        tail = filt.finalize()
+        if tail:
+            yield _make_text_tail_chunk(tail)
 
     async def _astream(
         self,
@@ -449,18 +593,39 @@ class OpenAICompatModelWrapper(BaseChatModel):
         run_manager: Any = None,
         **kwargs: Any,
     ) -> Any:
-        """Delegate async streaming to wrapped model.
+        """Delegate async streaming to wrapped model with thinking filtering.
 
         ``BaseChatModel._astream`` is an async generator (it ``yield``s
         chunks). We must mirror that contract — ``yield`` each chunk from the
         wrapped model rather than ``return``-ing the generator, or langchain's
         ``astream`` will hit ``async for chunk in <coroutine>`` and fail with
         ``'async for' requires an object with __aiter__``.
+
+        When ``hide_thinking_tokens`` is set, each chunk's text delta is fed
+        through a :class:`ThinkingStreamFilter` (one per stream) so partial
+        ``<think`` / ``</think`` fragments split across chunk boundaries are
+        buffered and never leak; leftover text is flushed as a tail chunk at
+        end-of-stream. Chunks with no textual delta pass through unchanged.
         """
-        async for chunk in self._model._astream(
-            messages, stop=stop, run_manager=run_manager, **kwargs
-        ):
-            yield chunk
+        agen = self._model._astream(messages, stop=stop, run_manager=run_manager, **kwargs)
+        if not self._hide_thinking_tokens:
+            async for chunk in agen:
+                yield chunk
+            return
+        filt = ThinkingStreamFilter()
+        async for chunk in agen:
+            text = _chunk_text(chunk)
+            if text is None:
+                yield chunk
+                continue
+            safe = filt.feed(text)
+            if safe:
+                yield _set_chunk_text(chunk, safe)
+            else:
+                continue
+        tail = filt.finalize()
+        if tail:
+            yield _make_text_tail_chunk(tail)
 
     @property
     def _llm_type(self) -> str:

@@ -14,6 +14,7 @@ Architecture:
 - `wrappers.py`: OpenAICompatModelWrapper, JsonSchemaModelWrapper
 - `schema_wire.py`: JSON Schema wire helpers
 - `observability.py`: Token/streaming observability
+- `thinking_filter.py`: Strip reasoning/thinking blocks from model output
 
 Usage:
     from soothe_nano.utils.llm import LLMFactory, invoke_structured_chat
@@ -49,6 +50,10 @@ from soothe_nano.utils.llm.structured import (
     post_validate_structured_dict,
     wrap_json_keyword_safe,
 )
+from soothe_nano.utils.llm.thinking_filter import (
+    ThinkingStreamFilter,
+    strip_thinking,
+)
 from soothe_nano.utils.llm.types import ModelRole, ProviderType
 from soothe_nano.utils.llm.wrappers import (
     JsonSchemaModelWrapper,
@@ -83,4 +88,7 @@ __all__ = [
     "build_json_schema_response_format",
     "resolve_schema_name",
     "validate_response_schema",
+    # Thinking filter
+    "ThinkingStreamFilter",
+    "strip_thinking",
 ]

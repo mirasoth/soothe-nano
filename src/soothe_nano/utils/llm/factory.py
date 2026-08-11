@@ -216,6 +216,10 @@ class LLMFactory:
         - Custom OpenAI-compatible endpoints: OpenAICompatModelWrapper → SootheTokenUsageChatModel
         - All others: SootheTokenUsageChatModel only
 
+        Both wrappers receive ``hide_thinking_tokens`` from
+        ``SootheConfig`` so inline reasoning blocks are stripped (or preserved)
+        consistently with the user's setting.
+
         Args:
             model: Raw model from init_chat_model.
             provider_type: Detected provider type from registry.
@@ -229,10 +233,17 @@ class LLMFactory:
                 "Provider '%s' uses a custom OpenAI-compatible endpoint, applying compatibility wrapper",
                 provider_name,
             )
-            model = OpenAICompatModelWrapper(model, provider_name)
+            model = OpenAICompatModelWrapper(
+                model,
+                provider_name,
+                hide_thinking_tokens=self._config.hide_thinking_tokens,
+            )
 
         # Always apply token observability for consistent Langfuse integration
-        model = SootheTokenUsageChatModel(model)
+        model = SootheTokenUsageChatModel(
+            model,
+            hide_thinking_tokens=self._config.hide_thinking_tokens,
+        )
 
         return model
 

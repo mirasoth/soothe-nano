@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any
 
+from soothe_nano.utils.llm.thinking_filter import strip_thinking
+
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL | re.IGNORECASE)
 
 
@@ -31,14 +33,15 @@ def llm_response_text(response: Any) -> str:
 
     Thinking models may put JSON in ``additional_kwargs["reasoning_content"]``
     or list-style ``content`` blocks while leaving primary ``content`` empty.
+    ``strip_thinking`` is applied so inline ``</think>...<thinking>`` blocks never surface.
     """
     if hasattr(response, "content") and response.content:
-        return text_from_message_content(response.content)
+        return strip_thinking(text_from_message_content(response.content))
     kwargs = getattr(response, "additional_kwargs", None) or {}
     if isinstance(kwargs, dict):
         reasoning = kwargs.get("reasoning_content")
         if reasoning:
-            return str(reasoning)
+            return strip_thinking(str(reasoning))
     return str(response)
 
 

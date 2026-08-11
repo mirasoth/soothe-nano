@@ -7,7 +7,7 @@
 # Optional: set UV_RUN='uv run --no-sync' after a forced SDK override in CI.
 UV_RUN ?= uv run
 
-.PHONY: sync sync-dev format format-check lint lint-fix \
+.PHONY: sync sync-dev format format-check lint lint-fix autofix \
 	test test-unit test-integration test-coverage \
 	examples example-01 example-02 example-03 example-04 example-05 \
 	build publish publish-test clean help
@@ -23,6 +23,7 @@ help:
 	@echo "  make format-check    - Check code formatting (for CI)"
 	@echo "  make lint            - Lint code with ruff"
 	@echo "  make lint-fix        - Auto-fix linting issues with ruff"
+	@echo "  make autofix         - Format code and auto-fix linting issues"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test            - Run unit + integration tests"
@@ -83,6 +84,10 @@ lint-fix:
 	@echo "Auto-fixing linting issues..."
 	$(UV_RUN) ruff check --fix src/ tests/ examples/
 	@echo "✓ Linting issues fixed"
+
+# Format code then auto-fix linting issues
+autofix: format lint-fix
+	@echo "✓ Auto-fix complete"
 
 # Run all tests
 test: test-unit test-integration

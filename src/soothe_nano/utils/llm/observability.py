@@ -224,8 +224,19 @@ class SootheTokenUsageChatModel(BaseChatModel):
     counts even when providers only populate ``AIMessage.usage_metadata``.
     """
 
-    def __init__(self, model: BaseChatModel) -> None:
+    def __init__(self, model: BaseChatModel, *, hide_thinking_tokens: bool = True) -> None:
+        """Initialize the token-usage wrapper.
+
+        Args:
+            model: The underlying chat model to delegate to.
+            hide_thinking_tokens: When True (default), strip inline reasoning
+                blocks from model output. Passed through from
+                ``SootheConfig.hide_thinking_tokens`` by ``LLMFactory``; the
+                stripping logic lives in
+                ``soothe_nano.utils.llm.thinking_filter``.
+        """
         self._model = model
+        self._hide_thinking_tokens = hide_thinking_tokens
 
     def bind_tools(self, tools: list[Any], **kwargs: Any) -> Any:
         """Delegate so ``type(self).bind_tools is not BaseChatModel.bind_tools`` (structured output)."""
