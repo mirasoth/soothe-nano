@@ -5,6 +5,25 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Muse-Glimmer response adapter (`soothe_nano.utils.llm.muse_glimmer`): the
+  `Muse-Glimmer-30B-4bit` model served by the oMLX OpenAI-compatible endpoint
+  emits an internal self-talk protocol (`to=self<|message|>…<|eom|>` +
+  `<|start|>assistant to=user<|message|>`) as raw `content`, and embeds tool
+  calls as XML (``<atem:function_calls>``/``<atem:invoke>``, ``<function
+  name="…"><arg>``, self-named ``<read_file file_path="…"/>``) never as
+  structured `tool_calls`. The new adapter strips self-talk, extracts the
+  `to=user` reply into `content`, and parses all five tool-call dialects into
+  structured `tool_calls` (+ `tool_call_chunks` for streaming). Streaming
+  turns are buffered and emitted as one transformed chunk because the live
+  tokens are internal reasoning that must be hidden anyway. Wired into
+  `OpenAICompatModelWrapper` via a `muse_glimmer=True` flag set by
+  `LLMFactory` when the resolved model name starts with `muse-glimmer`;
+  `bind_tools` re-wraps the bound model so the adapter applies on every
+  tool-bound invocation.
+
 ## [1.1.14] - 2026-08-12
 
 ### Fixed
