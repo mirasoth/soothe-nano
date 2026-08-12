@@ -19,7 +19,6 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
-from soothe_nano.utils.llm.muse_glimmer import transform_muse_glimmer_message
 from soothe_nano.utils.llm.response_text import text_from_message_content
 from soothe_nano.utils.llm.schema_wire import (
     build_json_schema_response_format,
@@ -128,71 +127,6 @@ def _make_text_tail_chunk(text: str) -> Any:
         return text
 
 
-def _build_muse_glimmer_synthesized_chunk(content: str) -> Any:
-    """Build the single transformed chunk for a buffered Muse-Glimmer stream.
-
-    The accumulated *content* is run through
-    :func:`~soothe_nano.utils.llm.muse_glimmer.transform_muse_glimmer_message`
-    so the resulting :class:`AIMessageChunk` carries only the clean
-    user-facing text plus structured ``tool_call_chunks`` (parsed from the
-    ``<atem:function_calls>`` XML). The chunk is a
-    :class:`~langchain_core.outputs.ChatGenerationChunk` so it plugs directly
-    into LangChain's streaming aggregation.
-    """
-    from langchain_core.messages import AIMessageChunk
-    from langchain_core.outputs import ChatGenerationChunk
-
-    msg = AIMessageChunk(content=content)
-    transform_muse_glimmer_message(msg)
-    return ChatGenerationChunk(message=msg)
-
-
-def _buffer_and_transform_muse_glimmer_stream(gen: Any, *, is_async: bool) -> Any:
-    """Buffer a Muse-Glimmer stream to one transformed chunk.
-
-    Muse-Glimmer emits the whole turn (self-talk + reply or tool XML) as text
-    ``content`` deltas. We cannot safely stream deltas because the self-talk
-    must be hidden and tool calls only become parseable once the
-    ``</atem:function_calls>`` close arrives. So we concatenate every text
-    delta, then emit a single synthesized chunk carrying the clean content +
-    structured tool calls.
-
-    ``is_async`` selects between sync (``yield from``) and async
-    (``async for`` / ``yield``) generator contracts so this one helper serves
-    both ``_stream`` and ``_astream``.
-    """
-    if is_async:
-        return _buffer_and_transform_muse_glimmer_stream_async(gen)
-    return _buffer_and_transform_muse_glimmer_stream_sync(gen)
-
-
-def _buffer_and_transform_muse_glimmer_stream_sync(gen: Any) -> Any:
-    buffer: list[str] = []
-    for chunk in gen:
-        text = _chunk_text(chunk)
-        if text:
-            buffer.append(text)
-        # Non-text chunks (tool deltas, empty tails) are not expected from
-        # Muse-Glimmer but are ignored here rather than surfaced, to keep the
-        # turn self-contained until the transform.
-    content = "".join(buffer)
-    if not content:
-        return
-    yield _build_muse_glimmer_synthesized_chunk(content)
-
-
-async def _buffer_and_transform_muse_glimmer_stream_async(gen: Any) -> Any:
-    buffer: list[str] = []
-    async for chunk in gen:
-        text = _chunk_text(chunk)
-        if text:
-            buffer.append(text)
-    content = "".join(buffer)
-    if not content:
-        return
-    yield _build_muse_glimmer_synthesized_chunk(content)
-
-
 def _strip_thinking_from_chat_result(result: Any) -> Any:
     """Strip complete thinking blocks from every message in a non-streaming result.
 
@@ -223,31 +157,6 @@ def _strip_thinking_from_chat_result(result: Any) -> Any:
                 filtered = strip_thinking(content)
                 if filtered != content:
                     msg.content = filtered
-    return result
-
-
-def _apply_muse_glimmer_to_chat_result(result: Any) -> Any:
-    """Apply the Muse-Glimmer adapter to every AI message in a non-streaming result.
-
-    Mirrors the shape handling of :func:`_strip_thinking_from_chat_result`:
-    both :class:`~langchain_core.outputs.ChatResult` (flat
-    ``list[ChatGeneration]``) and :class:`~langchain_core.outputs.LLMResult`
-    (nested ``list[list[ChatGeneration]]``) are walked. Each generation's
-    ``message`` is passed through
-    :func:`~soothe_nano.utils.llm.muse_glimmer.transform_muse_glimmer_message`,
-    which mutates ``content`` / ``tool_calls`` in place when the message
-    carries Muse-Glimmer protocol markers and is a no-op otherwise.
-    """
-    generations = getattr(result, "generations", None)
-    if not generations:
-        return result
-    for entry in generations:
-        gens = entry if isinstance(entry, list) else [entry]
-        for gen in gens:
-            msg = getattr(gen, "message", None)
-            if msg is None:
-                continue
-            transform_muse_glimmer_message(msg)
     return result
 
 
@@ -494,9 +403,6 @@ class OpenAICompatModelWrapper(BaseChatModel):
     - ``function_calling`` / ``json_mode``: delegate to the inner LangChain model.
     - ``json_schema``: ``JsonSchemaModelWrapper`` for ``reasoning_content`` parsing.
     - ``bind_tools``: sanitize object-form ``tool_choice`` to string values.
-    - ``muse_glimmer``: rewrite the Muse-Glimmer self-talk protocol and
-      ``<atem:function_calls>`` XML tool calls into clean ``content`` +
-      structured ``tool_calls``.
     """
 
     def __init__(
@@ -505,7 +411,7 @@ class OpenAICompatModelWrapper(BaseChatModel):
         provider_name: str = "unknown",
         *,
         hide_thinking_tokens: bool = True,
-        muse_glimmer: bool = False,
+        streaming: bool = True,
     ) -> None:
         """Initialize the wrapper.
 
@@ -518,20 +424,17 @@ class OpenAICompatModelWrapper(BaseChatModel):
                 through from ``SootheConfig.hide_thinking_tokens`` by the
                 ``LLMFactory``; the actual stripping lives in
                 ``soothe_nano.utils.llm.thinking_filter``.
-            muse_glimmer: When True, apply the Muse-Glimmer response adapter
-                (:func:`~soothe_nano.utils.llm.muse_glimmer.transform_muse_glimmer_message`)
-                to every returned ``AIMessage``. Strips ``to=self`` self-talk,
-                extracts the ``to=user`` reply into ``content``, and parses
-                ``<atem:function_calls>`` XML into structured ``tool_calls``.
-                Streaming turns are buffered end-to-end and emitted as one
-                transformed chunk (the live tokens are internal reasoning
-                that must be hidden anyway). Set by ``LLMFactory`` when the
-                resolved model name starts with ``muse-glimmer``.
+            streaming: When True (default), ``_stream``/``_astream`` delegate to
+                the wrapped model's streaming path. When False, they fall back
+                to the non-streaming ``_generate``/``_agenerate`` path and emit
+                the result as a single ``ChatGenerationChunk``. Required for
+                OpenAI-compatible servers whose streaming endpoint is broken
+                (e.g. vLLM-Metal prototype, which ignores ``stream: true``).
         """
         self._model = model
         self._provider_name = provider_name
         self._hide_thinking_tokens = hide_thinking_tokens
-        self._muse_glimmer = muse_glimmer
+        self._streaming = streaming
 
     def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
         """Structured output with provider-specific method routing.
@@ -596,12 +499,7 @@ class OpenAICompatModelWrapper(BaseChatModel):
         """Intercept tool_choice parameter for limited providers.
 
         Coerces incompatible values (object-form and ``"required"``) to
-        ``"auto"`` for provider compatibility. When ``muse_glimmer`` is set,
-        the tool-bound inner model is re-wrapped in a new
-        ``OpenAICompatModelWrapper`` so the Muse-Glimmer adapter (self-talk
-        stripping + ``<atem:function_calls>`` XML → structured ``tool_calls``)
-        still applies on every bound invocation — otherwise the agent would
-        invoke the raw inner model and bypass the adapter entirely.
+        ``"auto"`` for provider compatibility.
 
         Args:
             tools: List of tool definitions.
@@ -621,15 +519,7 @@ class OpenAICompatModelWrapper(BaseChatModel):
                 )
                 kwargs["tool_choice"] = sanitized_tool_choice
 
-        bound = self._model.bind_tools(tools, **kwargs)
-        if self._muse_glimmer:
-            return OpenAICompatModelWrapper(
-                bound,
-                self._provider_name,
-                hide_thinking_tokens=self._hide_thinking_tokens,
-                muse_glimmer=True,
-            )
-        return bound
+        return self._model.bind_tools(tools, **kwargs)
 
     # Delegate all BaseChatModel methods to the wrapped model
 
@@ -650,8 +540,6 @@ class OpenAICompatModelWrapper(BaseChatModel):
         result = self._model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         if self._hide_thinking_tokens:
             _strip_thinking_from_chat_result(result)
-        if self._muse_glimmer:
-            _apply_muse_glimmer_to_chat_result(result)
         return result
 
     async def _agenerate(
@@ -667,8 +555,6 @@ class OpenAICompatModelWrapper(BaseChatModel):
         )
         if self._hide_thinking_tokens:
             _strip_thinking_from_chat_result(result)
-        if self._muse_glimmer:
-            _apply_muse_glimmer_to_chat_result(result)
         return result
 
     def _stream(
@@ -688,14 +574,8 @@ class OpenAICompatModelWrapper(BaseChatModel):
         pass through unchanged.
         """
         gen = self._model._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
-        if not self._hide_thinking_tokens and not self._muse_glimmer:
+        if not self._hide_thinking_tokens:
             yield from gen
-            return
-        if self._muse_glimmer:
-            # Buffer the full content stream, then emit one transformed chunk.
-            # Live tokens are Muse-Glimmer self-talk that must be hidden anyway,
-            # so buffering (vs streaming deltas) loses nothing the user wants.
-            yield from _buffer_and_transform_muse_glimmer_stream(gen, is_async=False)
             return
         filt = ThinkingStreamFilter()
         for chunk in gen:
@@ -736,13 +616,8 @@ class OpenAICompatModelWrapper(BaseChatModel):
         end-of-stream. Chunks with no textual delta pass through unchanged.
         """
         agen = self._model._astream(messages, stop=stop, run_manager=run_manager, **kwargs)
-        if not self._hide_thinking_tokens and not self._muse_glimmer:
+        if not self._hide_thinking_tokens:
             async for chunk in agen:
-                yield chunk
-            return
-        if self._muse_glimmer:
-            # Buffer the full content stream, then emit one transformed chunk.
-            async for chunk in _buffer_and_transform_muse_glimmer_stream(agen, is_async=True):
                 yield chunk
             return
         filt = ThinkingStreamFilter()

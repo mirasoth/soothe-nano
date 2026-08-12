@@ -155,6 +155,27 @@ class ProviderRegistry:
 
         return provider_type_str, kwargs
 
+    def get_provider_streaming(self, name: str) -> bool:
+        """Return whether LangChain streaming should be enabled for a provider.
+
+        Reads the per-provider ``streaming`` flag (default ``True``). Some
+        OpenAI-compatible servers (e.g. the vLLM-Metal prototype) ignore
+        ``stream: true`` and return a single non-SSE JSON body, which makes
+        LangChain's streaming path raise ``No generations found in stream``.
+        Setting ``streaming: false`` on such a provider routes through the
+        non-streaming ``_generate`` path instead.
+
+        Args:
+            name: Provider name from config.
+
+        Returns:
+            ``True`` to enable streaming (default), ``False`` to disable it.
+        """
+        provider = self.get_provider(name)
+        if provider is None:
+            return True
+        return provider.streaming
+
 
 __all__ = [
     "ProviderRegistry",

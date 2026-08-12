@@ -15,7 +15,6 @@ Architecture:
 - `schema_wire.py`: JSON Schema wire helpers
 - `observability.py`: Token/streaming observability
 - `thinking_filter.py`: Strip reasoning/thinking blocks from model output
-- `muse_glimmer.py`: Muse-Glimmer self-talk + XML tool-call adapter
 
 Usage:
     from soothe_nano.utils.llm import LLMFactory, invoke_structured_chat
@@ -28,7 +27,6 @@ Usage:
 from __future__ import annotations
 
 from soothe_nano.utils.llm.factory import LLMFactory
-from soothe_nano.utils.llm.muse_glimmer import transform_muse_glimmer_message
 from soothe_nano.utils.llm.observability import (
     SootheLLMTokenUsageCallbackHandler,
     SootheTokenUsageChatModel,
@@ -93,6 +91,4 @@ __all__ = [
     # Thinking filter
     "ThinkingStreamFilter",
     "strip_thinking",
-    # Muse-Glimmer adapter
-    "transform_muse_glimmer_message",
 ]

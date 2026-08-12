@@ -54,6 +54,11 @@ class ModelProviderConfig(BaseModel):
             - ``anthropic``: Anthropic Claude API
             - ``ollama``: Ollama local inference
         models: Model names available from this provider (for documentation).
+        streaming: Whether LangChain should stream this provider's responses.
+            Defaults to ``True``. Set to ``False`` for OpenAI-compatible servers
+            whose streaming endpoint is broken or unsupported (e.g. vLLM-Metal
+            prototype, which ignores ``stream: true`` and returns a single
+            non-SSE JSON body). Non-streaming ``_agenerate`` then works.
     """
 
     name: str
@@ -61,6 +66,8 @@ class ModelProviderConfig(BaseModel):
     api_key: str | None = None
     provider_type: str = "openai"
     models: list[str] = Field(default_factory=list)
+    streaming: bool = True
+    """Whether to enable LangChain streaming for this provider."""
 
 
 class VectorStoreProviderConfig(BaseModel):
