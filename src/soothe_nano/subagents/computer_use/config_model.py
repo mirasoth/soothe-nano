@@ -37,7 +37,7 @@ class ComputerUseSubagentConfig(BaseModel):
     """
 
     max_steps: int = Field(
-        default=10, ge=1, description="Maximum desktop automation steps per task."
+        default=99, ge=1, description="Maximum desktop automation steps per task."
     )
     runtime_dir: str = ""
     screenshots_dir: str = ""

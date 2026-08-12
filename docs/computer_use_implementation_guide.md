@@ -129,16 +129,21 @@ monitor's top-left corner `(0, 0)`.
 
 ### Python Dependencies
 
-The `computer_use` subagent depends on **pyautogui**, which is **not currently
-declared in `pyproject.toml`** (see [Known Gaps](#known-gaps--next-steps)).
-
-Install it manually:
+The `computer_use` subagent depends on **pyautogui**, which is declared in
+`pyproject.toml` and installed with the package. It must be importable from
+**the interpreter that runs soothe-nano**; if the agent is launched with a
+different Python, install it there as well:
 
 ```bash
 pip install pyautogui
 # pyautogui pulls in: Pillow, pygetwindow (Windows), mouseinfo, pymsgbox,
 # pytweening, and pyobjc-core/pyobjc-framework (macOS) as needed.
 ```
+
+On macOS the `screencapture` CLI serves screenshots without pyautogui, so a
+missing install stays invisible until the first click. `_ensure_pagu()` raises
+`DesktopInputUnavailableError`, `_execute_step` converts it into a step-level
+`{"error": ...}`, and the run logs `input_unavailable` at startup.
 
 The plugin's `on_load()` method performs a soft dependency check — if
 `import pyautogui` fails, it raises `PluginError`:
@@ -199,7 +204,7 @@ tunable knobs:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `max_steps` | `int` | `10` | Maximum desktop automation steps per delegated task. |
+| `max_steps` | `int` | `99` | Maximum desktop automation steps per delegated task. |
 | `runtime_dir` | `str` | `""` | Base directory for desktop runtime files. Empty = auto-resolved under `SOOTHE_HOME`. |
 | `screenshots_dir` | `str` | `""` | Directory for captured screenshots. Empty = `<runtime_dir>/screenshots`. |
 | `cleanup_on_exit` | `bool` | `True` | Remove temporary screenshots when session ends. |
@@ -253,23 +258,29 @@ The single graph node `_run_computer_use_async()` executes:
 2. Emit ComputerUseStartedEvent (task_preview)
 3. Resolve LLM credentials (model_role → provider:model → base_url/api_key)
 4. Initialize backend (_PyAutoGUIBackend if input_mode == "pyautogui")
-5. For step_idx in range(max_steps):
-   a. _decide_next_action(llm, task, history, max_steps) → _ComputerAction
+5. _capture_observation(backend) → prime the loop with a screenshot
+6. For step_idx in range(max_steps):
+   a. _decide_next_action(llm, task, history, max_steps, screenshot_path, ...)
+      → _ComputerAction
       - Builds system prompt describing all available actions
       - Sends trajectory (last 8 steps) + steps remaining
+      - Attaches the latest screenshot as an image_url data URI
+      - Nudges to act after repeated observe-only actions
       - invoke_structured_chat_typed(llm, messages, _ComputerAction)
    b. _execute_step(action, backend) → dict result
       - Dispatches to backend.acapture_screenshot / aclick / akeyboard / ascroll
    c. history.add(step, action, result)
-   d. Emit ComputerUseStepCompletedEvent (step_index, tool_name, action_preview)
-   e. If history.is_done(): break
-6. Extract final_result from 'done' action's 'reason' field
-7. _synthesize_computer_use_result(...) → _ComputerUseSynthesisDecision
+   d. _capture_observation(backend, delay_s=action_delay_s) → refresh the view
+      the next decision sees (skipped for screenshot / done actions)
+   e. Emit ComputerUseStepCompletedEvent (step_index, tool_name, action_preview)
+   f. If history.is_done(): break
+7. Extract final_result from 'done' action's 'reason' field
+8. _synthesize_computer_use_result(...) → _ComputerUseSynthesisDecision
    - Quality gate: answer_quality = "sufficient" | "insufficient"
    - Can synthesize a better answer from trajectory evidence
-8. Emit ComputerUseCompletedEvent (duration_ms, success, summary)
-9. Cleanup: cleanup_computer_temp_files() if cleanup_on_exit
-10. Return {"messages": [AIMessage(content=result)], "answer": result}
+9. Emit ComputerUseCompletedEvent (duration_ms, success, summary)
+10. Cleanup: cleanup_computer_temp_files() if cleanup_on_exit
+11. Return {"messages": [AIMessage(content=result)], "answer": result}
 ```
 
 ### Action Types (`_ComputerAction`)
@@ -453,7 +464,7 @@ to indicate 2x scaling.
 
 ### Agent runs out of steps
 
-If `max_steps` (default 10) is too low for complex tasks:
+If `max_steps` (default 99) is too low for complex tasks:
 
 ```yaml
 subagents:
@@ -473,21 +484,7 @@ API credentials are valid.
 The `computer_use` subagent was scaffolded to mirror `browser_use` but has
 several gaps that must be closed before production use:
 
-### 1. pyautogui not in `pyproject.toml`
-
-**Status:** `pyautogui` is not listed in `dependencies` or
-`optional-dependencies`. The `on_load()` gate catches the missing import, but
-users must install manually.
-
-**Fix:** Add to `pyproject.toml`:
-
-```toml
-[project.optional-dependencies]
-desktop = ["pyautogui>=0.9.54"]
-# Or as a core dependency if desktop automation is a first-class feature.
-```
-
-### 2. `config_model.backend` field missing
+### 1. `config_model.backend` field missing
 
 `implementation.py` line 734 references `computer_config.backend`, but
 `ComputerUseSubagentConfig` defines `input_mode`, not `backend`. This will
@@ -502,7 +499,7 @@ is hit.
   if computer_config.input_mode in ("auto", "pyautogui"):
   ```
 
-### 3. `osascript` backend not implemented
+### 2. `osascript` backend not implemented
 
 `input_mode` accepts `"osascript"` in the config, but only `_PyAutoGUIBackend`
 is implemented. The `"auto"` mode should select the best available platform
@@ -512,27 +509,12 @@ backend; currently it falls through to the no-op `_DesktopInputBackend()`.
 and make `"auto"` resolve to `pyautogui` when available, `osascript` on
 macOS as fallback.
 
-### 4. No screenshot-to-LLM image passing
+### 3. `screenshot_interval_s` not wired
 
-The current `_decide_next_action()` sends a **text trajectory** to the LLM,
-not the actual screenshot image. For true vision-driven automation, the
-screenshot file should be loaded as a multimodal image content block and
-passed to the LLM alongside the trajectory text.
-
-**Fix:** In `_decide_next_action()`, load the latest screenshot path and
-construct a multimessage `HumanMessage` with `content=[{"type": "image_url",
-"image_url": {"url": f"data:image/png;base64,{b64}"}}]`.
-
-### 5. `screenshot_interval_s` and `screenshot_quality` not wired
-
-These config fields exist in the model but are not consumed in the
-implementation. The periodic screenshot capture and JPEG quality adjustment
-are not yet implemented.
-
-### 6. No tests
-
-No unit tests exist for the `computer_use` module. The `browser_use`
-subagent has a test suite that can be mirrored.
+The field exists in the config model but is not consumed. Periodic capture is
+not implemented; the loop captures a screenshot before the first step and
+after every action that touches the UI, which covers the same need for the
+agentic path.
 
 ---
 

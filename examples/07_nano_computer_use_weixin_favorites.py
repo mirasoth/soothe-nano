@@ -3,8 +3,8 @@
 This example drives the existing WeChat desktop app on macOS via the
 first-party ``computer_use`` subagent. The agentic loop:
 
-    1. Screenshots the desktop, locates the running WeChat window, and
-       brings it to the front (clicking the Dock icon or window).
+    1. Brings the running WeChat window to the front via Spotlight
+       (``cmd+space`` → "WeChat" → ``enter``).
     2. Navigates to **Favorites** (收藏) — click the sidebar entry.
     3. Scrolls through the favorites list, opens each favorited article
        one by one, and reads the URL that appears in the article view /
@@ -125,16 +125,15 @@ async def run_routed_delegation(agent) -> list[str]:
     print("=" * 60)
 
     task = (
-        "Open the WeChat desktop app that's already installed on this Mac "
-        "and bring its window to the front. Take a screenshot. Then navigate "
-        "to the Favorites (收藏) entry in the left sidebar. Scroll through the "
-        "favorites list so you can see all saved articles. For each favorited "
-        "article, click it to open the article view, then find the article's "
-        "URL — it's shown in the article header or via the Share → Copy Link "
-        "menu. Collect every article link you can see. When you've browsed all "
-        "favorites, list the five most recently added article URLs, one per "
-        "line, prefixed with the number. Use the mp.weixin.qq.com link exactly "
-        "as shown."
+        "Bring the WeChat desktop app to the front on this Mac — press "
+        "cmd+space, type WeChat, and press enter. Then click the Favorites "
+        "(收藏) icon in the narrow left sidebar. Scroll through the favorites "
+        "list so you can see all saved articles. For each favorited article, "
+        "click it to open the article view, then find the article's URL — it's "
+        "shown in the article header or via the Share → Copy Link menu. Collect "
+        "every article link you can see. When you've browsed all favorites, "
+        "list the five most recently added article URLs, one per line, prefixed "
+        "with the number. Use the mp.weixin.qq.com link exactly as shown."
     )
     answer = await stream_nano_agent(agent, task, thread_id="weixin-favorites-routed")
     return print_latest_links(answer)
@@ -164,9 +163,9 @@ async def run_direct_invocation(config) -> list[str]:
         max_steps=30,
         config=ComputerUseSubagentConfig(
             input_mode="pyautogui",
-            # Set to 2 on Retina/HiDPI displays — the screenshot is physical
-            # pixels but pyautogui consumes logical (1x) coordinates.
-            coordinate_scale=2,
+            # The backend measures the real screenshot-to-input ratio on its
+            # first capture, so this only matters before that probe lands.
+            coordinate_scale=1,
             action_delay_s=0.8,
         ),
         soothe_config=config,
@@ -183,16 +182,16 @@ async def run_direct_invocation(config) -> list[str]:
                 {
                     "role": "user",
                     "content": (
-                        "Take a screenshot, then find the WeChat desktop app "
-                        "window and bring it to the front (click its Dock icon "
-                        "or window). Click the Favorites (收藏) entry in the "
-                        "left sidebar. Scroll down through the favorites list "
-                        "so every saved article is visible. Open each favorited "
-                        "article one by one by clicking it, and read the article "
-                        "URL — shown in the article header or via Share → Copy "
-                        "Link. After browsing all favorites, report the five most "
-                        "recently added article URLs, one per line, numbered 1–5. "
-                        "Print each mp.weixin.qq.com link exactly as shown."
+                        "Bring the WeChat desktop app to the front: press "
+                        "cmd+space, type WeChat, press enter. Click the "
+                        "Favorites (收藏) icon in the narrow left sidebar. "
+                        "Scroll down through the favorites list so every saved "
+                        "article is visible. Open each favorited article one by "
+                        "one by clicking it, and read the article URL — shown in "
+                        "the article header or via Share → Copy Link. After "
+                        "browsing all favorites, report the five most recently "
+                        "added article URLs, one per line, numbered 1–5. Print "
+                        "each mp.weixin.qq.com link exactly as shown."
                     ),
                 }
             ]

@@ -70,13 +70,21 @@ display server with the right OS-level permissions.
 
 ### Python Dependencies
 
-`pyautogui` is **not** declared in `pyproject.toml` yet — install it manually:
+`pyautogui` is declared in `pyproject.toml`, so it comes with a normal install.
+It must be present in **the interpreter that runs soothe-nano** — if you launch
+the agent with a different Python than the one you installed into, install it
+there too:
 
 ```bash
 pip install pyautogui
 # pyautogui pulls in: Pillow, pygetwindow (Windows), mouseinfo, pymsgbox,
 # pytweening, and pyobjc-core/pyobjc-framework (macOS) as needed.
 ```
+
+On macOS, screenshots are served by the `screencapture` CLI and keep working
+without pyautogui, so a missing install shows up only when the agent first tries
+to click. The run logs `computer_use event=input_unavailable` at startup for
+exactly this case.
 
 The plugin's `on_load()` method performs a soft dependency check. If
 `import pyautogui` fails, it raises:
@@ -229,7 +237,7 @@ defines every tunable knob. All fields live under
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `max_steps` | `int` | `10` | Maximum desktop automation steps per delegated task. |
+| `max_steps` | `int` | `99` | Maximum desktop automation steps per delegated task. |
 | `runtime_dir` | `str` | `""` | Base directory for desktop runtime files. Empty = auto-resolved under `SOOTHE_HOME`. |
 | `screenshots_dir` | `str` | `""` | Directory for captured screenshots. Empty = `<runtime_dir>/screenshots`. |
 | `cleanup_on_exit` | `bool` | `True` | Remove temporary screenshots when the session ends. |
@@ -516,7 +524,8 @@ Each run emits structured log lines (parallel to the wire events) via
 | `task_preview` | After task extraction | `run_id`, `preview` (first 400 chars) |
 | `backend_ready` | Backend initialized | `run_id`, `backend`, `coordinate_scale` |
 | `backend_missing` | pyautogui import failed | `run_id`, `backend`, `error` |
-| `step_begin` | Before each LLM action decision | `run_id`, `step`, `max_steps`, `elapsed_s` |
+| `step_begin` | Before each LLM action decision | `run_id`, `step`, `max_steps`, `elapsed_s`, `has_screenshot` |
+| `coordinate_scale_detected` | First full-screen capture disagrees with configured scale | `configured`, `detected`, `image_width`, `logical_width` |
 | `step_end` | After action executed | `run_id`, `step`, `dt_s`, `tool`, `action`, `done` |
 | `run_done` | Early exit on `done` action | `run_id`, `step` |
 | `no_progress` | Loop ended without meaningful action | `run_id`, `model`, `steps` |
@@ -573,7 +582,7 @@ screenshots or waits). Check:
 
 ### Agent runs out of steps
 
-Complex multi-click tasks may exceed the default `max_steps: 10`. Raise it:
+Complex multi-click tasks may exceed the default `max_steps: 99`. Raise it:
 
 ```yaml
 subagents:
@@ -601,26 +610,17 @@ when calling `create_computer_use_subagent()` programmatically.
 These are open gaps (mirrored in the
 [Implementation Guide](./computer_use_implementation_guide.md#known-gaps--next-steps)):
 
-1. **`pyautogui` not in `pyproject.toml`** — must be installed manually.
-   Planned fix: add `[project.optional-dependencies] desktop = ["pyautogui>=0.9.54"]`.
-
-2. **`osascript` backend not implemented** — `input_mode` accepts `"osascript"`
+1. **`osascript` backend not implemented** — `input_mode` accepts `"osascript"`
    but only `_PyAutoGUIBackend` exists. `"auto"` currently resolves to
    `pyautogui` when available, else the no-op base.
 
-3. **`config_model.backend` vs `input_mode`** — the graph builder references
+2. **`config_model.backend` vs `input_mode`** — the graph builder references
    `computer_config.backend`, but `ComputerUseSubagentConfig` defines
    `input_mode`. Until reconciled, prefer `input_mode: pyautogui` in YAML.
 
-4. **Screenshot-to-LLM image passing** — `_decide_next_action()` currently sends
-   a **text trajectory** to the LLM, not the screenshot image as a multimodal
-   content block. True vision-driven automation requires loading the screenshot
-   and passing it as `{"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}`.
-   Screenshots are saved in a valid image format (png/jpeg) ready for this
-   encoding step.
-
-5. **No unit tests** for the `computer_use` module yet — the `browser_use`
-   test suite can be mirrored.
+3. **`screenshot_interval_s` not wired** — periodic capture is not implemented;
+   screenshots are captured before the first step and after every action that
+   touches the UI.
 
 ---
 

@@ -16,6 +16,8 @@ Uses only soothe-sdk (no soothe daemon dependency).
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import logging
 import os
 import platform
@@ -60,6 +62,32 @@ logger = logging.getLogger(__name__)
 
 _NO_EXTRACTED_CONTENT = "ComputerUse task completed (no extracted content.)"
 _MAX_HISTORY_DIGEST_STEPS = 12
+
+# Actions that observe the screen without changing it. Repeating them cannot
+# advance the task, so the loop nudges the model after a couple in a row.
+_OBSERVE_ONLY_ACTIONS = frozenset({"screenshot", "wait"})
+_MAX_CONSECUTIVE_OBSERVE_ACTIONS = 2
+
+# Screenshots are inlined into the prompt as data URIs; match the image
+# toolkit's 20 MiB ceiling so an oversized capture degrades to text-only
+# rather than blowing up the request.
+_MAX_SCREENSHOT_IMAGE_BYTES = 20 * 1024 * 1024
+_SCREENSHOT_MIME_BY_SUFFIX: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+}
+
+_PYAUTOGUI_MISSING_HINT = (
+    "pyautogui is not installed in the interpreter running soothe-nano, so clicks, "
+    "typing, and scrolling cannot be performed (screenshots may still work via the "
+    "macOS screencapture CLI). Install it into that interpreter with "
+    "`pip install pyautogui` and re-run."
+)
+
+
+class DesktopInputUnavailableError(RuntimeError):
+    """Raised when the desktop input backend cannot drive mouse/keyboard input."""
 
 
 # ─── Structured Synthesis Decision ────────────────────────────────────────
@@ -425,15 +453,31 @@ class _PyAutoGUIBackend(_DesktopInputBackend):
         self._screenshot_quality = max(1, min(100, int(screenshot_quality or 85)))
         self._pyautogui: Any = None
         self._step_counter: int = 0
+        self._scale_probed: bool = False
 
     def _ensure_pagu(self) -> Any:
         if self._pyautogui is None:
-            import pyautogui
+            try:
+                import pyautogui
+            except ImportError as exc:
+                raise DesktopInputUnavailableError(_PYAUTOGUI_MISSING_HINT) from exc
 
             pyautogui.FAILSAFE = True
             pyautogui.PAUSE = 0.1
             self._pyautogui = pyautogui
         return self._pyautogui
+
+    def input_available(self) -> bool:
+        """Return True when mouse/keyboard input can actually be driven.
+
+        On macOS the ``screencapture`` CLI serves screenshots without pyautogui,
+        so a backend can look healthy right up until the first click.
+        """
+        try:
+            self._ensure_pagu()
+        except DesktopInputUnavailableError:
+            return False
+        return True
 
     def _rescale_coord(self, value: int) -> int:
         """Map an LLM-space coordinate to pyautogui's (logical) input space.
@@ -445,6 +489,35 @@ class _PyAutoGUIBackend(_DesktopInputBackend):
         if self._coordinate_scale <= 1:
             return int(value)
         return int(value) // self._coordinate_scale
+
+    def _probe_coordinate_scale(self, image_width: int) -> None:
+        """Correct ``coordinate_scale`` from the first captured screenshot.
+
+        A misconfigured scale sends every click to the wrong place, and the
+        right value is directly measurable: the ratio between the screenshot's
+        physical width and pyautogui's logical screen width. Measured once per
+        backend, since the display geometry does not change mid-run.
+        """
+        if self._scale_probed or image_width <= 0:
+            return
+        try:
+            logical_width = int(self._ensure_pagu().size()[0])
+        except Exception:  # noqa: BLE001 — best-effort probe, never fatal
+            return
+        self._scale_probed = True
+        if logical_width <= 0:
+            return
+        detected = round(image_width / logical_width)
+        if not (1 <= detected <= 4) or detected == self._coordinate_scale:
+            return
+        _log_computer_event(
+            "coordinate_scale_detected",
+            configured=self._coordinate_scale,
+            detected=detected,
+            image_width=image_width,
+            logical_width=logical_width,
+        )
+        self._coordinate_scale = detected
 
     # ─── macOS screencapture path ──────────────────────────────────────────
 
@@ -633,6 +706,8 @@ class _PyAutoGUIBackend(_DesktopInputBackend):
                     source="screencapture",
                     path=result.get("path", ""),
                 )
+                if region == "full":
+                    self._probe_coordinate_scale(int(result.get("width") or 0))
                 return result
             # screencapture unavailable/failed — fall through to pyautogui.
             _log_computer_event(
@@ -642,7 +717,10 @@ class _PyAutoGUIBackend(_DesktopInputBackend):
                 reason="screencapture unavailable or failed",
             )
 
-        return self._capture_via_pyautogui(region=region, save_path=save_path)
+        result = self._capture_via_pyautogui(region=region, save_path=save_path)
+        if region == "full":
+            self._probe_coordinate_scale(int(result.get("width") or 0))
+        return result
 
     def click(
         self,
@@ -770,7 +848,12 @@ class _StepHistory:
 
 
 def _computer_history_had_no_progress(history: _StepHistory) -> bool:
-    """Return True when the agent never took a meaningful action."""
+    """Return True when the agent never took a meaningful action.
+
+    Screenshots and waits observe the screen but never change it, so a run
+    made up entirely of them has made no progress no matter how many steps
+    it burned.
+    """
     entries = history.entries
     if not entries:
         return True
@@ -779,7 +862,7 @@ def _computer_history_had_no_progress(history: _StepHistory) -> bool:
         if action is None:
             continue
         at = str(action.get("action_type", "")).lower()
-        if at and at not in ("wait",):
+        if at and at not in _OBSERVE_ONLY_ACTIONS:
             return False
     return True
 
@@ -927,8 +1010,30 @@ async def _execute_step(
     action: _ComputerAction,
     backend: _DesktopInputBackend,
 ) -> dict[str, Any]:
-    """Execute one ``_ComputerAction`` against the desktop backend."""
+    """Execute one ``_ComputerAction`` against the desktop backend.
+
+    Backend failures are returned as ``{"error": ...}`` rather than raised: the
+    model sees the error in its trajectory and can retry or explain, whereas an
+    exception would abort the whole run over one bad action.
+    """
     at = action.action_type.lower().strip()
+    try:
+        return await _dispatch_step(action=action, backend=backend, action_type=at)
+    except DesktopInputUnavailableError as exc:
+        return {"action": at, "error": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — surfaced to the model as a step result
+        logger.warning("computer_use action %s failed", at, exc_info=True)
+        return {"action": at, "error": f"{at} failed: {exc}"}
+
+
+async def _dispatch_step(
+    *,
+    action: _ComputerAction,
+    backend: _DesktopInputBackend,
+    action_type: str,
+) -> dict[str, Any]:
+    """Route one action to its backend method."""
+    at = action_type
 
     if at == "screenshot":
         return await backend.acapture_screenshot()
@@ -958,8 +1063,6 @@ async def _execute_step(
             amount=action.amount,
         )
     if at == "wait":
-        import asyncio
-
         await asyncio.sleep(0.5)
         return {"action": "wait", "seconds": 0.5}
     if at == "done":
@@ -968,72 +1071,126 @@ async def _execute_step(
     return {"action": at, "error": f"unknown action_type: {at}"}
 
 
+def _screenshot_data_url(path: str | None) -> str | None:
+    """Encode a screenshot file as an OpenAI-compatible ``image_url`` data URI.
+
+    Returns ``None`` for a missing, unreadable, unsupported, or oversized file
+    so the caller can fall back to a text-only prompt instead of failing the
+    step.
+    """
+    if not path:
+        return None
+    mime = _SCREENSHOT_MIME_BY_SUFFIX.get(os.path.splitext(path)[1].lower())
+    if mime is None:
+        return None
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read()
+    except OSError:
+        logger.warning("computer_use could not read screenshot %s", path, exc_info=True)
+        return None
+    if not raw or len(raw) > _MAX_SCREENSHOT_IMAGE_BYTES:
+        return None
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
+def _trajectory_digest(history: _StepHistory) -> str:
+    """Summarize the last few steps so the model can see what it already tried."""
+    lines: list[str] = []
+    for entry in history.entries[-8:]:
+        action = entry.get("action")
+        if not action:
+            continue
+        tool_name, detail = summarize_computer_step_action(action)
+        result = entry.get("result") or {}
+        outcome = ""
+        if "error" in result:
+            outcome = f" -> error: {result['error']}"
+        elif "path" in result:
+            outcome = f" -> screenshot {result.get('width')}x{result.get('height')}"
+        lines.append(f"  - {tool_name}: {detail}{outcome}")
+    return "\n".join(lines) if lines else "(no prior steps)"
+
+
 async def _decide_next_action(
     *,
     llm: Any,
     task: str,
     history: _StepHistory,
     max_steps: int,
+    screenshot_path: str | None = None,
+    screen_size: tuple[int, int] | None = None,
+    consecutive_observations: int = 0,
 ) -> _ComputerAction:
-    """Ask the vision LLM to decide the next action given history and task.
+    """Ask the vision LLM to decide the next action given the current screen.
 
-    Builds a system prompt describing available actions, then a user message
-    with the task and trajectory summary. Returns a structured action.
+    The most recent screenshot is attached as an ``image_url`` content block so
+    the model can actually see the desktop; without it the model has no way to
+    locate UI targets and will keep asking for screenshots forever.
     """
     from soothe_nano.utils.llm.structured import invoke_structured_chat_typed
 
     system_prompt = (
         "You are a desktop automation agent. You drive the computer by choosing one action per step.\n\n"
+        "A screenshot of the current screen is attached to each request, and a fresh one is\n"
+        "captured automatically after every action you take.\n\n"
         "Available actions:\n"
-        "- screenshot: Capture the current screen (do this first to see what's on screen)\n"
         "- click: Click at (x, y) with a button ('left'/'right'/'middle') and click_type ('single'/'double'/'triple')\n"
         "- double_click: Shortcut for click with click_type='double'\n"
         "- right_click: Shortcut for click with button='right'\n"
         "- type: Type a string of text (set 'text' field)\n"
         "- key: Press a single key like 'enter', 'tab', 'escape' (set 'key' field)\n"
-        "- hotkey: Press a key combination (set 'keys' field, e.g. 'ctrl,c')\n"
+        "- hotkey: Press a key combination (set 'keys' field, e.g. 'cmd,space')\n"
         "- scroll: Scroll at (x, y) in a direction ('up'/'down') by amount clicks\n"
+        "- screenshot: Re-capture the screen (rarely needed — one is already attached)\n"
         "- wait: Pause briefly (e.g. for a dialog to load)\n"
         "- done: Task is complete (set 'reason' with a summary of what was accomplished)\n\n"
         "Rules:\n"
-        "1. Always take a screenshot first to understand the current screen state.\n"
-        "2. After each action, you'll see the result. Choose the next action based on it.\n"
-        "3. Coordinates are in pixels from top-left (0, 0).\n"
-        "4. When the task is complete, choose action_type='done' with a summary.\n"
-        "5. If you cannot complete the task after reasonable attempts, choose 'done' with an explanation.\n"
+        "1. Read the attached screenshot, then act. Do not ask for another screenshot\n"
+        "   just to confirm what is already visible.\n"
+        "2. Coordinates are pixels from the top-left (0, 0) of the attached screenshot.\n"
+        "3. Every step should move the task forward — prefer clicking, typing, or\n"
+        "   scrolling over observing.\n"
+        "4. When the task is complete, choose action_type='done' and put the full\n"
+        "   answer (including any text or URLs you read on screen) in 'reason'.\n"
+        "5. If you cannot complete the task after reasonable attempts, choose 'done'\n"
+        "   with an explanation of what blocked you.\n"
     )
 
-    # Build trajectory summary
-    traj_lines: list[str] = []
-    for entry in history.entries[-8:]:  # Last 8 steps for context
-        action = entry.get("action")
-        result = entry.get("result")
-        if action:
-            tool_name, detail = summarize_computer_step_action(action)
-            res_str = ""
-            if result:
-                if "path" in result:
-                    res_str = f" → screenshot saved ({result.get('width')}x{result.get('height')})"
-                elif "error" in result:
-                    res_str = f" → error: {result['error']}"
-            traj_lines.append(f"  - {tool_name}: {detail}{res_str}")
-    trajectory = "\n".join(traj_lines) if traj_lines else "(no prior steps)"
-
-    user_prompt = (
-        f"Task: {task}\n\n"
-        f"Recent trajectory:\n{trajectory}\n\n"
-        f"Steps remaining: {max_steps - len(history.entries)}\n\n"
-        "Choose the next action."
-    )
-
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt),
+    prompt_sections = [
+        f"Task: {task}",
+        f"Recent trajectory:\n{_trajectory_digest(history)}",
+        f"Steps remaining: {max_steps - len(history.entries)}",
     ]
+    if screen_size and all(screen_size):
+        prompt_sections.append(
+            f"The attached screenshot is {screen_size[0]}x{screen_size[1]} pixels; "
+            "give coordinates in that space."
+        )
+    if consecutive_observations >= _MAX_CONSECUTIVE_OBSERVE_ACTIONS:
+        prompt_sections.append(
+            f"You have observed the screen {consecutive_observations} times in a row without "
+            "changing anything. The attached screenshot is current — take a concrete action "
+            "now (click/type/scroll), or choose 'done' and explain what is blocking you."
+        )
+    prompt_sections.append("Choose the next action.")
+    user_prompt = "\n\n".join(prompt_sections)
+
+    data_url = _screenshot_data_url(screenshot_path)
+    if data_url is None:
+        user_message = HumanMessage(content=user_prompt)
+    else:
+        user_message = HumanMessage(
+            content=[
+                {"type": "text", "text": user_prompt},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ]
+        )
+
+    messages = [SystemMessage(content=system_prompt), user_message]
 
     try:
-        action = await invoke_structured_chat_typed(llm, messages, _ComputerAction)
-        return action
+        return await invoke_structured_chat_typed(llm, messages, _ComputerAction)
     except Exception as e:
         logger.warning("computer_use action decision failed: %s", e)
         # Fallback: mark as done with error
@@ -1041,6 +1198,26 @@ async def _decide_next_action(
             action_type="done",
             reason=f"Action decision failed: {e}",
         )
+
+
+async def _capture_observation(
+    *,
+    backend: _DesktopInputBackend,
+    delay_s: float = 0.0,
+) -> dict[str, Any] | None:
+    """Capture a screenshot for the next decision, letting the UI settle first.
+
+    Returns ``None`` on capture failure; the loop then reuses the previous
+    screenshot rather than aborting the run.
+    """
+    if delay_s > 0:
+        await asyncio.sleep(delay_s)
+    try:
+        result = await backend.acapture_screenshot()
+    except Exception:
+        logger.warning("computer_use observation screenshot failed", exc_info=True)
+        return None
+    return result if isinstance(result, dict) and result.get("path") else None
 
 
 # ─── State Schema ─────────────────────────────────────────────────────────
@@ -1076,7 +1253,7 @@ def _build_computer_use_graph(
 
     Args:
         max_steps: Maximum steps for the agent loop. When ``None``, uses
-            ``ComputerUseSubagentConfig.max_steps`` (default 15).
+            ``ComputerUseSubagentConfig.max_steps`` (default 99).
         config: ComputerUse subagent configuration object.
         soothe_config: SootheConfig for router-backed computer LLM resolution.
         backend: Desktop input backend (auto-created if None).
@@ -1174,6 +1351,12 @@ def _build_computer_use_graph(
                             screenshot_source=computer_config.screenshot_source,
                             screenshot_format=computer_config.screenshot_format,
                         )
+                        if not backend_instance.input_available():
+                            logger.error(
+                                "computer_use event=input_unavailable run_id=%s reason=%s",
+                                run_id,
+                                _PYAUTOGUI_MISSING_HINT,
+                            )
                         # Surface macOS permission state so triage can see why
                         # clicks no-op or screenshots come back blank.
                         ax = _check_macos_accessibility_permission()
@@ -1221,6 +1404,19 @@ def _build_computer_use_graph(
 
             history = _StepHistory()
             last_step_wall = time.perf_counter()
+            latest_screenshot: str | None = None
+            screen_size: tuple[int, int] | None = None
+            consecutive_observations = 0
+
+            # Prime the loop with a screenshot so the very first decision already
+            # sees the desktop instead of spending a step to look at it.
+            initial_observation = await _capture_observation(backend=backend_instance)
+            if initial_observation is not None:
+                latest_screenshot = str(initial_observation["path"])
+                screen_size = (
+                    int(initial_observation.get("width") or 0),
+                    int(initial_observation.get("height") or 0),
+                )
 
             for step_idx in range(resolved_max_steps):
                 try:
@@ -1231,6 +1427,7 @@ def _build_computer_use_graph(
                         step=step_idx + 1,
                         max_steps=resolved_max_steps,
                         elapsed_s=round(iter_t0 - run_t0, 1),
+                        has_screenshot=latest_screenshot is not None,
                     )
 
                     # Ask LLM for the next action
@@ -1239,6 +1436,9 @@ def _build_computer_use_graph(
                         task=str(task),
                         history=history,
                         max_steps=resolved_max_steps,
+                        screenshot_path=latest_screenshot,
+                        screen_size=screen_size,
+                        consecutive_observations=consecutive_observations,
                     )
 
                     # Execute the action
@@ -1246,6 +1446,29 @@ def _build_computer_use_graph(
 
                     # Record in history
                     history.add(step=step_idx + 1, action=action, result=step_result)
+
+                    action_type = action.action_type.lower().strip()
+                    consecutive_observations = (
+                        consecutive_observations + 1 if action_type in _OBSERVE_ONLY_ACTIONS else 0
+                    )
+
+                    # Refresh the view the next decision will see: an explicit
+                    # screenshot already produced one, and any action that
+                    # touches the UI needs a new capture after it settles.
+                    observation: dict[str, Any] | None = None
+                    if action_type == "screenshot":
+                        observation = step_result if step_result.get("path") else None
+                    elif action_type != "done":
+                        observation = await _capture_observation(
+                            backend=backend_instance,
+                            delay_s=computer_config.action_delay_s,
+                        )
+                    if observation is not None:
+                        latest_screenshot = str(observation["path"])
+                        screen_size = (
+                            int(observation.get("width") or 0),
+                            int(observation.get("height") or 0),
+                        )
 
                     now = time.perf_counter()
                     wall_since_prev = now - last_step_wall
@@ -1409,7 +1632,7 @@ def create_computer_use_subagent(
 
     Args:
         max_steps: Maximum agent steps. When ``None``, uses
-            ``ComputerUseSubagentConfig.max_steps`` (default 15).
+            ``ComputerUseSubagentConfig.max_steps`` (default 99).
         config: ComputerUse subagent configuration object with runtime
             directories, cleanup settings, and feature flags.
         soothe_config: SootheConfig used to resolve
@@ -1517,6 +1740,7 @@ def create_computer_use_tools(
 __all__ = [
     "COMPUTER_DESCRIPTION",
     "ComputerUseToolkit",
+    "DesktopInputUnavailableError",
     "_ComputerAction",
     "_ComputerUseState",
     "_PyAutoGUIBackend",
