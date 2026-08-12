@@ -5,7 +5,7 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.15] - 2026-08-12
 
 ### Added
 - Muse-Glimmer response adapter (`soothe_nano.utils.llm.muse_glimmer`): the
@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   calls as XML (``<atem:function_calls>``/``<atem:invoke>``, ``<function
   name="…"><arg>``, self-named ``<read_file file_path="…"/>``) never as
   structured `tool_calls`. The new adapter strips self-talk, extracts the
-  `to=user` reply into `content`, and parses all five tool-call dialects into
+  `to=user` reply into `content`, and parses all six tool-call dialects into
   structured `tool_calls` (+ `tool_call_chunks` for streaming). Streaming
   turns are buffered and emitted as one transformed chunk because the live
   tokens are internal reasoning that must be hidden anyway. Wired into
@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LLMFactory` when the resolved model name starts with `muse-glimmer`;
   `bind_tools` re-wraps the bound model so the adapter applies on every
   tool-bound invocation.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.14...v1.1.15
 
 ## [1.1.14] - 2026-08-12
 
