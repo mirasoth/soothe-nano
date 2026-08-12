@@ -102,20 +102,25 @@ _PARAM_RE = re.compile(
     r"<atem:parameter\s+name=\"(?P<key>[^\"]+)\"[^>]*>(?P<value>.*?)</atem:parameter>",
     re.DOTALL,
 )
-# Dialect 2: ``<function name="..."><arg name="...">VALUE</arg>...</function>``.
-_FUNCTION_BLOCK_RE = re.compile(
-    r"<function(?:_call)?\s+name=\"(?P<name>[^\"]+)\"[^>]*>(?P<body>.*?)</function(?:_call)?>",
+# Dialect 2: ``<WRAPPER name="TOOL">…<arg name="…">VALUE</arg>…</WRAPPER>``
+# where WRAPPER is any of the element names the model uses to wrap a tool
+# call (function, function_call, tool_call, invoke, call). The real tool
+# name lives in the ``name=`` attribute; args are ``<arg>`` / ``<argument>``
+# children. Generalized from per-name regexes because the model invents new
+# wrapper names across turns (tool_call, function_call, …).
+_WRAPPER_BLOCK_RE = re.compile(
+    r"<(?P<tag>function|function_call|tool_call|invoke|call)\s+name=\"(?P<name>[^\"]+)\"[^>]*>(?P<body>.*?)</(?P=tag)>",
     re.DOTALL,
 )
+# ``<arg>`` or ``<argument>`` child (the model uses both spellings).
 _ARG_RE = re.compile(
-    r"<arg\s+name=\"(?P<key>[^\"]+)\"[^>]*>(?P<value>.*?)</arg>",
+    r"<(?:arg|argument)\s+name=\"(?P<key>[^\"]+)\"[^>]*>(?P<value>.*?)</(?:arg|argument)>",
     re.DOTALL,
 )
-# Dialect 2b: self-closing ``<function_call name="TOOL" k="v" …/>`` (or
-# paired) where args are attributes, not ``<arg>`` children. The model
-# sometimes uses this instead of the child-arg form.
-_FUNCTION_ATTR_RE = re.compile(
-    r"<function(?:_call)?\s+name=\"(?P<name>[^\"]+)\"(?P<attrs>(?:\s+[a-zA-Z_][\w-]*=\"[^\"]*\")*)\s*/?>(?:</function(?:_call)?>)?",
+# Dialect 2b: self-closing ``<WRAPPER name="TOOL" k="v" …/>`` (or paired)
+# where args are attributes, not children. Same wrapper-name set as above.
+_WRAPPER_ATTR_RE = re.compile(
+    r"<(?P<tag>function|function_call|tool_call|invoke|call)\s+name=\"(?P<name>[^\"]+)\"(?P<attrs>(?:\s+[a-zA-Z_][\w-]*=\"[^\"]*\")*)\s*/?>(?:</(?P=tag)>)?",
 )
 # Dialect 4: ``<atem:TOOLNAME>{...json args...}</atem:TOOLNAME>`` — the tool
 # name is the element local-name after ``atem:`` and the body is a JSON object
@@ -224,8 +229,8 @@ def parse_atem_tool_calls(text: str) -> list[dict[str, Any]]:
         args = _parse_params(body)
         _add(name, args, match.group(0), match.span())
 
-    # Dialect 2: <function name="…">…<arg name="…">VALUE</arg>…</function>
-    for match in _FUNCTION_BLOCK_RE.finditer(text):
+    # Dialect 2: <WRAPPER name="TOOL">…<arg>…</WRAPPER>
+    for match in _WRAPPER_BLOCK_RE.finditer(text):
         name = match.group("name").strip()
         if not name:
             continue
@@ -242,8 +247,8 @@ def parse_atem_tool_calls(text: str) -> list[dict[str, Any]]:
         args = _parse_body_args(body)
         _add(name, args, match.group(0), match.span())
 
-    # Dialect 2b: self-closing <function_call name="TOOL" k="v" …/>
-    for match in _FUNCTION_ATTR_RE.finditer(text):
+    # Dialect 2b: self-closing <WRAPPER name="TOOL" k="v" …/>
+    for match in _WRAPPER_ATTR_RE.finditer(text):
         name = match.group("name").strip()
         if not name:
             continue
@@ -441,10 +446,12 @@ def _strip_tool_xml_and_self_talk(text: str) -> str:
         return text
     # Drop tool-call XML envelopes entirely, in all dialects.
     cleaned = _FUNC_CALLS_BLOCK_RE.sub("", text)
-    cleaned = _FUNCTION_BLOCK_RE.sub("", cleaned)
+    cleaned = _WRAPPER_BLOCK_RE.sub("", cleaned)
     # Drop <atem:TOOLNAME>…</atem:TOOLNAME> blocks (dialect 4), but leave the
     # structural atem: envelope tags for the FUNC_CALLS sub above to handle.
     cleaned = _ATEM_TOOL_BLOCK_RE.sub("", cleaned)
+    # Drop self-closing wrapper variants (dialect 2b).
+    cleaned = _WRAPPER_ATTR_RE.sub("", cleaned)
     cleaned = _ATEM_ASSISTANT_CLOSE_RE.sub("", cleaned)
     # Drop self-named tool elements (dialect 3): any ``<toolname …/>`` or
     # ``<toolname …></toolname>`` whose name is not a structural tag. Run
