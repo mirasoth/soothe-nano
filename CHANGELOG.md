@@ -5,6 +5,30 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.14] - 2026-08-12
+
+### Fixed
+- `computer_use` vision loop: attach the latest screenshot as a multimodal
+  `image_url` block so the model can see the desktop instead of stalling on
+  repeated screenshot-only steps; auto-capture an observation before the first
+  step and after each UI action (`action_delay_s`); nudge after consecutive
+  observe-only actions; treat screenshot/wait-only runs as no-progress; probe
+  and correct Retina `coordinate_scale` from the first full-screen capture.
+- `computer_use` input backend: missing `pyautogui` now raises
+  `DesktopInputUnavailableError` with install guidance, is logged as
+  `input_unavailable` at startup, and is returned as a step-level error rather
+  than aborting the whole run (macOS screenshots can still work via
+  `screencapture`).
+- Stop emitting the noisy `soothe.internal.policy.checked` event on every
+  policy check; denials still emit `PolicyDeniedEvent`.
+
+### Changed
+- Default `computer_use` `max_steps` raised from 10 to 99.
+- Example `07_nano_computer_use_weixin_favorites.py`: bring WeChat forward via
+  Spotlight and rely on auto-detected coordinate scale.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.13...v1.1.14
+
 ## [1.1.13] - 2026-08-12
 
 ### Added
