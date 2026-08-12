@@ -36,6 +36,21 @@ logger = logging.getLogger(__name__)
 _model_cache_lock = threading.Lock()
 
 
+def _is_muse_glimmer_model(model_name: str) -> bool:
+    """Return True when *model_name* names a Muse-Glimmer family model.
+
+    Muse-Glimmer models (``Muse-Glimmer-30B-4bit``, future variants) are
+    served by the oMLX OpenAI-compatible endpoint and emit the self-talk /
+    ``<atem:function_calls>`` protocol that the adapter in
+    :mod:`soothe_nano.utils.llm.muse_glimmer` translates. Detection is by
+    case-insensitive prefix on the model name, tolerating ``-``/``_``
+    differences. False positives are harmless: the adapter is a no-op on
+    content lacking the protocol markers.
+    """
+    normalized = (model_name or "").strip().lower().replace("_", "-")
+    return normalized.startswith("muse-glimmer")
+
+
 class LLMFactory:
     """Model creation with automatic provider adaptation.
 
@@ -197,7 +212,7 @@ class LLMFactory:
             init_str = f"{provider_type_str}:{model_name}" if provider_name else spec_str
             model = init_chat_model(init_str, streaming=True, stream_usage=True, **merged_kwargs)
 
-            model = self._apply_wrapper_chain(model, provider_type, provider_name)
+            model = self._apply_wrapper_chain(model, provider_type, provider_name, model_name)
 
             self._cache[cache_key] = model
             logger.debug("Created and cached model for spec '%s'", spec_str)
@@ -209,6 +224,7 @@ class LLMFactory:
         model: BaseChatModel,
         provider_type: ProviderType,
         provider_name: str,
+        model_name: str = "",
     ) -> BaseChatModel:
         """Apply provider-specific wrappers in order.
 
@@ -218,25 +234,34 @@ class LLMFactory:
 
         Both wrappers receive ``hide_thinking_tokens`` from
         ``SootheConfig`` so inline reasoning blocks are stripped (or preserved)
-        consistently with the user's setting.
+        consistently with the user's setting. When the resolved model name
+        indicates a Muse-Glimmer family model (served by the oMLX endpoint),
+        ``OpenAICompatModelWrapper`` is additionally given
+        ``muse_glimmer=True`` so its self-talk protocol and
+        ``<atem:function_calls>`` XML tool calls are translated into clean
+        ``content`` + structured ``tool_calls``.
 
         Args:
             model: Raw model from init_chat_model.
             provider_type: Detected provider type from registry.
             provider_name: Provider name for logging.
+            model_name: Model name portion of the spec (e.g. ``Muse-Glimmer-30B-4bit``).
 
         Returns:
             Wrapped model ready for use.
         """
         if self._registry.requires_openai_compat_wrapper(provider_name):
+            muse_glimmer = _is_muse_glimmer_model(model_name)
             logger.info(
-                "Provider '%s' uses a custom OpenAI-compatible endpoint, applying compatibility wrapper",
+                "Provider '%s' uses a custom OpenAI-compatible endpoint, applying compatibility wrapper%s",
                 provider_name,
+                " (muse_glimmer adapter)" if muse_glimmer else "",
             )
             model = OpenAICompatModelWrapper(
                 model,
                 provider_name,
                 hide_thinking_tokens=self._config.hide_thinking_tokens,
+                muse_glimmer=muse_glimmer,
             )
 
         # Always apply token observability for consistent Langfuse integration
