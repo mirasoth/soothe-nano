@@ -14,7 +14,7 @@ from soothe_sdk.protocols.policy import (
     PolicyProtocol,
 )
 
-from soothe_nano.events import PolicyCheckedEvent, PolicyDeniedEvent
+from soothe_nano.events import PolicyDeniedEvent
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -77,14 +77,6 @@ class SoothePolicyMiddleware(AgentMiddleware):
         decision = self._policy.check(
             ActionRequest(action_type=action_type, tool_name=action_name, tool_args=tool_args),
             ctx,
-        )
-        self._emit_policy_event(
-            request,
-            PolicyCheckedEvent(
-                action=action_type,
-                verdict=decision.verdict,
-                profile=self._profile_name,
-            ).to_dict(),
         )
 
         if decision.verdict == "deny":

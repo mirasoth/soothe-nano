@@ -65,13 +65,6 @@ class MemoryStoredEvent(ProtocolEvent):
     source_thread: str = ""
 
 
-class PolicyCheckedEvent(ProtocolEvent):
-    type: Literal["soothe.internal.policy.checked"] = "soothe.internal.policy.checked"
-    action: str = ""
-    verdict: str = ""
-    profile: str | None = None
-
-
 class PolicyDeniedEvent(ProtocolEvent):
     type: Literal["soothe.internal.policy.denied"] = "soothe.internal.policy.denied"
     action: str = ""
@@ -101,7 +94,6 @@ register_event(
 )
 register_event(MemoryRecalledEvent, summary_template="{count} items recalled")
 register_event(MemoryStoredEvent, summary_template="Stored memory: {id}")
-register_event(PolicyCheckedEvent, summary_template="Policy: {verdict}")
 register_event(PolicyDeniedEvent, summary_template="Denied: {reason}")
 register_event(
     ErrorGeneralEvent,
@@ -120,7 +112,6 @@ __all__ = [
     "LLMRetryAttemptEvent",
     "MemoryRecalledEvent",
     "MemoryStoredEvent",
-    "PolicyCheckedEvent",
     "PolicyDeniedEvent",
     "StreamChunk",
     "StreamEndEvent",
