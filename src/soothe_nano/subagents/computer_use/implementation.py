@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from soothe_deepagents.middleware.subagents import CompiledSubAgent
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
@@ -1433,6 +1434,86 @@ def create_computer_use_subagent(
     }
 
 
+def resolve_computer_use_backend(
+    computer_config: ComputerUseSubagentConfig | None = None,
+) -> _DesktopInputBackend:
+    """Resolve a desktop input backend from a ComputerUse config.
+
+    Shared by the subagent agentic loop and the main-agent tool surface so
+    both paths use the same backend-selection logic. When the configured
+    backend's dependency (pyautogui) is unavailable, falls back to the
+    no-op ``_DesktopInputBackend`` so the tools still load (each tool
+    returns a clear ``{"error": "No input backend configured"}`` dict on
+    invocation rather than failing at graph-compile time).
+
+    Args:
+        computer_config: ComputerUse subagent configuration. When ``None``,
+            uses defaults (pyautogui, ``coordinate_scale=1``).
+
+    Returns:
+        A ``_DesktopInputBackend`` instance (``_PyAutoGUIBackend`` when
+        pyautogui is importable, else the no-op base).
+    """
+    cfg = computer_config or ComputerUseSubagentConfig()
+    screenshots_dir = str(get_computer_screenshots_dir())
+
+    effective_mode = cfg.input_mode if cfg.input_mode != "auto" else cfg.backend
+    # ``auto`` → pyautogui on all platforms (osascript not yet implemented).
+    if effective_mode in ("auto", "pyautogui", "osascript"):
+        try:
+            return _PyAutoGUIBackend(
+                screenshots_dir=screenshots_dir,
+                coordinate_scale=cfg.coordinate_scale,
+                screenshot_source=cfg.screenshot_source,
+                screenshot_format=cfg.screenshot_format,
+                screenshot_quality=cfg.screenshot_quality,
+            )
+        except ImportError:
+            logger.warning(
+                "pyautogui not installed; computer_use tools will return "
+                "backend-not-configured errors on invocation."
+            )
+            return _DesktopInputBackend()
+    return _DesktopInputBackend()
+
+
+def create_computer_use_tools(
+    config: Any | None = None,
+) -> list[BaseTool]:
+    """Build computer_use input tools for direct main-agent binding.
+
+    Returns the four desktop-automation tools (``computer_screenshot``,
+    ``computer_click``, ``computer_keyboard``, ``computer_scroll``) with a
+    backend resolved from the ``computer_use`` subagent config section.
+
+    This wires the tools into the main nano agent's tool set (Style 1 —
+    routed delegation) so the agent can drive the desktop directly without
+    delegating through the ``task`` tool to the subagent graph.
+
+    Args:
+        config: ``SootheConfig``. When ``None`` or when the
+            ``computer_use`` subagent is disabled, returns an empty list.
+
+    Returns:
+        List of ``BaseTool`` instances (empty when disabled).
+    """
+    if config is None:
+        return []
+
+    sub_cfg = getattr(getattr(config, "subagents", None), "get", lambda _k: None)("computer_use")
+    if sub_cfg is None or not getattr(sub_cfg, "enabled", True):
+        return []
+
+    computer_config: ComputerUseSubagentConfig | None = None
+    cfg_dict = getattr(sub_cfg, "config", None) or {}
+    if cfg_dict:
+        computer_config = ComputerUseSubagentConfig(**cfg_dict)
+
+    backend = resolve_computer_use_backend(computer_config)
+    toolkit = ComputerUseToolkit(backend=backend)
+    return toolkit.get_tools()
+
+
 __all__ = [
     "COMPUTER_DESCRIPTION",
     "ComputerUseToolkit",
@@ -1444,4 +1525,6 @@ __all__ = [
     "_check_macos_screen_recording_permission",
     "computer_use_model_role",
     "create_computer_use_subagent",
+    "create_computer_use_tools",
+    "resolve_computer_use_backend",
 ]

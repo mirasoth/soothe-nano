@@ -15,9 +15,14 @@ from . import events as _events  # noqa: F401 — register soothe.subagent.compu
 from .implementation import (
     _build_computer_use_graph,  # noqa: F401 - needed for tests
     create_computer_use_subagent,
+    create_computer_use_tools,
 )
 
-__all__ = ["ComputerUsePlugin", "create_computer_use_subagent"]
+__all__ = [
+    "ComputerUsePlugin",
+    "create_computer_use_subagent",
+    "create_computer_use_tools",
+]
 
 
 @plugin(

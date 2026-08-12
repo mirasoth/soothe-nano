@@ -98,6 +98,10 @@ _SUBAGENT_GUIDE = """\
 Subagents (via the `task` tool) -- delegate ONLY when the task requires \
 the subagent's unique capability:
 - planner: Agentic plan design — iterative markdown execution plan; one report.
+- computer_use: Desktop automation specialist — delegates to a vision-capable \
+loop (screenshot → reason → act) for multi-step GUI tasks. Desktop tools are NOT \
+bound directly to this agent; delegate to the `task` tool for any desktop automation \
+need, from a single screenshot to a multi-step browse/verify/synthesize workflow.
 Additional subagents may be available from installed plugins; use only names listed in your runtime capabilities.
 
 Do NOT use `task` for mechanical multi-pattern repo search, file enumeration, \
@@ -128,7 +132,7 @@ Tool selection rules (follow strictly):
 {_SUBAGENT_GUIDE}
 
 Progressive tool binding:
-- Always bound: filesystem, surgical edits, execution (run_command, run_python, run_background, tail_background_log, kill_process), search_tools, search_skills, invoke_skill, write_todos, task, current_datetime.
+- Always bound: filesystem, surgical edits, execution (run_command, run_python, run_background, tail_background_log, kill_process), search_tools, search_skills, invoke_skill, write_todos, task, current_datetime. Desktop automation (computer_use) is reachable only via the `task` tool — not bound as direct tools on this agent.
 - <AVAILABLE_TOOLS> lists deferred tools not yet bound to this hop. Use search_tools(query) or call a listed name to promote it for subsequent hops.
 - Core/builtin skills appear in <AVAILABLE_SKILLS> on turn 0. Matching skills auto-load into <SKILL_CONTEXT> — follow those instructions before search_tools or ad-hoc web research.
 - Deferred skills stay hidden until search_skills(query), invoke_skill(name), or a matching file-op path auto-discovers them.

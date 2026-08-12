@@ -5,6 +5,38 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.13] - 2026-08-12
+
+### Added
+- `computer_use` subagent: `create_computer_use_tools` and
+  `resolve_computer_use_backend` factory functions for direct main-agent
+  desktop-tool binding (Style 1 — routed delegation), exported from the
+  `soothe_nano.subagents.computer_use` package.
+- Foreground session tracking for `run_command`: writes
+  `{workspace}/.soothe/foreground/fg-{pid}.session` markers while a
+  synchronous shell command is in flight so host cancel can reap the
+  process group (mirrors the existing `run_background` log tracking).
+  New helpers `_register_foreground_session` /
+  `_unregister_foreground_session` / `_foreground_session_path` /
+  `_resolve_foreground_session_dir` in `toolkits/execution.py`.
+- Examples `06_nano_computer_use_example.py` (desktop GUI automation via
+  the computer_use subagent) and `07_nano_computer_use_weixin_favorites.py`
+  (WeChat Favorites article-link harvester).
+
+### Changed
+- `examples/_shared/config.py` injects the repo `src/` dir onto `sys.path`
+  so examples run under a foreign venv with a stale flat-snapshot install.
+- System prompt: the `computer_use` subagent is advertised in the
+  subagent guide and noted as reachable via the `task` tool rather than
+  bound directly on the main agent.
+
+### Fixed
+- `RunCommandShellTool`: foreground `run_command` invocations now register
+  an in-flight session marker so cancellation drains the child process
+  group even for synchronous commands; marker is removed on exit.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.12...v1.1.13
+
 ## [1.1.12] - 2026-08-11
 
 ### Fixed

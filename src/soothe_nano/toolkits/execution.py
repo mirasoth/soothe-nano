@@ -177,6 +177,61 @@ def _cleanup_stale_background_logs(log_dir: Path, retention_days: int) -> None:
                 path.unlink()
 
 
+def _resolve_foreground_session_dir(cwd: str | None) -> Path | None:
+    """Directory for in-flight ``run_command`` session markers under a workspace.
+
+    Host cancel drains ``{workspace}/.soothe/foreground/fg-{pid}.session`` the
+    same way ``run_background`` is tracked via ``background/bg-{pid}.log``.
+    """
+    if cwd and str(cwd).strip():
+        target = expand_path(str(cwd).strip()) / ".soothe" / "foreground"
+        with contextlib.suppress(OSError):
+            target.mkdir(parents=True, exist_ok=True)
+            return target
+        return None
+    try:
+        from soothe_nano.workspace import get_virtual_home
+
+        target = get_virtual_home() / "foreground"
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+    except OSError:
+        return None
+
+
+def _foreground_session_path(pid: int, cwd: str | None) -> Path | None:
+    """Return ``fg-{pid}.session`` path for an in-flight ``run_command``, or None."""
+    if pid <= 0:
+        return None
+    session_dir = _resolve_foreground_session_dir(cwd)
+    if session_dir is None:
+        return None
+    return session_dir / f"fg-{pid}.session"
+
+
+def _register_foreground_session(pid: int, *, cwd: str | None, command: str) -> Path | None:
+    """Record an in-flight ``run_command`` so goal cancel can reap its process group."""
+    path = _foreground_session_path(pid, cwd)
+    if path is None:
+        return None
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with contextlib.suppress(OSError):
+        path.write_text(
+            f"[soothe] run_command started {ts}\n[soothe] command: {command}\n",
+            encoding="utf-8",
+        )
+        return path
+    return None
+
+
+def _unregister_foreground_session(path: Path | None) -> None:
+    """Remove a foreground session marker after ``run_command`` exits."""
+    if path is None:
+        return
+    with contextlib.suppress(OSError):
+        path.unlink(missing_ok=True)
+
+
 def _tail_text_file(path: Path, *, max_lines: int) -> str:
     """Return up to the last ``max_lines`` lines from a text file."""
     if not path.is_file():
@@ -483,25 +538,29 @@ def _run_shell_command_sync(
         text=True,
         start_new_session=sys.platform != "win32",
     )
-    if max_output_chars is None or proc.stdout is None:
-        try:
-            stdout, _ = proc.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            _terminate_shell_process(proc)
-            raise
-        return subprocess.CompletedProcess(
-            args=command,
-            returncode=proc.returncode if proc.returncode is not None else -1,
-            stdout=stdout or "",
-            stderr="",
-        )
+    session_path = _register_foreground_session(proc.pid, cwd=cwd, command=command)
+    try:
+        if max_output_chars is None or proc.stdout is None:
+            try:
+                stdout, _ = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _terminate_shell_process(proc)
+                raise
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=proc.returncode if proc.returncode is not None else -1,
+                stdout=stdout or "",
+                stderr="",
+            )
 
-    return _collect_capped_stdout(
-        proc,
-        command=command,
-        timeout=timeout,
-        max_output_chars=max_output_chars,
-    )
+        return _collect_capped_stdout(
+            proc,
+            command=command,
+            timeout=timeout,
+            max_output_chars=max_output_chars,
+        )
+    finally:
+        _unregister_foreground_session(session_path)
 
 
 class RunCommandShellTool(BaseTool):
