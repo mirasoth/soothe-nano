@@ -5,6 +5,56 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.16] - 2026-08-13
+
+### Changed
+- `LLMFactory` now reads a per-provider `streaming` flag (default `True`) from
+  `ModelProviderConfig` and passes `streaming`/`stream_usage` to
+  `init_chat_model` accordingly. The model cache key no longer hard-codes
+  `streaming:` so providers with the same spec but different streaming settings
+  no longer collide.
+- `ProviderRegistry.get_provider_streaming` resolves whether LangChain should
+  stream a provider's responses; returns `True` for unknown providers.
+
+### Removed
+- `soothe_nano.utils.llm.muse_glimmer` adapter and its test suite
+  (`tests/unit/utils/llm/test_muse_glimmer_adapter.py`). The adapter worked
+  around an oMLX/vLLM-Metal prototype endpoint that ignores `stream: true` and
+  returns a single non-SSE JSON body. Instead of translating the model's
+  internal self-talk protocol per-model, disable streaming at the provider
+  level (`streaming: false`) so LangChain's non-streaming `_agenerate` path is
+  used.
+- `muse_glimmer` flag and auto-detection (`_is_muse_glimmer_model`) from
+  `OpenAICompatModelWrapper` and `LLMFactory`; the `muse_glimmer` exports were
+  dropped from `soothe_nano.utils.llm.__init__`.
+
+### Fixed
+- `ModelProviderConfig.streaming` field (default `True`) lets a provider opt
+  out of streaming for OpenAI-compatible servers whose streaming endpoint is
+  broken or unsupported (e.g. vLLM-Metal prototype), avoiding
+  `No generations found in stream` errors.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.15...v1.1.16
+
+## [1.1.15] - 2026-08-12
+
+### Added
+- Muse-Glimmer response adapter (`soothe_nano.utils.llm.muse_glimmer`): the
+  oMLX endpoint model emits a self-talk protocol (`to=self<|message|>…`)
+  as raw content and embeds tool calls as XML (``<atem:function_calls>``/
+  ``<atem:invoke>``, ``<function name="…"><arg>``, self-named
+  ``<read_file file_path="…"/>``) never as structured `tool_calls`. The
+  adapter strips self-talk, extracts the `to=user` reply into `content`,
+  and parses all six tool-call dialects into structured `tool_calls`
+  (+ `tool_call_chunks` for streaming). Streaming turns are buffered and
+  emitted as one transformed chunk because the live tokens are internal
+  reasoning that must be hidden anyway. Wired into
+  `OpenAICompatModelWrapper` via a `muse_glimmer` flag (auto-triggered for
+  model names starting with `muse-glimmer`); `bind_tools` re-wraps the
+  bound model so the adapter applies on every tool-bound invocation.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.14...v1.1.15
+
 ## [1.1.14] - 2026-08-12
 
 ### Fixed
