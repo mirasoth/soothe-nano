@@ -59,6 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_is_muse_glimmer_model` detection (case-insensitive `muse-glimmer`
   substring) in `LLMFactory`; the wrapper flag `muse_glimmer` is
   auto-triggered for matching model names.
+- Document parsing now supports Word (`.doc`, `.docm`), PowerPoint (`.ppt`,
+  `.pps`, `.pot`, `.pptx`, `.pptm`, `.ppsx`, `.ppsm`), OpenDocument
+  (`.odt`, `.ods`, `.odp`), `.rtf`, and `.epub` via the new
+  `firecrawl-anydoc` dependency. Files are converted to GitHub-Flavored
+  Markdown through a native (Rust) converter that releases the GIL.
+- `ExtractTextTool` description and `_DOCUMENT_EXTENSIONS` registry updated
+  to advertise and route the new Office/OpenDocument formats.
 
 ### Changed
 - `LLMFactory` now injects a default `max_tokens=2048` for Muse-Glimmer
@@ -71,6 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bind_tools` re-wraps the bound model so the adapter applies on every
   tool-bound invocation, and `_extract_tool_param_order` feeds the bound
   tool schemas into the adapter for positional-arg-to-keyword mapping.
+- `_parse_document` routes any `_ANYDOC_EXTENSIONS` suffix to
+  `_parse_with_anydoc`, falling back to the existing PDF/DOCX/TXT paths.
+- The "Unsupported document format" error message lists the newly
+  supported extensions.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.16...v1.1.17
 
