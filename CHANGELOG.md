@@ -7,81 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.18] - 2026-08-13
 
-### Changed — model-agnostic enhancements
+### Changed
 
-- **Content-based protocol detection replaces model-name matching.** The
-  self-talk / tool-XML protocol adapter
-  (`soothe_nano.utils.llm.muse_glimmer`) is no longer gated on a model name
-  (`_is_muse_glimmer_model` has been removed). Instead the
-  `OpenAICompatModelWrapper` runs `transform_muse_glimmer_message` on every
-  generation's message; the transform internally checks the content for the
-  distinctive wire markers (`to=self<|message|>`, `<|eom|>`, `<atem:` tags)
-  and is a complete no-op when they are absent. New local models that adopt
-  the same wire protocol now work without a code change or a name match.
-- **Streaming runtime auto-fallback.** Even when a provider's `streaming`
-  flag is `True` (the default), `_stream`/`_astream` now catch LangChain's
-  generic `No generations found in stream` error — the signature of a server
-  that ignores `stream: true` (e.g. the vLLM-Metal prototype) — and
-  transparently retry via the non-streaming `_generate`/`_agenerate` path,
-  emitting the result as `ChatGenerationChunk`s. Any provider with an
-  intermittently broken streaming endpoint now self-heals at runtime without
-  requiring `streaming: false` in config.
-- **Provider-level `max_tokens` default.** `ModelProviderConfig` now accepts
-  a `max_tokens` field; `ProviderRegistry.get_provider_kwargs` injects it
-  into the `init_chat_model` kwargs so any server that truncates output when
-  the field is omitted (e.g. vLLM-Metal truncating mid-tool-call XML) can set
-  it once at the provider level instead of per-model or per-call. Caller
-  params still take precedence.
-- **`bind_tools` re-wraps the bound model** so the content-based protocol
-  adapter and streaming auto-fallback still apply on every tool-bound
-  invocation, instead of the agent invoking the raw inner model and bypassing
-  the adapter.
+- **Protocol detection is now content-based, not name-based.** The
+  `muse_glimmer` adapter runs on every generation via
+  `OpenAICompatModelWrapper` and no-ops when the wire markers
+  (`to=self<|message|>`, `<|eom|>`, `<atem:`) are absent. New models sharing
+  the protocol work without a code change or name match.
+- **Streaming auto-fallback.** `_stream`/`_astream` now catch LangChain's
+  `No generations found in stream` (a server ignoring `stream: true`, e.g.
+  vLLM-Metal) and transparently retry via `_generate`/`_agenerate`. Broken
+  streaming endpoints self-heal without `streaming: false`.
+- **Provider-level `max_tokens`.** `ModelProviderConfig` accepts `max_tokens`;
+  `get_provider_kwargs` injects it into `init_chat_model` kwargs so servers
+  that truncate when the field is omitted (vLLM-Metal mid-tool-call) set it
+  once at the provider level. Caller params still take precedence.
+- **`bind_tools` re-wraps the bound model** so the adapter and auto-fallback
+  apply on every tool-bound invocation.
 
 ### Removed
 - `_is_muse_glimmer_model` name-based detection and the `muse_glimmer` flag on
-  `OpenAICompatModelWrapper` / `LLMFactory`. The adapter is now driven by
-  content detection, so these model-specific gates are unnecessary.
+  `OpenAICompatModelWrapper` / `LLMFactory` — superseded by content
+  detection.
 
 ## [1.1.17] - 2026-08-13
 
 ### Added
-- `soothe_nano.utils.llm.muse_glimmer` response adapter restored and
-  re-implemented: the Muse-Glimmer model (served by vLLM-Metal on
-  `http://localhost:9543/v1` and historically by the oMLX endpoint) emits an
-  internal self-talk protocol (`to=self<|message|>…<|eom|>` followed by
-  `<|start|>assistant to=user<|message|>ACTUAL REPLY`) as raw `content` and
-  embeds tool calls as XML (six dialects) instead of structured
-  `tool_calls`. The adapter strips self-talk, extracts the `to=user` reply,
-  and parses all six tool-call dialects into structured `tool_calls`
-  (+ `tool_call_chunks` for streaming). It also detects and strips the
-  vLLM-Metal chat-template repetition loop (hallucinated `User:`/`Assistant:`
-  turns after the real answer).
-- `_is_muse_glimmer_model` detection (case-insensitive `muse-glimmer`
-  substring) in `LLMFactory`; the wrapper flag `muse_glimmer` is
-  auto-triggered for matching model names.
-- Document parsing now supports Word (`.doc`, `.docm`), PowerPoint (`.ppt`,
-  `.pps`, `.pot`, `.pptx`, `.pptm`, `.ppsx`, `.ppsm`), OpenDocument
-  (`.odt`, `.ods`, `.odp`), `.rtf`, and `.epub` via the new
-  `firecrawl-anydoc` dependency. Files are converted to GitHub-Flavored
-  Markdown through a native (Rust) converter that releases the GIL.
-- `ExtractTextTool` description and `_DOCUMENT_EXTENSIONS` registry updated
-  to advertise and route the new Office/OpenDocument formats.
+- **Muse-Glimmer response adapter** (`soothe_nano.utils.llm.muse_glimmer`):
+  handles the self-talk wire protocol (`to=self<|message|>…<|eom|>` followed
+  by `<|start|>assistant to=user<|message|>…`) emitted as raw `content` by
+  vLLM-Metal (`localhost:9543`) and oMLX. Strips self-talk, extracts the
+  `to=user` reply, parses six tool-call XML dialects into structured
+  `tool_calls` (+ `tool_call_chunks` for streaming), and detects the
+  vLLM-Metal chat-template repetition loop.
+- Document parsing for Word, PowerPoint, OpenDocument, `.rtf`, and `.epub`
+  via `firecrawl-anydoc` (Rust converter, GIL-releasing).
+- `ExtractTextTool` advertises and routes the new Office/OpenDocument
+  formats.
 
 ### Changed
-- `LLMFactory` now injects a default `max_tokens=2048` for Muse-Glimmer
-  models when none is provided, so vLLM does not truncate mid-tool-call XML.
-- `OpenAICompatModelWrapper` now accepts `streaming` and `muse_glimmer`
-  flags; when `muse_glimmer` is set, `_generate`/`_agenerate` transform
-  every `AIMessage` via `transform_muse_glimmer_message`, and
-  `_stream`/`_astream` buffer the full turn and emit one transformed chunk
-  so the live internal-reasoning tokens never leak.
+- `LLMFactory` injects a default `max_tokens=2048` for Muse-Glimmer models
+  so vLLM doesn't truncate mid-tool-call XML.
+- `OpenAICompatModelWrapper` accepts `streaming` and `muse_glimmer` flags;
+  when `muse_glimmer` is set, `_generate`/`_agenerate` transform every
+  `AIMessage`, and `_stream`/`_astream` buffer the full turn and emit one
+  transformed chunk so live reasoning tokens never leak.
 - `bind_tools` re-wraps the bound model so the adapter applies on every
-  tool-bound invocation, and `_extract_tool_param_order` feeds the bound
-  tool schemas into the adapter for positional-arg-to-keyword mapping.
-- `_parse_document` routes any `_ANYDOC_EXTENSIONS` suffix to
-  `_parse_with_anydoc`, falling back to the existing PDF/DOCX/TXT paths.
-- The "Unsupported document format" error message lists the newly
-  supported extensions.
+  tool-bound invocation; `_extract_tool_param_order` feeds bound tool
+  schemas for positional-arg-to-keyword mapping.
+- `_parse_document` routes `_ANYDOC_EXTENSIONS` to `_parse_with_anydoc`,
+  falling back to PDF/DOCX/TXT.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.16...v1.1.17
 
