@@ -191,6 +191,37 @@ class TestDocumentTools:
             assert isinstance(result, str)
             assert "Header" in result
 
+    def test_extract_text_from_rtf_via_anydoc(self, extract_tool) -> None:
+        """Test extracting text from RTF using firecrawl-anydoc."""
+        pytest.importorskip("anydoc")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rtf_file = Path(tmpdir) / "test.rtf"
+            rtf_file.write_text(
+                r"{\rtf1\ansi\deff0 {\fonttbl {\f0 Times New Roman;}}\f0\fs24 Hello world!\par}"
+            )
+
+            result = extract_tool._run(str(rtf_file))
+
+            assert isinstance(result, str)
+            assert "Hello world" in result
+
+    def test_anydoc_format_routing(self) -> None:
+        """Test that new Office formats route to anydoc in the parser."""
+        pytest.importorskip("anydoc")
+
+        from soothe_nano.toolkits._internal.document import _parse_document
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rtf_file = Path(tmpdir) / "test.rtf"
+            rtf_file.write_text(
+                r"{\rtf1\ansi\deff0 {\fonttbl {\f0 Times New Roman;}}\f0\fs24 Routed via anydoc.\par}"
+            )
+
+            result = _parse_document(str(rtf_file))
+
+            assert "Routed via anydoc" in result
+
 
 class TestDocumentQA:
     """Integration tests for document Q&A capabilities."""

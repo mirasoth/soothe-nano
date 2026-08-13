@@ -5,6 +5,23 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.17] - 2026-08-13
+
+### Added
+- Document parsing now supports Word (`.doc`, `.docm`), PowerPoint (`.ppt`,
+  `.pps`, `.pot`, `.pptx`, `.pptm`, `.ppsx`, `.ppsm`), OpenDocument
+  (`.odt`, `.ods`, `.odp`), `.rtf`, and `.epub` via the new
+  `firecrawl-anydoc` dependency. Files are converted to GitHub-Flavored
+  Markdown through a native (Rust) converter that releases the GIL.
+- `ExtractTextTool` description and `_DOCUMENT_EXTENSIONS` registry updated
+  to advertise and route the new Office/OpenDocument formats.
+
+### Changed
+- `_parse_document` routes any `_ANYDOC_EXTENSIONS` suffix to
+  `_parse_with_anydoc`, falling back to the existing PDF/DOCX/TXT paths.
+- The "Unsupported document format" error message lists the newly
+  supported extensions.
+
 ## [1.1.16] - 2026-08-13
 
 ### Changed

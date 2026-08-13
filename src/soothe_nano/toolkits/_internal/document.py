@@ -1,7 +1,8 @@
 """Document parsing and Q&A with multi-format support.
 
 Ported from noesium's document_toolkit.py.
-Uses PyMuPDF for PDF parsing and docx2txt for DOCX.
+Uses PyMuPDF for PDF parsing, docx2txt for DOCX, and firecrawl-anydoc
+for Word, PowerPoint, OpenDocument, RTF, and EPUB formats.
 
 Uses backend_ops for virtual mode file operations.
 """
@@ -29,6 +30,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _NANO_INSTALL_HINT = "pip install -U soothe-nano"
+
+# Office and OpenDocument formats handled by firecrawl-anydoc.
+# Spreadsheets (.xls/.xlsx/.csv) stay on the tabular path via pandas.
+_ANYDOC_EXTENSIONS = frozenset(
+    {
+        ".doc",
+        ".docm",
+        ".ppt",
+        ".pps",
+        ".pot",
+        ".pptx",
+        ".pptm",
+        ".ppsx",
+        ".ppsm",
+        ".odt",
+        ".ods",
+        ".odp",
+        ".rtf",
+        ".epub",
+    }
+)
 
 
 def _get_cache_path(document_path: str, cache_dir: str = "", config: Any = None) -> Path | None:
@@ -120,6 +142,30 @@ def _parse_docx(file_path: str) -> str:
         return text or ""
 
 
+def _parse_with_anydoc(file_path: str) -> str:
+    """Parse a document to Markdown using firecrawl-anydoc.
+
+    Converts Word, PowerPoint, OpenDocument, RTF, and EPUB files into
+    GitHub-Flavored Markdown. Native (Rust) conversion, releases the GIL.
+
+    Args:
+        file_path: Path to the document file.
+
+    Returns:
+        Document rendered as GitHub-Flavored Markdown.
+
+    Raises:
+        ImportError: If firecrawl-anydoc is not installed.
+    """
+    try:
+        import anydoc
+    except ImportError:
+        msg = f"firecrawl-anydoc not installed. Install with: {_NANO_INSTALL_HINT}"
+        raise ImportError(msg) from None
+
+    return anydoc.to_markdown(file_path)
+
+
 def _parse_document(document_path: str) -> str:
     """Parse document and extract text.
 
@@ -143,6 +189,10 @@ def _parse_document(document_path: str) -> str:
     if suffix == ".docx":
         return _parse_docx(document_path)
 
+    # Office & OpenDocument formats via firecrawl-anydoc
+    if suffix in _ANYDOC_EXTENSIONS:
+        return _parse_with_anydoc(document_path)
+
     # Text files
     if suffix in {".txt", ".md", ".rst", ".log"}:
         return path.read_text(encoding="utf-8", errors="ignore")
@@ -154,7 +204,10 @@ def _parse_document(document_path: str) -> str:
         return json.dumps(json.loads(path.read_text()), indent=2)
 
     # Unsupported format
-    msg = f"Unsupported document format: {suffix}. Supported: PDF, DOCX, TXT, MD, RST, JSON"
+    msg = (
+        f"Unsupported document format: {suffix}. Supported: PDF, DOCX, DOC, DOCM, "
+        "PPT, PPTX, ODT, ODS, ODP, RTF, EPUB, TXT, MD, RST, JSON"
+    )
     raise ValueError(msg)
 
 

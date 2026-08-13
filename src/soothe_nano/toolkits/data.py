@@ -35,7 +35,30 @@ def _local_path_or_error(file_path: str, config: Any) -> Path | str:
 
 
 _TABULAR_EXTENSIONS = frozenset({".csv", ".tsv", ".xlsx", ".xls", ".json", ".parquet"})
-_DOCUMENT_EXTENSIONS = frozenset({".pdf", ".docx", ".txt", ".md", ".rst", ".log"})
+_DOCUMENT_EXTENSIONS = frozenset(
+    {
+        ".pdf",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rst",
+        ".log",
+        ".doc",
+        ".docm",
+        ".ppt",
+        ".pps",
+        ".pot",
+        ".pptx",
+        ".pptm",
+        ".ppsx",
+        ".ppsm",
+        ".odt",
+        ".ods",
+        ".odp",
+        ".rtf",
+        ".epub",
+    }
+)
 
 
 def _detect_domain(file_path: str) -> str:
@@ -237,17 +260,18 @@ class CheckDataQualityTool(BaseTool):
 class ExtractTextTool(BaseTool):
     """Extract raw text from document files.
 
-    For documents (PDF, DOCX, TXT, MD).
+    For documents (PDF, DOCX, DOC, PPT, PPTX, ODT, EPUB, RTF, TXT, MD).
+    Office formats are rendered as Markdown via firecrawl-anydoc.
     Returns clean text content without metadata or formatting.
     """
 
     name: str = "extract_text"
     description: str = (
         "Extract text from documents. "
-        "Use for: PDF/DOCX text extraction. "
+        "Use for: PDF/DOCX/DOC/PPT/PPTX/ODT/EPUB/RTF text extraction. "
         "Parameters: file_path (required). "
-        "Returns: raw text content. "
-        "Document files only (PDF, DOCX, TXT, MD)."
+        "Returns: raw text content (Markdown for Office formats). "
+        "Document files only."
     )
 
     config: Any = Field(default=None, exclude=True)  # SootheConfig for path sandboxing

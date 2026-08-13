@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soothe-nano"
-version = "1.1.16"
+version = "1.1.17"
 description = "Soothe Nano — batteries-included SootheNanoAgent on deepagents"
 readme = "README.md"
 license = { text = "MIT" }
@@ -60,6 +60,7 @@ dependencies = [
     "openpyxl>=3.1.0",
     "PyMuPDF>=1.24.0",
     "docx2txt>=0.8.0",
+    "firecrawl-anydoc>=0.1.8,<0.2.0",
 ]
 
 [project.optional-dependencies]
