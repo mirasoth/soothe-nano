@@ -19,10 +19,6 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
-from soothe_nano.utils.llm.muse_glimmer import (
-    detect_muse_glimmer_protocol,
-    transform_muse_glimmer_message,
-)
 from soothe_nano.utils.llm.response_text import text_from_message_content
 from soothe_nano.utils.llm.schema_wire import (
     build_json_schema_response_format,
@@ -109,112 +105,6 @@ def _chunk_text(chunk: Any) -> str | None:
     if isinstance(content, str):
         return content
     return None
-
-
-def _prepend_chunk(first_chunk: Any, first_text: str, rest_gen: Any) -> Any:
-    """Re-yield *first_chunk*'s text, then yield from *rest_gen*.
-
-    After content-based detection peeks the first text chunk of a stream, the
-    buffer helper still needs to see that chunk's text. This generator yields a
-    minimal text chunk carrying *first_text* followed by the remaining chunks.
-    """
-    yield _make_text_tail_chunk(first_text)
-    yield from rest_gen
-
-
-async def _aprepend_chunk(first_chunk: Any, first_text: str, rest_agen: Any) -> Any:
-    """Async counterpart of :func:`_prepend_chunk`."""
-    yield _make_text_tail_chunk(first_text)
-    async for chunk in rest_agen:
-        yield chunk
-
-
-def _extract_tool_param_order(model: Any) -> dict[str, list[str]] | None:
-    """Extract per-tool parameter name lists from a bound model's tools.
-
-    When the inner model is a ``RunnableBinding`` created by ``bind_tools``,
-    its ``kwargs['tools']`` is a list of OpenAI-format tool dicts. This
-    returns ``{tool_name: [param_name, …]}`` so the protocol adapter can
-    map positional ``<args>[json_array]`` args to the correct keyword names.
-    Returns ``None`` when no tools are bound (the adapter falls back to its
-    heuristic).
-    """
-    kwargs = getattr(model, "kwargs", None)
-    if not isinstance(kwargs, dict):
-        return None
-    tools = kwargs.get("tools")
-    if not isinstance(tools, list) or not tools:
-        return None
-    out: dict[str, list[str]] = {}
-    for entry in tools:
-        if not isinstance(entry, dict):
-            continue
-        fn = entry.get("function") or entry
-        name = fn.get("name")
-        params = (fn.get("parameters") or {}).get("properties") or {}
-        if name and isinstance(params, dict):
-            out[name] = list(params.keys())
-    return out or None
-
-
-def _apply_protocol_adapter_to_chat_result(
-    result: Any, tool_param_order: dict[str, list[str]] | None = None
-) -> Any:
-    """Run the content-based protocol adapter on every AI message in a result.
-
-    This is **model-agnostic**: instead of gating the adapter on a model name
-    (e.g. ``muse-glimmer``), it runs :func:`transform_muse_glimmer_message`
-    on each generation's message. That function internally checks the content
-    for the distinctive self-talk / tool-XML protocol markers
-    (``to=self<|message|>``, ``<atem:`` tags, ``<|eom|>``) and is a complete
-    no-op when the markers are absent, so it is safe to call on the output of
-    any OpenAI-compatible provider. This lets new local models that adopt the
-    same wire protocol work without a code change or a name match.
-    """
-    if result is None:
-        return result
-    generations = getattr(result, "generations", None)
-    if not generations:
-        return result
-    try:
-        for gen in generations:
-            msg = getattr(gen, "message", None)
-            if msg is None:
-                continue
-            transform_muse_glimmer_message(msg, tool_param_order=tool_param_order)
-            # vLLM's request validator rejects content=null on assistant
-            # messages with tool_calls (LangChain converts "" → None via
-            # ``content or None``). Use a minimal non-empty placeholder so the
-            # AIMessage round-trips in the next conversation turn.
-            if getattr(msg, "tool_calls", None):
-                if not getattr(msg, "content", ""):
-                    msg.content = " "
-    except Exception:  # pragma: no cover - defensive; never break generation
-        logger.debug("protocol_result_apply_failed", exc_info=True)
-    return result
-
-
-def _build_protocol_synthesized_chunk(content: str) -> Any:
-    """Build the single transformed chunk for a buffered protocol stream.
-
-    Self-talk protocol models emit the whole turn (self-talk + reply or tool
-    XML) as text in the ``content`` field. Streaming it raw would leak
-    ``to=self`` / ``<|eom|>`` fragments split across chunk boundaries. We
-    buffer the full stream, build one :class:`AIMessage` from the accumulated
-    text, run the content-based protocol transform on it, and emit a single
-    chunk carrying the cleaned content (and any structured ``tool_calls`` the
-    transform populated).
-    """
-    from langchain_core.messages import AIMessage, AIMessageChunk
-    from langchain_core.outputs import ChatGenerationChunk
-
-    msg = AIMessage(content=content)
-    transform_muse_glimmer_message(msg)
-    chunk_msg = AIMessageChunk(
-        content=getattr(msg, "content", "") or "",
-        tool_call_chunks=getattr(msg, "tool_call_chunks", []) or [],
-    )
-    return ChatGenerationChunk(message=chunk_msg)
 
 
 def _chat_result_to_chunks(result: Any) -> list[Any]:
@@ -669,13 +559,10 @@ class OpenAICompatModelWrapper(BaseChatModel):
 
         Coerces incompatible values (object-form and ``"required"``) to
         ``"auto"`` for provider compatibility. The tool-bound inner model is
-        re-wrapped in a new :class:`OpenAICompatModelWrapper` so the
-        model-agnostic protocol adapter (self-talk stripping + tool-XML →
-        structured ``tool_calls``) still applies on every bound invocation —
-        otherwise the agent would invoke the raw inner model and bypass the
-        adapter entirely. The adapter is content-based, so re-wrapping is safe
-        for any provider: it is a no-op when the output carries no protocol
-        markers.
+        re-wrapped in a new :class:`OpenAICompatModelWrapper` so thinking-token
+        stripping and the streaming auto-fallback still apply on every bound
+        invocation — otherwise the agent would invoke the raw inner model and
+        bypass the wrapper entirely.
 
         Args:
             tools: List of tool definitions.
@@ -696,8 +583,8 @@ class OpenAICompatModelWrapper(BaseChatModel):
                 kwargs["tool_choice"] = sanitized_tool_choice
 
         bound = self._model.bind_tools(tools, **kwargs)
-        # Re-wrap so the content-based protocol adapter and streaming
-        # auto-fallback still apply on every tool-bound invocation.
+        # Re-wrap so thinking-token stripping and the streaming auto-fallback
+        # still apply on every tool-bound invocation.
         return OpenAICompatModelWrapper(
             bound,
             self._provider_name,
@@ -724,13 +611,6 @@ class OpenAICompatModelWrapper(BaseChatModel):
         result = self._model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         if self._hide_thinking_tokens:
             _strip_thinking_from_chat_result(result)
-        # Model-agnostic protocol adapter: runs on every result, but the
-        # transform is a no-op when the content carries no self-talk / tool-XML
-        # protocol markers (``to=self<|message|>``, ``<|eom|>``, ``<atem:``), so
-        # normal OpenAI-compatible output passes through untouched.
-        _apply_protocol_adapter_to_chat_result(
-            result, tool_param_order=_extract_tool_param_order(self._model)
-        )
         return result
 
     async def _agenerate(
@@ -746,11 +626,6 @@ class OpenAICompatModelWrapper(BaseChatModel):
         )
         if self._hide_thinking_tokens:
             _strip_thinking_from_chat_result(result)
-        # Model-agnostic protocol adapter (see ``_generate``); a no-op for
-        # providers whose output carries no self-talk / tool-XML markers.
-        _apply_protocol_adapter_to_chat_result(
-            result, tool_param_order=_extract_tool_param_order(self._model)
-        )
         return result
 
     def _stream(
@@ -801,25 +676,12 @@ class OpenAICompatModelWrapper(BaseChatModel):
                     yield chunk
                 return
             raise
-        # Content-based protocol detection (model-agnostic): scan chunks while
-        # buffering their text. If a chunk carries self-talk / tool-XML protocol
-        # markers (``to=self<|message|>``, ``<|eom|>``, ``<atem:``), switch to
-        # full-buffer mode and emit one transformed chunk so the live
-        # internal-reasoning tokens never leak. Otherwise stream live through
-        # the thinking filter. Single-pass: non-text chunks (tool-call deltas)
-        # pass through unchanged in the live path.
-        parts: list[str] = []
-        protocol_detected = False
+        # Stream live through the thinking filter. Non-text chunks (tool-call
+        # deltas) pass through unchanged; partial ``<think``/``</think`` tag
+        # fragments split across chunk boundaries are buffered and never leak.
         filt = ThinkingStreamFilter() if self._hide_thinking_tokens else None
         for chunk in gen:
             text = _chunk_text(chunk)
-            if text is not None and detect_muse_glimmer_protocol(text):
-                protocol_detected = True
-            if protocol_detected:
-                if text is not None:
-                    parts.append(text)
-                continue
-            # Live path: yield through thinking filter (or passthrough).
             if text is None or filt is None:
                 yield chunk
             else:
@@ -827,9 +689,6 @@ class OpenAICompatModelWrapper(BaseChatModel):
                 if safe:
                     yield _set_chunk_text(chunk, safe)
                 # else: filter swallowed the partial tag fragment.
-        if protocol_detected and parts:
-            yield _build_protocol_synthesized_chunk("".join(parts))
-            return
         if filt is not None:
             tail = filt.finalize()
             if tail:
@@ -896,31 +755,18 @@ class OpenAICompatModelWrapper(BaseChatModel):
                     yield chunk
                 return
             raise
-        # Content-based protocol detection (model-agnostic): scan chunks while
-        # buffering their text. If a chunk carries self-talk / tool-XML protocol
-        # markers, buffer the whole turn and emit one transformed chunk.
-        # Otherwise stream live through the thinking filter. Single-pass.
-        parts: list[str] = []
-        protocol_detected = False
+        # Stream live through the thinking filter. Non-text chunks pass through
+        # unchanged; partial ``<think``/``</think`` fragments split across
+        # chunk boundaries are buffered and never leak.
         filt = ThinkingStreamFilter() if self._hide_thinking_tokens else None
         async for chunk in agen:
             text = _chunk_text(chunk)
-            if text is not None and detect_muse_glimmer_protocol(text):
-                protocol_detected = True
-            if protocol_detected:
-                if text is not None:
-                    parts.append(text)
-                continue
-            # Live path: yield through thinking filter (or passthrough).
             if text is None or filt is None:
                 yield chunk
             else:
                 safe = filt.feed(text)
                 if safe:
                     yield _set_chunk_text(chunk, safe)
-        if protocol_detected and parts:
-            yield _build_protocol_synthesized_chunk("".join(parts))
-            return
         if filt is not None:
             tail = filt.finalize()
             if tail:
