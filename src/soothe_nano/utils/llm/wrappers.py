@@ -19,6 +19,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
+from soothe_nano.utils.llm.muse_glimmer import transform_muse_glimmer_message
 from soothe_nano.utils.llm.response_text import text_from_message_content
 from soothe_nano.utils.llm.schema_wire import (
     build_json_schema_response_format,
@@ -28,6 +29,127 @@ from soothe_nano.utils.llm.thinking_filter import ThinkingStreamFilter, strip_th
 from soothe_nano.utils.text_preview import preview_first
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_tool_param_order(model: Any) -> dict[str, list[str]] | None:
+    """Extract per-tool parameter name lists from a bound model's tools.
+
+    When the inner model is a ``RunnableBinding`` created by ``bind_tools``,
+    its ``kwargs['tools']`` is a list of OpenAI-format tool dicts. This
+    returns ``{tool_name: [param_name, …]}`` so the Muse-Glimmer adapter can
+    map positional ``<args>[json_array]`` args to the correct keyword names.
+    Returns ``None`` when no tools are bound (the adapter falls back to its
+    heuristic).
+    """
+    kwargs = getattr(model, "kwargs", None)
+    if not isinstance(kwargs, dict):
+        return None
+    tools = kwargs.get("tools")
+    if not isinstance(tools, list) or not tools:
+        return None
+    out: dict[str, list[str]] = {}
+    for entry in tools:
+        if not isinstance(entry, dict):
+            continue
+        fn = entry.get("function") or entry
+        name = fn.get("name")
+        params = (fn.get("parameters") or {}).get("properties") or {}
+        if name and isinstance(params, dict):
+            out[name] = list(params.keys())
+    return out or None
+
+
+def _apply_muse_glimmer_to_chat_result(
+    result: Any, tool_param_order: dict[str, list[str]] | None = None
+) -> Any:
+    """Apply the Muse-Glimmer adapter to every AI message in a non-streaming result.
+
+    Iterates ``result.generations`` and, for each ``ChatGeneration`` whose
+    ``message`` is an :class:`~langchain_core.messages.AIMessage`, calls
+    :func:`~soothe_nano.utils.llm.muse_glimmer.transform_muse_glimmer_message`
+    on it. The transform is a no-op when the message content does not carry
+    Muse-Glimmer protocol markers or a repetition loop, so it is safe to call
+    unconditionally on the Muse-Glimmer model's results.
+    """
+    if result is None:
+        return result
+    generations = getattr(result, "generations", None)
+    if not generations:
+        return result
+    try:
+        for gen in generations:
+            msg = getattr(gen, "message", None)
+            if msg is None:
+                continue
+            transform_muse_glimmer_message(msg, tool_param_order=tool_param_order)
+            # vLLM's request validator rejects content=null on assistant
+            # messages with tool_calls (LangChain converts "" → None via
+            # ``content or None``). Use a minimal non-empty placeholder so the
+            # AIMessage round-trips in the next conversation turn.
+            if getattr(msg, "tool_calls", None):
+                if not getattr(msg, "content", ""):
+                    msg.content = " "
+    except Exception:  # pragma: no cover - defensive; never break generation
+        logger.debug("muse_glimmer_result_apply_failed", exc_info=True)
+    return result
+
+
+def _build_muse_glimmer_synthesized_chunk(content: str) -> Any:
+    """Build the single transformed chunk for a buffered Muse-Glimmer stream.
+
+    Muse-Glimmer emits the whole turn (self-talk + reply or tool XML) as text
+    in the ``content`` field. Streaming it raw would leak ``to=self`` /
+    ``<|eom|>`` fragments split across chunk boundaries. We buffer the full
+    stream, build one :class:`AIMessage` from the accumulated text, run
+    :func:`~soothe_nano.utils.llm.muse_glimmer.transform_muse_glimmer_message`
+    on it, and emit a single chunk carrying the cleaned content (and any
+    structured ``tool_calls`` the transform populated).
+    """
+    from langchain_core.messages import AIMessage, AIMessageChunk
+    from langchain_core.outputs import ChatGenerationChunk
+
+    msg = AIMessage(content=content)
+    transform_muse_glimmer_message(msg)
+    chunk_msg = AIMessageChunk(
+        content=getattr(msg, "content", "") or "",
+        tool_call_chunks=getattr(msg, "tool_call_chunks", []) or [],
+    )
+    return ChatGenerationChunk(message=chunk_msg)
+
+
+def _buffer_and_transform_muse_glimmer_stream(gen: Any, *, is_async: bool) -> Any:
+    """Buffer a Muse-Glimmer stream to one transformed chunk.
+
+    See :func:`_build_muse_glimmer_synthesized_chunk` for why the whole stream
+    is buffered. Tool-call deltas the server may emit alongside are ignored
+    here rather than surfaced, to keep the stream consistent with the
+    non-streaming adapter path.
+    """
+    if is_async:
+        return _buffer_and_transform_muse_glimmer_stream_async(gen)
+    return _buffer_and_transform_muse_glimmer_stream_sync(gen)
+
+
+def _buffer_and_transform_muse_glimmer_stream_sync(gen: Any) -> Any:
+    parts: list[str] = []
+    for chunk in gen:
+        text = _chunk_text(chunk)
+        if text:
+            parts.append(text)
+    content = "".join(parts)
+    if content:
+        yield _build_muse_glimmer_synthesized_chunk(content)
+
+
+async def _buffer_and_transform_muse_glimmer_stream_async(gen: Any) -> Any:
+    parts: list[str] = []
+    async for chunk in gen:
+        text = _chunk_text(chunk)
+        if text:
+            parts.append(text)
+    content = "".join(parts)
+    if content:
+        yield _build_muse_glimmer_synthesized_chunk(content)
 
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL | re.IGNORECASE)
@@ -98,6 +220,44 @@ def _chunk_text(chunk: Any) -> str | None:
     if isinstance(content, str):
         return content
     return None
+
+
+def _chat_result_to_chunks(result: Any) -> list[Any]:
+    """Convert a non-streaming :class:`ChatResult` to streamable chunks.
+
+    For each ``ChatGeneration.message`` (an :class:`AIMessage`), build a
+    :class:`ChatGenerationChunk` carrying an :class:`AIMessageChunk` with the
+    same content, ``tool_calls``, and ``tool_call_chunks`` so streaming
+    consumers (the langchain agent middleware, flowjet's
+    ``ToolCallArgAccumulator``) see the same shape they would from a real
+    stream. Used by the ``streaming: false`` fallback so providers whose
+    streaming endpoint is broken (vLLM-Metal) still drive the agent loop.
+    """
+    from langchain_core.messages import AIMessageChunk
+    from langchain_core.outputs import ChatGeneration, ChatGenerationChunk
+
+    out: list[Any] = []
+    generations = getattr(result, "generations", None) or []
+    for gen in generations:
+        if not isinstance(gen, ChatGeneration):
+            continue
+        msg = gen.message
+        try:
+            chunk_msg = AIMessageChunk(
+                content=getattr(msg, "content", "") or "",
+                tool_call_chunks=list(getattr(msg, "tool_call_chunks", []) or []),
+            )
+            # Carry structured tool_calls through for consumers that read them.
+            tcs = getattr(msg, "tool_calls", None)
+            if tcs:
+                try:
+                    chunk_msg.tool_calls = list(tcs)  # type: ignore[attr-defined]
+                except Exception:  # pragma: no cover - pydantic coercion edge
+                    pass
+        except Exception:  # pragma: no cover - defensive
+            chunk_msg = AIMessageChunk(content=getattr(msg, "content", "") or "")
+        out.append(ChatGenerationChunk(message=chunk_msg))
+    return out
 
 
 def _set_chunk_text(chunk: Any, text: str) -> Any:
@@ -412,6 +572,7 @@ class OpenAICompatModelWrapper(BaseChatModel):
         *,
         hide_thinking_tokens: bool = True,
         streaming: bool = True,
+        muse_glimmer: bool = False,
     ) -> None:
         """Initialize the wrapper.
 
@@ -435,6 +596,7 @@ class OpenAICompatModelWrapper(BaseChatModel):
         self._provider_name = provider_name
         self._hide_thinking_tokens = hide_thinking_tokens
         self._streaming = streaming
+        self._muse_glimmer = muse_glimmer
 
     def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
         """Structured output with provider-specific method routing.
@@ -499,7 +661,12 @@ class OpenAICompatModelWrapper(BaseChatModel):
         """Intercept tool_choice parameter for limited providers.
 
         Coerces incompatible values (object-form and ``"required"``) to
-        ``"auto"`` for provider compatibility.
+        ``"auto"`` for provider compatibility. When ``muse_glimmer`` is set,
+        the tool-bound inner model is re-wrapped in a new
+        ``OpenAICompatModelWrapper`` so the Muse-Glimmer adapter (self-talk
+        stripping + ``<atem:function_calls>`` XML → structured ``tool_calls``)
+        still applies on every bound invocation — otherwise the agent would
+        invoke the raw inner model and bypass the adapter entirely.
 
         Args:
             tools: List of tool definitions.
@@ -519,7 +686,16 @@ class OpenAICompatModelWrapper(BaseChatModel):
                 )
                 kwargs["tool_choice"] = sanitized_tool_choice
 
-        return self._model.bind_tools(tools, **kwargs)
+        bound = self._model.bind_tools(tools, **kwargs)
+        if self._muse_glimmer:
+            return OpenAICompatModelWrapper(
+                bound,
+                self._provider_name,
+                hide_thinking_tokens=self._hide_thinking_tokens,
+                streaming=self._streaming,
+                muse_glimmer=True,
+            )
+        return bound
 
     # Delegate all BaseChatModel methods to the wrapped model
 
@@ -540,6 +716,10 @@ class OpenAICompatModelWrapper(BaseChatModel):
         result = self._model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         if self._hide_thinking_tokens:
             _strip_thinking_from_chat_result(result)
+        if self._muse_glimmer:
+            _apply_muse_glimmer_to_chat_result(
+                result, tool_param_order=_extract_tool_param_order(self._model)
+            )
         return result
 
     async def _agenerate(
@@ -555,6 +735,10 @@ class OpenAICompatModelWrapper(BaseChatModel):
         )
         if self._hide_thinking_tokens:
             _strip_thinking_from_chat_result(result)
+        if self._muse_glimmer:
+            _apply_muse_glimmer_to_chat_result(
+                result, tool_param_order=_extract_tool_param_order(self._model)
+            )
         return result
 
     def _stream(
@@ -566,14 +750,31 @@ class OpenAICompatModelWrapper(BaseChatModel):
     ) -> Any:
         """Delegate streaming to wrapped model with thinking-token filtering.
 
-        When ``hide_thinking_tokens`` is set, each chunk's text delta is fed
-        through a :class:`ThinkingStreamFilter` so partial ``<think`` /
-        ``</think`` fragments split across chunk boundaries are buffered and
-        never leak; any final leftover text is flushed as a tail chunk.
-        Chunks with no textual delta (tool calls, empty chunks, plain strings)
-        pass through unchanged.
+        When ``streaming`` is False, fall back to the non-streaming
+        ``_generate`` path and emit the result as ``ChatGenerationChunk``s —
+        required for OpenAI-compatible servers whose streaming endpoint is
+        broken (vLLM-Metal ignores ``stream: true`` and returns a non-SSE
+        body, raising ``No generations found in stream``). The muse_glimmer
+        adapter (if set) runs inside ``_generate`` so the streamed chunks
+        carry the cleaned content + structured ``tool_calls``.
+
+        When streaming is enabled, each chunk's text delta is fed through a
+        :class:`ThinkingStreamFilter` so partial ``<think`` / ``</think``
+        fragments split across chunk boundaries are buffered and never leak;
+        any final leftover text is flushed as a tail chunk. For Muse-Glimmer
+        the whole stream is buffered and transformed as one unit (the model
+        emits the turn as one piece, and self-talk/protocol markers split
+        across chunk boundaries must not leak).
         """
+        if not self._streaming:
+            result = self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+            for chunk in _chat_result_to_chunks(result):
+                yield chunk
+            return
         gen = self._model._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
+        if self._muse_glimmer:
+            yield from _buffer_and_transform_muse_glimmer_stream(gen, is_async=False)
+            return
         if not self._hide_thinking_tokens:
             yield from gen
             return
@@ -609,13 +810,28 @@ class OpenAICompatModelWrapper(BaseChatModel):
         ``astream`` will hit ``async for chunk in <coroutine>`` and fail with
         ``'async for' requires an object with __aiter__``.
 
-        When ``hide_thinking_tokens`` is set, each chunk's text delta is fed
+        When ``streaming`` is False, fall back to the non-streaming
+        ``_agenerate`` path and emit the result as ``ChatGenerationChunk``s
+        (see :meth:`_stream` for the rationale). For Muse-Glimmer the whole
+        stream is buffered and transformed as one unit so protocol markers
+        split across chunk boundaries never leak.
+
+        Otherwise, when streaming is enabled, each chunk's text delta is fed
         through a :class:`ThinkingStreamFilter` (one per stream) so partial
         ``<think`` / ``</think`` fragments split across chunk boundaries are
         buffered and never leak; leftover text is flushed as a tail chunk at
         end-of-stream. Chunks with no textual delta pass through unchanged.
         """
+        if not self._streaming:
+            result = await self._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+            for chunk in _chat_result_to_chunks(result):
+                yield chunk
+            return
         agen = self._model._astream(messages, stop=stop, run_manager=run_manager, **kwargs)
+        if self._muse_glimmer:
+            async for chunk in _buffer_and_transform_muse_glimmer_stream(agen, is_async=True):
+                yield chunk
+            return
         if not self._hide_thinking_tokens:
             async for chunk in agen:
                 yield chunk

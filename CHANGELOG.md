@@ -5,6 +5,38 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.17] - 2026-08-13
+
+### Added
+- `soothe_nano.utils.llm.muse_glimmer` response adapter restored and
+  re-implemented: the Muse-Glimmer model (served by vLLM-Metal on
+  `http://localhost:9543/v1` and historically by the oMLX endpoint) emits an
+  internal self-talk protocol (`to=self<|message|>…<|eom|>` followed by
+  `<|start|>assistant to=user<|message|>ACTUAL REPLY`) as raw `content` and
+  embeds tool calls as XML (six dialects) instead of structured
+  `tool_calls`. The adapter strips self-talk, extracts the `to=user` reply,
+  and parses all six tool-call dialects into structured `tool_calls`
+  (+ `tool_call_chunks` for streaming). It also detects and strips the
+  vLLM-Metal chat-template repetition loop (hallucinated `User:`/`Assistant:`
+  turns after the real answer).
+- `_is_muse_glimmer_model` detection (case-insensitive `muse-glimmer`
+  substring) in `LLMFactory`; the wrapper flag `muse_glimmer` is
+  auto-triggered for matching model names.
+
+### Changed
+- `LLMFactory` now injects a default `max_tokens=2048` for Muse-Glimmer
+  models when none is provided, so vLLM does not truncate mid-tool-call XML.
+- `OpenAICompatModelWrapper` now accepts `streaming` and `muse_glimmer`
+  flags; when `muse_glimmer` is set, `_generate`/`_agenerate` transform
+  every `AIMessage` via `transform_muse_glimmer_message`, and
+  `_stream`/`_astream` buffer the full turn and emit one transformed chunk
+  so the live internal-reasoning tokens never leak.
+- `bind_tools` re-wraps the bound model so the adapter applies on every
+  tool-bound invocation, and `_extract_tool_param_order` feeds the bound
+  tool schemas into the adapter for positional-arg-to-keyword mapping.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.16...v1.1.17
+
 ## [1.1.16] - 2026-08-13
 
 ### Changed

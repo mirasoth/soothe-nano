@@ -36,6 +36,24 @@ logger = logging.getLogger(__name__)
 _model_cache_lock = threading.Lock()
 
 
+def _is_muse_glimmer_model(model_name: str) -> bool:
+    """Return True when *model_name* names a Muse-Glimmer family model.
+
+    Muse-Glimmer models (``Muse-Glimmer-30B-4bit``, the vLLM-prefixed
+    ``mlx-community/Muse-Glimmer-30B-4bit``, future variants) emit an internal
+    self-talk protocol (``to=self<|message|>…<|eom|>``) and embed tool calls as
+    XML in the ``content`` field; the OpenAI-compatible servers serving them
+    do not separate the stages or emit structured ``tool_calls``.
+    :mod:`soothe_nano.utils.llm.muse_glimmer` translates that wire shape into
+    clean content + structured ``tool_calls``. Detection is by a case-insensitive
+    substring so both the short oMLX name and the full vLLM-prefixed id match.
+    """
+    if not model_name:
+        return False
+    normalized = model_name.strip().lower()
+    return "muse-glimmer" in normalized
+
+
 class LLMFactory:
     """Model creation with automatic provider adaptation.
 
@@ -194,6 +212,13 @@ class LLMFactory:
             provider_type_str, kwargs = self._registry.get_provider_kwargs(provider_name)
             merged_kwargs = {**kwargs, **merged_params}
 
+            # Muse-Glimmer models served via vLLM-Metal require an explicit
+            # max_tokens (≥ 200 per ../deploy-llm-inference/AGENTS.md). When
+            # ChatOpenAI omits the field (default None) vLLM truncates
+            # mid-tool-call XML, so inject a generous cap for this family.
+            if _is_muse_glimmer_model(model_name) and "max_tokens" not in merged_kwargs:
+                merged_kwargs["max_tokens"] = 2048
+
             init_str = f"{provider_type_str}:{model_name}" if provider_name else spec_str
             streaming = self._registry.get_provider_streaming(provider_name)
             model = init_chat_model(
@@ -241,10 +266,19 @@ class LLMFactory:
                 "Provider '%s' uses a custom OpenAI-compatible endpoint, applying compatibility wrapper",
                 provider_name,
             )
+            muse_glimmer = _is_muse_glimmer_model(model_name)
+            if muse_glimmer:
+                logger.info(
+                    "Model '%s' is a Muse-Glimmer family model; enabling muse_glimmer adapter",
+                    model_name,
+                )
+            streaming = self._registry.get_provider_streaming(provider_name)
             model = OpenAICompatModelWrapper(
                 model,
                 provider_name,
                 hide_thinking_tokens=self._config.hide_thinking_tokens,
+                streaming=streaming,
+                muse_glimmer=muse_glimmer,
             )
 
         # Always apply token observability for consistent Langfuse integration
