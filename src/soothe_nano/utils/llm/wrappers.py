@@ -19,7 +19,10 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import Runnable
 from pydantic import BaseModel
 
-from soothe_nano.utils.llm.muse_glimmer import transform_muse_glimmer_message
+from soothe_nano.utils.llm.muse_glimmer import (
+    detect_muse_glimmer_protocol,
+    transform_muse_glimmer_message,
+)
 from soothe_nano.utils.llm.response_text import text_from_message_content
 from soothe_nano.utils.llm.schema_wire import (
     build_json_schema_response_format,
@@ -31,128 +34,14 @@ from soothe_nano.utils.text_preview import preview_first
 logger = logging.getLogger(__name__)
 
 
-def _extract_tool_param_order(model: Any) -> dict[str, list[str]] | None:
-    """Extract per-tool parameter name lists from a bound model's tools.
-
-    When the inner model is a ``RunnableBinding`` created by ``bind_tools``,
-    its ``kwargs['tools']`` is a list of OpenAI-format tool dicts. This
-    returns ``{tool_name: [param_name, …]}`` so the Muse-Glimmer adapter can
-    map positional ``<args>[json_array]`` args to the correct keyword names.
-    Returns ``None`` when no tools are bound (the adapter falls back to its
-    heuristic).
-    """
-    kwargs = getattr(model, "kwargs", None)
-    if not isinstance(kwargs, dict):
-        return None
-    tools = kwargs.get("tools")
-    if not isinstance(tools, list) or not tools:
-        return None
-    out: dict[str, list[str]] = {}
-    for entry in tools:
-        if not isinstance(entry, dict):
-            continue
-        fn = entry.get("function") or entry
-        name = fn.get("name")
-        params = (fn.get("parameters") or {}).get("properties") or {}
-        if name and isinstance(params, dict):
-            out[name] = list(params.keys())
-    return out or None
-
-
-def _apply_muse_glimmer_to_chat_result(
-    result: Any, tool_param_order: dict[str, list[str]] | None = None
-) -> Any:
-    """Apply the Muse-Glimmer adapter to every AI message in a non-streaming result.
-
-    Iterates ``result.generations`` and, for each ``ChatGeneration`` whose
-    ``message`` is an :class:`~langchain_core.messages.AIMessage`, calls
-    :func:`~soothe_nano.utils.llm.muse_glimmer.transform_muse_glimmer_message`
-    on it. The transform is a no-op when the message content does not carry
-    Muse-Glimmer protocol markers or a repetition loop, so it is safe to call
-    unconditionally on the Muse-Glimmer model's results.
-    """
-    if result is None:
-        return result
-    generations = getattr(result, "generations", None)
-    if not generations:
-        return result
-    try:
-        for gen in generations:
-            msg = getattr(gen, "message", None)
-            if msg is None:
-                continue
-            transform_muse_glimmer_message(msg, tool_param_order=tool_param_order)
-            # vLLM's request validator rejects content=null on assistant
-            # messages with tool_calls (LangChain converts "" → None via
-            # ``content or None``). Use a minimal non-empty placeholder so the
-            # AIMessage round-trips in the next conversation turn.
-            if getattr(msg, "tool_calls", None):
-                if not getattr(msg, "content", ""):
-                    msg.content = " "
-    except Exception:  # pragma: no cover - defensive; never break generation
-        logger.debug("muse_glimmer_result_apply_failed", exc_info=True)
-    return result
-
-
-def _build_muse_glimmer_synthesized_chunk(content: str) -> Any:
-    """Build the single transformed chunk for a buffered Muse-Glimmer stream.
-
-    Muse-Glimmer emits the whole turn (self-talk + reply or tool XML) as text
-    in the ``content`` field. Streaming it raw would leak ``to=self`` /
-    ``<|eom|>`` fragments split across chunk boundaries. We buffer the full
-    stream, build one :class:`AIMessage` from the accumulated text, run
-    :func:`~soothe_nano.utils.llm.muse_glimmer.transform_muse_glimmer_message`
-    on it, and emit a single chunk carrying the cleaned content (and any
-    structured ``tool_calls`` the transform populated).
-    """
-    from langchain_core.messages import AIMessage, AIMessageChunk
-    from langchain_core.outputs import ChatGenerationChunk
-
-    msg = AIMessage(content=content)
-    transform_muse_glimmer_message(msg)
-    chunk_msg = AIMessageChunk(
-        content=getattr(msg, "content", "") or "",
-        tool_call_chunks=getattr(msg, "tool_call_chunks", []) or [],
-    )
-    return ChatGenerationChunk(message=chunk_msg)
-
-
-def _buffer_and_transform_muse_glimmer_stream(gen: Any, *, is_async: bool) -> Any:
-    """Buffer a Muse-Glimmer stream to one transformed chunk.
-
-    See :func:`_build_muse_glimmer_synthesized_chunk` for why the whole stream
-    is buffered. Tool-call deltas the server may emit alongside are ignored
-    here rather than surfaced, to keep the stream consistent with the
-    non-streaming adapter path.
-    """
-    if is_async:
-        return _buffer_and_transform_muse_glimmer_stream_async(gen)
-    return _buffer_and_transform_muse_glimmer_stream_sync(gen)
-
-
-def _buffer_and_transform_muse_glimmer_stream_sync(gen: Any) -> Any:
-    parts: list[str] = []
-    for chunk in gen:
-        text = _chunk_text(chunk)
-        if text:
-            parts.append(text)
-    content = "".join(parts)
-    if content:
-        yield _build_muse_glimmer_synthesized_chunk(content)
-
-
-async def _buffer_and_transform_muse_glimmer_stream_async(gen: Any) -> Any:
-    parts: list[str] = []
-    async for chunk in gen:
-        text = _chunk_text(chunk)
-        if text:
-            parts.append(text)
-    content = "".join(parts)
-    if content:
-        yield _build_muse_glimmer_synthesized_chunk(content)
-
-
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL | re.IGNORECASE)
+
+# Error substring raised by LangChain's ``generate_from_stream`` when a provider
+# ignores ``stream: true`` and returns a non-SSE body (e.g. vLLM-Metal). The
+# streaming auto-fallback catches this and retries via the non-streaming path so
+# any provider with a broken streaming endpoint self-heals at runtime — no need
+# for the operator to set ``streaming: false`` ahead of time.
+_NO_GENERATIONS_MARKER = "no generations found in stream"
 
 
 def _sanitize_tool_choice_for_compat(tool_choice: Any) -> Any:
@@ -222,6 +111,112 @@ def _chunk_text(chunk: Any) -> str | None:
     return None
 
 
+def _prepend_chunk(first_chunk: Any, first_text: str, rest_gen: Any) -> Any:
+    """Re-yield *first_chunk*'s text, then yield from *rest_gen*.
+
+    After content-based detection peeks the first text chunk of a stream, the
+    buffer helper still needs to see that chunk's text. This generator yields a
+    minimal text chunk carrying *first_text* followed by the remaining chunks.
+    """
+    yield _make_text_tail_chunk(first_text)
+    yield from rest_gen
+
+
+async def _aprepend_chunk(first_chunk: Any, first_text: str, rest_agen: Any) -> Any:
+    """Async counterpart of :func:`_prepend_chunk`."""
+    yield _make_text_tail_chunk(first_text)
+    async for chunk in rest_agen:
+        yield chunk
+
+
+def _extract_tool_param_order(model: Any) -> dict[str, list[str]] | None:
+    """Extract per-tool parameter name lists from a bound model's tools.
+
+    When the inner model is a ``RunnableBinding`` created by ``bind_tools``,
+    its ``kwargs['tools']`` is a list of OpenAI-format tool dicts. This
+    returns ``{tool_name: [param_name, …]}`` so the protocol adapter can
+    map positional ``<args>[json_array]`` args to the correct keyword names.
+    Returns ``None`` when no tools are bound (the adapter falls back to its
+    heuristic).
+    """
+    kwargs = getattr(model, "kwargs", None)
+    if not isinstance(kwargs, dict):
+        return None
+    tools = kwargs.get("tools")
+    if not isinstance(tools, list) or not tools:
+        return None
+    out: dict[str, list[str]] = {}
+    for entry in tools:
+        if not isinstance(entry, dict):
+            continue
+        fn = entry.get("function") or entry
+        name = fn.get("name")
+        params = (fn.get("parameters") or {}).get("properties") or {}
+        if name and isinstance(params, dict):
+            out[name] = list(params.keys())
+    return out or None
+
+
+def _apply_protocol_adapter_to_chat_result(
+    result: Any, tool_param_order: dict[str, list[str]] | None = None
+) -> Any:
+    """Run the content-based protocol adapter on every AI message in a result.
+
+    This is **model-agnostic**: instead of gating the adapter on a model name
+    (e.g. ``muse-glimmer``), it runs :func:`transform_muse_glimmer_message`
+    on each generation's message. That function internally checks the content
+    for the distinctive self-talk / tool-XML protocol markers
+    (``to=self<|message|>``, ``<atem:`` tags, ``<|eom|>``) and is a complete
+    no-op when the markers are absent, so it is safe to call on the output of
+    any OpenAI-compatible provider. This lets new local models that adopt the
+    same wire protocol work without a code change or a name match.
+    """
+    if result is None:
+        return result
+    generations = getattr(result, "generations", None)
+    if not generations:
+        return result
+    try:
+        for gen in generations:
+            msg = getattr(gen, "message", None)
+            if msg is None:
+                continue
+            transform_muse_glimmer_message(msg, tool_param_order=tool_param_order)
+            # vLLM's request validator rejects content=null on assistant
+            # messages with tool_calls (LangChain converts "" → None via
+            # ``content or None``). Use a minimal non-empty placeholder so the
+            # AIMessage round-trips in the next conversation turn.
+            if getattr(msg, "tool_calls", None):
+                if not getattr(msg, "content", ""):
+                    msg.content = " "
+    except Exception:  # pragma: no cover - defensive; never break generation
+        logger.debug("protocol_result_apply_failed", exc_info=True)
+    return result
+
+
+def _build_protocol_synthesized_chunk(content: str) -> Any:
+    """Build the single transformed chunk for a buffered protocol stream.
+
+    Self-talk protocol models emit the whole turn (self-talk + reply or tool
+    XML) as text in the ``content`` field. Streaming it raw would leak
+    ``to=self`` / ``<|eom|>`` fragments split across chunk boundaries. We
+    buffer the full stream, build one :class:`AIMessage` from the accumulated
+    text, run the content-based protocol transform on it, and emit a single
+    chunk carrying the cleaned content (and any structured ``tool_calls`` the
+    transform populated).
+    """
+    from langchain_core.messages import AIMessage, AIMessageChunk
+    from langchain_core.outputs import ChatGenerationChunk
+
+    msg = AIMessage(content=content)
+    transform_muse_glimmer_message(msg)
+    chunk_msg = AIMessageChunk(
+        content=getattr(msg, "content", "") or "",
+        tool_call_chunks=getattr(msg, "tool_call_chunks", []) or [],
+    )
+    return ChatGenerationChunk(message=chunk_msg)
+
+
 def _chat_result_to_chunks(result: Any) -> list[Any]:
     """Convert a non-streaming :class:`ChatResult` to streamable chunks.
 
@@ -258,6 +253,20 @@ def _chat_result_to_chunks(result: Any) -> list[Any]:
             chunk_msg = AIMessageChunk(content=getattr(msg, "content", "") or "")
         out.append(ChatGenerationChunk(message=chunk_msg))
     return out
+
+
+def _is_no_generations_stream_error(exc: BaseException) -> bool:
+    """Return True when *exc* is LangChain's "No generations found in stream".
+
+    LangChain's ``generate_from_stream`` raises this generic ``ValueError``
+    when a chat model's streaming path yields no valid generation chunks — the
+    signature of an OpenAI-compatible server that ignores ``stream: true`` and
+    returns a single non-SSE JSON body (e.g. the vLLM-Metal prototype). Matching
+    by message text keeps the fallback model-agnostic (works for any provider
+    that exhibits the same broken-streaming behaviour) without coupling to a
+    private LangChain exception type.
+    """
+    return isinstance(exc, ValueError) and "No generations found in stream" in str(exc)
 
 
 def _set_chunk_text(chunk: Any, text: str) -> Any:
@@ -572,7 +581,6 @@ class OpenAICompatModelWrapper(BaseChatModel):
         *,
         hide_thinking_tokens: bool = True,
         streaming: bool = True,
-        muse_glimmer: bool = False,
     ) -> None:
         """Initialize the wrapper.
 
@@ -596,7 +604,6 @@ class OpenAICompatModelWrapper(BaseChatModel):
         self._provider_name = provider_name
         self._hide_thinking_tokens = hide_thinking_tokens
         self._streaming = streaming
-        self._muse_glimmer = muse_glimmer
 
     def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
         """Structured output with provider-specific method routing.
@@ -661,12 +668,14 @@ class OpenAICompatModelWrapper(BaseChatModel):
         """Intercept tool_choice parameter for limited providers.
 
         Coerces incompatible values (object-form and ``"required"``) to
-        ``"auto"`` for provider compatibility. When ``muse_glimmer`` is set,
-        the tool-bound inner model is re-wrapped in a new
-        ``OpenAICompatModelWrapper`` so the Muse-Glimmer adapter (self-talk
-        stripping + ``<atem:function_calls>`` XML → structured ``tool_calls``)
-        still applies on every bound invocation — otherwise the agent would
-        invoke the raw inner model and bypass the adapter entirely.
+        ``"auto"`` for provider compatibility. The tool-bound inner model is
+        re-wrapped in a new :class:`OpenAICompatModelWrapper` so the
+        model-agnostic protocol adapter (self-talk stripping + tool-XML →
+        structured ``tool_calls``) still applies on every bound invocation —
+        otherwise the agent would invoke the raw inner model and bypass the
+        adapter entirely. The adapter is content-based, so re-wrapping is safe
+        for any provider: it is a no-op when the output carries no protocol
+        markers.
 
         Args:
             tools: List of tool definitions.
@@ -687,15 +696,14 @@ class OpenAICompatModelWrapper(BaseChatModel):
                 kwargs["tool_choice"] = sanitized_tool_choice
 
         bound = self._model.bind_tools(tools, **kwargs)
-        if self._muse_glimmer:
-            return OpenAICompatModelWrapper(
-                bound,
-                self._provider_name,
-                hide_thinking_tokens=self._hide_thinking_tokens,
-                streaming=self._streaming,
-                muse_glimmer=True,
-            )
-        return bound
+        # Re-wrap so the content-based protocol adapter and streaming
+        # auto-fallback still apply on every tool-bound invocation.
+        return OpenAICompatModelWrapper(
+            bound,
+            self._provider_name,
+            hide_thinking_tokens=self._hide_thinking_tokens,
+            streaming=self._streaming,
+        )
 
     # Delegate all BaseChatModel methods to the wrapped model
 
@@ -716,10 +724,13 @@ class OpenAICompatModelWrapper(BaseChatModel):
         result = self._model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         if self._hide_thinking_tokens:
             _strip_thinking_from_chat_result(result)
-        if self._muse_glimmer:
-            _apply_muse_glimmer_to_chat_result(
-                result, tool_param_order=_extract_tool_param_order(self._model)
-            )
+        # Model-agnostic protocol adapter: runs on every result, but the
+        # transform is a no-op when the content carries no self-talk / tool-XML
+        # protocol markers (``to=self<|message|>``, ``<|eom|>``, ``<atem:``), so
+        # normal OpenAI-compatible output passes through untouched.
+        _apply_protocol_adapter_to_chat_result(
+            result, tool_param_order=_extract_tool_param_order(self._model)
+        )
         return result
 
     async def _agenerate(
@@ -735,10 +746,11 @@ class OpenAICompatModelWrapper(BaseChatModel):
         )
         if self._hide_thinking_tokens:
             _strip_thinking_from_chat_result(result)
-        if self._muse_glimmer:
-            _apply_muse_glimmer_to_chat_result(
-                result, tool_param_order=_extract_tool_param_order(self._model)
-            )
+        # Model-agnostic protocol adapter (see ``_generate``); a no-op for
+        # providers whose output carries no self-talk / tool-XML markers.
+        _apply_protocol_adapter_to_chat_result(
+            result, tool_param_order=_extract_tool_param_order(self._model)
+        )
         return result
 
     def _stream(
@@ -754,46 +766,74 @@ class OpenAICompatModelWrapper(BaseChatModel):
         ``_generate`` path and emit the result as ``ChatGenerationChunk``s —
         required for OpenAI-compatible servers whose streaming endpoint is
         broken (vLLM-Metal ignores ``stream: true`` and returns a non-SSE
-        body, raising ``No generations found in stream``). The muse_glimmer
-        adapter (if set) runs inside ``_generate`` so the streamed chunks
-        carry the cleaned content + structured ``tool_calls``.
+        body, raising ``No generations found in stream``).
 
-        When streaming is enabled, each chunk's text delta is fed through a
-        :class:`ThinkingStreamFilter` so partial ``<think`` / ``</think``
-        fragments split across chunk boundaries are buffered and never leak;
-        any final leftover text is flushed as a tail chunk. For Muse-Glimmer
-        the whole stream is buffered and transformed as one unit (the model
-        emits the turn as one piece, and self-talk/protocol markers split
-        across chunk boundaries must not leak).
+        **Runtime auto-fallback (model-agnostic):** even when ``streaming``
+        is ``True`` (the default), if the wrapped model's streaming path
+        raises ``No generations found in stream`` — the generic LangChain
+        signature of a server that ignores ``stream: true`` — we transparently
+        retry the call via ``_generate`` and emit the non-streaming result as
+        chunks. This means any provider with an intermittently broken
+        streaming endpoint self-heals without requiring ``streaming: false``
+        in config, and without coupling to a specific model name.
+
+        When streaming is enabled and healthy, each chunk's text delta is
+        fed through a :class:`ThinkingStreamFilter` so partial ``<think`` /
+        ``</think`` fragments split across chunk boundaries are buffered and
+        never leak; any final leftover text is flushed as a tail chunk.
         """
         if not self._streaming:
             result = self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
             for chunk in _chat_result_to_chunks(result):
                 yield chunk
             return
-        gen = self._model._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
-        if self._muse_glimmer:
-            yield from _buffer_and_transform_muse_glimmer_stream(gen, is_async=False)
-            return
-        if not self._hide_thinking_tokens:
-            yield from gen
-            return
-        filt = ThinkingStreamFilter()
+        try:
+            gen = self._model._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
+        except Exception as exc:
+            if _is_no_generations_stream_error(exc):
+                logger.warning(
+                    "Provider '%s' streaming returned no generations; "
+                    "auto-falling back to non-streaming _generate",
+                    self._provider_name,
+                )
+                result = self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+                for chunk in _chat_result_to_chunks(result):
+                    yield chunk
+                return
+            raise
+        # Content-based protocol detection (model-agnostic): scan chunks while
+        # buffering their text. If a chunk carries self-talk / tool-XML protocol
+        # markers (``to=self<|message|>``, ``<|eom|>``, ``<atem:``), switch to
+        # full-buffer mode and emit one transformed chunk so the live
+        # internal-reasoning tokens never leak. Otherwise stream live through
+        # the thinking filter. Single-pass: non-text chunks (tool-call deltas)
+        # pass through unchanged in the live path.
+        parts: list[str] = []
+        protocol_detected = False
+        filt = ThinkingStreamFilter() if self._hide_thinking_tokens else None
         for chunk in gen:
             text = _chunk_text(chunk)
-            if text is None:
+            if text is not None and detect_muse_glimmer_protocol(text):
+                protocol_detected = True
+            if protocol_detected:
+                if text is not None:
+                    parts.append(text)
+                continue
+            # Live path: yield through thinking filter (or passthrough).
+            if text is None or filt is None:
                 yield chunk
-                continue
-            safe = filt.feed(text)
-            if safe:
-                yield _set_chunk_text(chunk, safe)
             else:
-                # Filter swallowed this chunk's text; drop it so the partial
-                # tag fragment it carried does not surface.
-                continue
-        tail = filt.finalize()
-        if tail:
-            yield _make_text_tail_chunk(tail)
+                safe = filt.feed(text)
+                if safe:
+                    yield _set_chunk_text(chunk, safe)
+                # else: filter swallowed the partial tag fragment.
+        if protocol_detected and parts:
+            yield _build_protocol_synthesized_chunk("".join(parts))
+            return
+        if filt is not None:
+            tail = filt.finalize()
+            if tail:
+                yield _make_text_tail_chunk(tail)
 
     async def _astream(
         self,
@@ -812,44 +852,79 @@ class OpenAICompatModelWrapper(BaseChatModel):
 
         When ``streaming`` is False, fall back to the non-streaming
         ``_agenerate`` path and emit the result as ``ChatGenerationChunk``s
-        (see :meth:`_stream` for the rationale). For Muse-Glimmer the whole
-        stream is buffered and transformed as one unit so protocol markers
-        split across chunk boundaries never leak.
+        (see :meth:`_stream` for the rationale).
 
-        Otherwise, when streaming is enabled, each chunk's text delta is fed
-        through a :class:`ThinkingStreamFilter` (one per stream) so partial
-        ``<think`` / ``</think`` fragments split across chunk boundaries are
-        buffered and never leak; leftover text is flushed as a tail chunk at
-        end-of-stream. Chunks with no textual delta pass through unchanged.
+        **Runtime auto-fallback (model-agnostic):** even when ``streaming``
+        is ``True`` (the default), if the wrapped model's async streaming
+        path raises ``No generations found in stream`` — either when the
+        async iterator is created or during the first ``__anext__`` — we
+        transparently retry the call via ``_agenerate`` and emit the
+        non-streaming result as chunks. This means any provider with a
+        broken streaming endpoint self-heals without requiring
+        ``streaming: false`` in config, and without coupling to a specific
+        model name.
+
+        Otherwise, when streaming is enabled and healthy, each chunk's text
+        delta is fed through a :class:`ThinkingStreamFilter` (one per stream)
+        so partial ``<think`` / ``</think`` fragments split across chunk
+        boundaries are buffered and never leak; leftover text is flushed as a
+        tail chunk at end-of-stream. Chunks with no textual delta pass
+        through unchanged.
         """
         if not self._streaming:
             result = await self._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
             for chunk in _chat_result_to_chunks(result):
                 yield chunk
             return
-        agen = self._model._astream(messages, stop=stop, run_manager=run_manager, **kwargs)
-        if self._muse_glimmer:
-            async for chunk in _buffer_and_transform_muse_glimmer_stream(agen, is_async=True):
-                yield chunk
-            return
-        if not self._hide_thinking_tokens:
-            async for chunk in agen:
-                yield chunk
-            return
-        filt = ThinkingStreamFilter()
+        # Some providers raise the "no generations" error when the async
+        # iterator is first constructed (before any __anext__). Catch that
+        # here and fall back to the non-streaming path so the agent loop still
+        # receives chunks.
+        try:
+            agen = self._model._astream(messages, stop=stop, run_manager=run_manager, **kwargs)
+        except Exception as exc:
+            if _is_no_generations_stream_error(exc):
+                logger.warning(
+                    "Provider '%s' async streaming returned no generations; "
+                    "auto-falling back to non-streaming _agenerate",
+                    self._provider_name,
+                )
+                result = await self._agenerate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+                for chunk in _chat_result_to_chunks(result):
+                    yield chunk
+                return
+            raise
+        # Content-based protocol detection (model-agnostic): scan chunks while
+        # buffering their text. If a chunk carries self-talk / tool-XML protocol
+        # markers, buffer the whole turn and emit one transformed chunk.
+        # Otherwise stream live through the thinking filter. Single-pass.
+        parts: list[str] = []
+        protocol_detected = False
+        filt = ThinkingStreamFilter() if self._hide_thinking_tokens else None
         async for chunk in agen:
             text = _chunk_text(chunk)
-            if text is None:
+            if text is not None and detect_muse_glimmer_protocol(text):
+                protocol_detected = True
+            if protocol_detected:
+                if text is not None:
+                    parts.append(text)
+                continue
+            # Live path: yield through thinking filter (or passthrough).
+            if text is None or filt is None:
                 yield chunk
-                continue
-            safe = filt.feed(text)
-            if safe:
-                yield _set_chunk_text(chunk, safe)
             else:
-                continue
-        tail = filt.finalize()
-        if tail:
-            yield _make_text_tail_chunk(tail)
+                safe = filt.feed(text)
+                if safe:
+                    yield _set_chunk_text(chunk, safe)
+        if protocol_detected and parts:
+            yield _build_protocol_synthesized_chunk("".join(parts))
+            return
+        if filt is not None:
+            tail = filt.finalize()
+            if tail:
+                yield _make_text_tail_chunk(tail)
 
     @property
     def _llm_type(self) -> str:

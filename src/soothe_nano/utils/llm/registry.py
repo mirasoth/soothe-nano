@@ -112,15 +112,20 @@ class ProviderRegistry:
     def get_provider_kwargs(self, name: str) -> tuple[str, dict[str, Any]]:
         """Build ``init_chat_model`` kwargs for a provider.
 
-        Resolves ``${ENV_VAR}`` in ``api_base_url`` and ``api_key``.
+        Resolves ``${ENV_VAR}`` in ``api_base_url`` and ``api_key``. Also
+        injects a model-agnostic ``max_tokens`` default when the provider
+        declares one (so any server that truncates output when the field is
+        omitted — e.g. vLLM-Metal truncating mid-tool-call XML — can set it
+        once at the provider level instead of per-model or per-call).
 
         Args:
             name: Provider name from config.
 
         Returns:
             Tuple of ``(provider_type_for_langchain, kwargs_dict)``.
-            ``kwargs_dict`` contains ``base_url``, ``api_key``, ``use_responses_api=False``
-            if custom ``base_url`` is set.
+            ``kwargs_dict`` contains ``base_url``, ``api_key``,
+            ``use_responses_api=False`` if custom ``base_url`` is set, and
+            ``max_tokens`` when declared on the provider.
         """
         provider = self.get_provider(name)
         kwargs: dict[str, Any] = {}
@@ -151,6 +156,11 @@ class ProviderRegistry:
                 if resolved:
                     kwargs["api_key"] = resolved
 
+            # Model-agnostic default generation cap. Callers may still
+            # override via per-call params (merged later in LLMFactory).
+            if provider.max_tokens is not None:
+                kwargs["max_tokens"] = provider.max_tokens
+
             return actual_type, kwargs
 
         return provider_type_str, kwargs
@@ -164,6 +174,12 @@ class ProviderRegistry:
         LangChain's streaming path raise ``No generations found in stream``.
         Setting ``streaming: false`` on such a provider routes through the
         non-streaming ``_generate`` path instead.
+
+        When ``True`` (default), a runtime auto-fallback in
+        :class:`~soothe_nano.utils.llm.wrappers.OpenAICompatModelWrapper`
+        still catches ``No generations found in stream`` and retries via
+        ``_generate``, so providers with intermittently broken streaming
+        self-heal without requiring this flag to be set.
 
         Args:
             name: Provider name from config.

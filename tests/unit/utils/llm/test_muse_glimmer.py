@@ -13,7 +13,7 @@ calls as XML-in-content in several dialects. The adapter must:
 - leave non-Muse-Glimmer messages untouched
 
 The vLLM 422 fix (empty content -> " " when tool_calls present) is tested
-via :func:`_apply_muse_glimmer_to_chat_result`.
+via :func:`_apply_protocol_adapter_to_chat_result`.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from soothe_nano.utils.llm.muse_glimmer import (
     strip_repetition_loop,
     transform_muse_glimmer_message,
 )
-from soothe_nano.utils.llm.wrappers import _apply_muse_glimmer_to_chat_result
+from soothe_nano.utils.llm.wrappers import _apply_protocol_adapter_to_chat_result
 
 
 class TestDetectProtocol:
@@ -389,7 +389,7 @@ class TestApplyToChatResult:
         result = self._make_result(
             "to=self<|message|>thinking<|eom|><|start|>assistant to=user<|message|>Done."
         )
-        _apply_muse_glimmer_to_chat_result(result)
+        _apply_protocol_adapter_to_chat_result(result)
         msg = result.generations[0].message
         assert msg.content == "Done."
 
@@ -400,24 +400,24 @@ class TestApplyToChatResult:
             '<read_file file_path="/x"/>'
         )
         result = self._make_result(content)
-        _apply_muse_glimmer_to_chat_result(result)
+        _apply_protocol_adapter_to_chat_result(result)
         msg = result.generations[0].message
         assert msg.tool_calls
         assert msg.content == " "
 
     def test_plain_result_unchanged(self) -> None:
         result = self._make_result("Just a normal response.")
-        _apply_muse_glimmer_to_chat_result(result)
+        _apply_protocol_adapter_to_chat_result(result)
         msg = result.generations[0].message
         assert msg.content == "Just a normal response."
         assert not msg.tool_calls
 
     def test_none_result_passthrough(self) -> None:
-        assert _apply_muse_glimmer_to_chat_result(None) is None
+        assert _apply_protocol_adapter_to_chat_result(None) is None
 
     def test_empty_generations_passthrough(self) -> None:
         result = SimpleNamespace(generations=[])
-        assert _apply_muse_glimmer_to_chat_result(result) is result
+        assert _apply_protocol_adapter_to_chat_result(result) is result
 
 
 class TestWireSamples:

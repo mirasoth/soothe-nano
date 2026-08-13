@@ -59,6 +59,16 @@ class ModelProviderConfig(BaseModel):
             whose streaming endpoint is broken or unsupported (e.g. vLLM-Metal
             prototype, which ignores ``stream: true`` and returns a single
             non-SSE JSON body). Non-streaming ``_agenerate`` then works.
+            When ``True`` (default), a runtime auto-fallback still catches
+            ``No generations found in stream`` and retries via ``_generate`` so
+            providers with intermittently broken streaming self-heal without
+            requiring this flag.
+        max_tokens: Default maximum generation tokens for this provider's
+            chat completions. Model-agnostic: any provider whose server
+            truncates output when ``max_tokens`` is omitted (e.g. vLLM-Metal
+            truncating mid-tool-call XML) can set this once at the provider
+            level rather than per-model. Passed through to ``init_chat_model``
+            as ``max_tokens``; caller-provided params still take precedence.
     """
 
     name: str
@@ -68,6 +78,8 @@ class ModelProviderConfig(BaseModel):
     models: list[str] = Field(default_factory=list)
     streaming: bool = True
     """Whether to enable LangChain streaming for this provider."""
+    max_tokens: int | None = None
+    """Default max generation tokens for this provider (model-agnostic)."""
 
 
 class VectorStoreProviderConfig(BaseModel):

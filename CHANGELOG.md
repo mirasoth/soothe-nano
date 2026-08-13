@@ -5,6 +5,43 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.18] - 2026-08-13
+
+### Changed — model-agnostic enhancements
+
+- **Content-based protocol detection replaces model-name matching.** The
+  self-talk / tool-XML protocol adapter
+  (`soothe_nano.utils.llm.muse_glimmer`) is no longer gated on a model name
+  (`_is_muse_glimmer_model` has been removed). Instead the
+  `OpenAICompatModelWrapper` runs `transform_muse_glimmer_message` on every
+  generation's message; the transform internally checks the content for the
+  distinctive wire markers (`to=self<|message|>`, `<|eom|>`, `<atem:` tags)
+  and is a complete no-op when they are absent. New local models that adopt
+  the same wire protocol now work without a code change or a name match.
+- **Streaming runtime auto-fallback.** Even when a provider's `streaming`
+  flag is `True` (the default), `_stream`/`_astream` now catch LangChain's
+  generic `No generations found in stream` error — the signature of a server
+  that ignores `stream: true` (e.g. the vLLM-Metal prototype) — and
+  transparently retry via the non-streaming `_generate`/`_agenerate` path,
+  emitting the result as `ChatGenerationChunk`s. Any provider with an
+  intermittently broken streaming endpoint now self-heals at runtime without
+  requiring `streaming: false` in config.
+- **Provider-level `max_tokens` default.** `ModelProviderConfig` now accepts
+  a `max_tokens` field; `ProviderRegistry.get_provider_kwargs` injects it
+  into the `init_chat_model` kwargs so any server that truncates output when
+  the field is omitted (e.g. vLLM-Metal truncating mid-tool-call XML) can set
+  it once at the provider level instead of per-model or per-call. Caller
+  params still take precedence.
+- **`bind_tools` re-wraps the bound model** so the content-based protocol
+  adapter and streaming auto-fallback still apply on every tool-bound
+  invocation, instead of the agent invoking the raw inner model and bypassing
+  the adapter.
+
+### Removed
+- `_is_muse_glimmer_model` name-based detection and the `muse_glimmer` flag on
+  `OpenAICompatModelWrapper` / `LLMFactory`. The adapter is now driven by
+  content detection, so these model-specific gates are unnecessary.
+
 ## [1.1.17] - 2026-08-13
 
 ### Added
