@@ -5,6 +5,26 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.19] - 2026-08-14
+
+### Changed
+- **Removed the Muse-Glimmer-specific adapter** (`soothe_nano.utils.llm.muse_glimmer`,
+  816 lines) and its test suite (514 lines). The model-agnostic implementation in
+  `OpenAICompatModelWrapper` — tool_choice sanitization, `json_schema`
+  structured-output routing, thinking-token stripping, and the streaming
+  auto-fallback — already covers every OpenAI-compatible provider, so the
+  dedicated protocol adapter is no longer needed. New local models sharing the
+  wire protocol keep working without a code change.
+- **`bind_tools` re-wraps the bound model** in a new `OpenAICompatModelWrapper`
+  so thinking-token stripping and the streaming auto-fallback still apply on
+  every tool-bound invocation; the previous release shipped this fix but it
+  was shadowed in some local installs and is now confirmed green.
+
+### Fixed
+- Lockfile markers for platform-conditional dependencies (`zipp` on Python
+  <3.12, `cryptography`/`jeepney` on non-Windows) so `uv sync` resolves cleanly
+  across platforms.
+
 ## [1.1.18] - 2026-08-13
 
 ### Changed
