@@ -13,11 +13,11 @@ from soothe_deepagents.middleware.llm_rate_limit import (
 )
 
 from soothe_nano.config.models import LLMRateLimitConfig
-from soothe_nano.utils.llm.invoke_policy import (
+from soothe_nano.llm.invoke_policy import (
     await_with_llm_call_policy,
     llm_rate_limit_config_from,
 )
-from soothe_nano.utils.llm.structured import StructuredOutputError
+from soothe_nano.llm.structured import StructuredOutputError
 
 
 @pytest.fixture(autouse=True)

@@ -1,13 +1,13 @@
 """Structured chat invocation for client-provided JSON Schema.
 
-`invoke_structured_chat` is the sanctioned entry point for structured LLM output
-in Soothe. It walks `function_calling -> json_schema -> json_mode` at invoke time,
-caches the working method per chat model, and post-validates against the schema.
+Ported fully from the former ``soothe_nano.utils.llm.structured``. The sanctioned
+entry point for structured LLM output in Soothe. Walks
+``function_calling → json_schema → json_mode`` at invoke time, caches the working
+method per chat model, and post-validates against the schema.
 
-`BaseChatModel.with_structured_output` is treated as an internal primitive: it is
-called only from inside this module and the wrapper classes that override it
-(`OpenAICompatModelWrapper`, `SootheTokenUsageChatModel`). New code should
-call `invoke_structured_chat` or `invoke_structured_chat_typed` instead.
+``BaseChatModel.with_structured_output`` is treated as an internal primitive,
+called only from inside this module. New code should call
+``invoke_structured_chat`` or ``invoke_structured_chat_typed``.
 """
 
 from __future__ import annotations
@@ -22,7 +22,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
-from soothe_nano.utils.llm.schema_wire import resolve_schema_name, validate_response_schema
+from soothe_nano.llm.exceptions import StructuredOutputError
+from soothe_nano.llm.schema_wire import resolve_schema_name, validate_response_schema
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -40,19 +41,11 @@ _STRUCTURED_METHODS: tuple[str | None, ...] = (
 )
 
 # Per-chat-model cache of the structured-output method that last produced a result.
-# Lets thinking-mode providers skip the function_calling round-trip on every call.
-# WeakKeyDictionary so cached entries don't pin chat models the caller has discarded.
 _MISSING: Any = object()
 _METHOD_CACHE: WeakKeyDictionary[BaseChatModel, str | None] = WeakKeyDictionary()
 
-# Thinking models (e.g. Kimi via DashScope) often skip tool calls or return empty
-# json_schema content on the first attempt; one immediate retry succeeds often enough
-# to avoid classifier-level or full method-chain fallbacks.
 _MAX_METHOD_INVOKE_ATTEMPTS = 2
 
-# Providers' constrained decoding often ignores JSON Schema keywords like ``minimum``
-# / ``maximum`` / ``pattern``. When post-validation fails, one repair turn with the
-# validation error is usually enough to get a schema-valid payload.
 _SCHEMA_REPAIR_HINT = (
     "Your previous JSON failed schema validation: {error}. "
     "Return corrected JSON that fully satisfies every schema constraint "
@@ -65,18 +58,11 @@ def _ordered_structured_methods(
     *,
     preferred: tuple[str | None, ...] | None = None,
 ) -> tuple[str | None, ...]:
-    """Return method order with the cached working method moved to the front.
-
-    Args:
-        chat: Chat model used as the cache key.
-        preferred: Optional caller override of the default method walk. When set,
-            only these methods are tried (still reordered by cache hit).
-    """
+    """Return method order with the cached working method moved to the front."""
     base = preferred if preferred is not None else _STRUCTURED_METHODS
     try:
         cached = _METHOD_CACHE.get(chat, _MISSING)
     except TypeError:
-        # Unhashable chat model (e.g., SootheTokenUsageChatModel wrapper) — skip cache
         return base
     if cached is _MISSING or cached == base[0]:
         return base
@@ -91,10 +77,6 @@ def _remember_structured_method(chat: BaseChatModel, method: str | None) -> None
         _METHOD_CACHE[chat] = method
     except TypeError:
         pass
-
-
-class StructuredOutputError(Exception):
-    """Raised when structured output cannot be produced for a requested schema."""
 
 
 def _message_text(message: Any) -> str:
@@ -119,11 +101,7 @@ def messages_contain_json_keyword(messages: list[Any]) -> bool:
 
 
 def ensure_json_keyword_in_messages(messages: list[Any]) -> list[Any]:
-    """Ensure messages mention JSON for providers that require it with json_object mode.
-
-    DashScope and some other OpenAI-compatible APIs reject ``response_format`` of type
-    ``json_object`` unless the word ``json`` appears somewhere in the prompt messages.
-    """
+    """Ensure messages mention JSON for providers that require it with json_object mode."""
     if not messages or messages_contain_json_keyword(messages):
         return messages
     return [*messages, HumanMessage(content=_JSON_KEYWORD_HINT)]
@@ -187,21 +165,12 @@ def _try_create_structured_runnable(
     method: str | None,
     strict: bool,
 ) -> Any:
-    """Build a structured-output runnable for a single method, or raise.
-
-    For function_calling method, uses tool_choice='auto' instead of the default
-    object format. Thinking-mode models (MiniMax, glm-5, Moonshot) reject
-    tool_choice in object format but accept string values like 'auto'.
-    """
+    """Build a structured-output runnable for a single method, or raise."""
     if method is None:
         return chat.with_structured_output(schema_with_title)
     if method == "json_mode":
-        # LangChain rejects strict= with json_mode; post-validate in invoke_structured_chat.
         return chat.with_structured_output(schema_with_title, method="json_mode")
     if method == "function_calling":
-        # Use tool_choice='auto' for thinking-model compatibility.
-        # Default function_calling uses object format which thinking models reject.
-        # With 'auto', the model can reason then decide to call the tool.
         return chat.with_structured_output(
             schema_with_title, method=method, strict=strict, tool_choice="auto"
         )
@@ -238,18 +207,14 @@ async def invoke_structured_chat(
     """Invoke chat with strict structured output enforced by ``json_schema``.
 
     Args:
-        chat: LangChain chat model (may be OpenAICompatModelWrapper).
+        chat: LangChain chat model (e.g. ``ChatLitellmModel``).
         messages: Message list for ``ainvoke``.
         json_schema: Client JSON Schema dict.
         schema_name: Optional provider schema name override.
-        strict: When True, post-validate with jsonschema after parsing. On
-            validation failure, retry once with a repair hint before raising.
+        strict: When True, post-validate with jsonschema after parsing.
         config: Optional RunnableConfig (Langfuse tracing, etc.).
-        normalize: Optional pre-validation dict normalizer (e.g. coerce missing fields).
-        methods: Optional ordered structured-output methods to try. Defaults to
-            ``function_calling → None → json_schema → json_mode``. Prefer
-            ``json_schema`` first for JSON-only prompts (intake classifiers) so
-            content JSON succeeds without a wasted function_calling round-trip.
+        normalize: Optional pre-validation dict normalizer.
+        methods: Optional ordered structured-output methods to try.
 
     Returns:
         Parsed and validated output as a dict.
@@ -257,7 +222,7 @@ async def invoke_structured_chat(
     Raises:
         StructuredOutputError: On provider or validation failure.
     """
-    from soothe_nano.utils.llm.observability import merge_token_usage_callbacks
+    from soothe_nano.llm.observability import merge_token_usage_callbacks
 
     schema = validate_response_schema(json_schema)
     name = resolve_schema_name(schema, schema_name)
@@ -267,9 +232,6 @@ async def invoke_structured_chat(
     ordered = _ordered_structured_methods(chat, preferred=methods)
     last_method = ordered[-1]
     prepared_messages = ensure_json_keyword_in_messages(messages)
-    # When a normalizer is supplied, defer wire-schema validation until after it
-    # runs — JsonSchemaModelWrapper validates on parse and would reject
-    # answers-only payloads that coerce_veritas_response can repair.
     bind_strict = strict if normalize is None else False
 
     last_exc: Exception | None = None
@@ -296,9 +258,6 @@ async def invoke_structured_chat(
             except StructuredOutputError:
                 raise
             except jsonschema.ValidationError as exc:
-                # Bind-time strict validation inside JsonSchemaModelWrapper. Handle it
-                # like post-validation below: one repair turn, then the next method,
-                # so a single malformed payload does not fail the whole call.
                 last_exc = exc
                 if attempt + 1 < _MAX_METHOD_INVOKE_ATTEMPTS:
                     logger.debug(
@@ -344,9 +303,6 @@ async def invoke_structured_chat(
                 raise StructuredOutputError(msg) from exc
 
             if result is None:
-                # function_calling + tool_choice=auto often returns content JSON
-                # without a tool call. Retrying the same method wastes a second
-                # LLM round-trip; fall through to json_schema/json_mode instead.
                 last_exc = StructuredOutputError(f"method={method!r} returned None")
                 logger.debug(
                     "structured invoke: method=%s returned None, falling back",
@@ -411,28 +367,7 @@ async def invoke_structured_chat_typed(
     normalize: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     methods: tuple[str | None, ...] | None = None,
 ) -> T:
-    """Invoke `invoke_structured_chat` and return a typed Pydantic instance.
-
-    Convenience wrapper for the common case where the caller already has a
-    Pydantic schema class. Derives `json_schema` from `schema.model_json_schema()`
-    and uses the class name as the schema name.
-
-    Args:
-        chat: LangChain chat model.
-        messages: Message list for `ainvoke`.
-        schema: Pydantic class describing the expected output.
-        strict: Post-validate the parsed dict against the wire schema.
-        config: Optional RunnableConfig (Langfuse tracing, etc.).
-        normalize: Optional pre-validation dict normalizer.
-        methods: Optional ordered structured-output methods (see
-            `invoke_structured_chat`).
-
-    Returns:
-        Validated `schema` instance.
-
-    Raises:
-        StructuredOutputError: On provider or validation failure.
-    """
+    """Invoke ``invoke_structured_chat`` and return a typed Pydantic instance."""
     json_schema = schema.model_json_schema()
     result_dict = await invoke_structured_chat(
         chat,

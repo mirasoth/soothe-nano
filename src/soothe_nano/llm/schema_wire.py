@@ -1,4 +1,9 @@
-"""JSON Schema wire helpers for client-provided structured output."""
+"""JSON Schema wire helpers for structured output.
+
+Ported verbatim from ``soothe_nano.utils.llm.schema_wire`` — these helpers
+build and validate the ``response_format`` payload used by the litellm adapter's
+``json_schema`` structured-output path.
+"""
 
 from __future__ import annotations
 
@@ -9,12 +14,6 @@ DEFAULT_DIRECT_LLM_SCHEMA_NAME = "SootheDirectLLMOutput"
 
 def validate_response_schema(schema: Any) -> dict[str, Any]:
     """Validate a client ``response_schema`` payload.
-
-    Args:
-        schema: Raw wire value.
-
-    Returns:
-        Normalized JSON Schema dict.
 
     Raises:
         ValueError: If the schema is not a usable JSON Schema object.
@@ -57,3 +56,11 @@ def build_json_schema_response_format(
             "schema": json_schema,
         },
     }
+
+
+__all__ = [
+    "DEFAULT_DIRECT_LLM_SCHEMA_NAME",
+    "build_json_schema_response_format",
+    "resolve_schema_name",
+    "validate_response_schema",
+]

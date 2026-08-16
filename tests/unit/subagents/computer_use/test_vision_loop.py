@@ -69,7 +69,7 @@ def captured_messages(monkeypatch: pytest.MonkeyPatch) -> list[list[Any]]:
         return _ComputerAction(action_type="click", x=1, y=2)
 
     monkeypatch.setattr(
-        "soothe_nano.utils.llm.structured.invoke_structured_chat_typed",
+        "soothe_nano.llm.structured.invoke_structured_chat_typed",
         fake_invoke,
     )
     return seen
@@ -244,7 +244,7 @@ class TestDecideNextActionVision:
             raise RuntimeError("provider down")
 
         monkeypatch.setattr(
-            "soothe_nano.utils.llm.structured.invoke_structured_chat_typed",
+            "soothe_nano.llm.structured.invoke_structured_chat_typed",
             boom,
         )
 

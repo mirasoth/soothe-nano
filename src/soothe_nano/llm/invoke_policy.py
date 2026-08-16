@@ -1,8 +1,9 @@
 """Bounded async LLM invocation with timeout and retry (planner / structured paths).
 
-CoreAgent model calls use ``LLMRateLimitMiddleware`` on the middleware stack.
-Planner and other direct ``ainvoke`` / structured-output paths use the same
-shared RPM budget and retry runner as the middleware via ``run_llm_call_with_policy``.
+Ported from the former ``soothe_nano.utils.llm.invoke_policy``. CoreAgent model
+calls use ``LLMRateLimitMiddleware`` on the middleware stack; planner and other
+direct ``ainvoke`` / structured-output paths use the same shared RPM budget and
+retry runner via ``run_llm_call_with_policy``.
 """
 
 from __future__ import annotations
@@ -76,7 +77,7 @@ async def await_with_llm_call_policy(
 
     Args:
         coro_factory: Zero-arg callable returning the awaitable LLM operation.
-        config: Rate-limit / timeout configuration (from ``agent.middleware.llm_rate_limit``).
+        config: Rate-limit / timeout configuration.
         thread_id: Optional thread id for retry telemetry and budget allocation.
 
     Returns:

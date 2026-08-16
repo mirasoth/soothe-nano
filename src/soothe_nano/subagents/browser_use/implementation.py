@@ -117,7 +117,7 @@ def _resolve_browser_llm_credentials(*, soothe_config: Any) -> tuple[str, str | 
 
     provider_name, model_name = _parse_model_spec(spec.strip())
     providers = getattr(soothe_config, "providers", None) or []
-    from soothe_nano.utils.llm.registry import ProviderRegistry
+    from soothe_nano.llm.registry import ProviderRegistry
 
     registry = ProviderRegistry(providers)
     _, kwargs = registry.get_provider_kwargs(provider_name)
@@ -218,11 +218,11 @@ async def _synthesize_browser_use_result(
     run_id: str,
 ) -> _BrowserUseSynthesisDecision | None:
     """Run deep-research-style structured synthesis over browser run output."""
-    from soothe_nano.utils.llm.invoke_policy import (
+    from soothe_nano.llm.invoke_policy import (
         await_with_llm_call_policy,
         llm_rate_limit_config_from,
     )
-    from soothe_nano.utils.llm.structured import invoke_structured_chat_typed
+    from soothe_nano.llm.structured import invoke_structured_chat_typed
 
     role = (browser_config.synthesis_role or "").strip() or browser_use_model_role(soothe_config)
     try:
@@ -313,7 +313,7 @@ Examples:
         ]
         metadata: dict[str, Any] = {}
         try:
-            from soothe_nano.utils.llm.observability import create_llm_call_metadata
+            from soothe_nano.llm.observability import create_llm_call_metadata
 
             metadata = create_llm_call_metadata(
                 purpose="intent_detection",
@@ -324,7 +324,7 @@ Examples:
         except ImportError:
             pass
 
-        from soothe_nano.utils.llm.invoke_policy import (
+        from soothe_nano.llm.invoke_policy import (
             await_with_llm_call_policy,
             llm_rate_limit_config_from,
         )

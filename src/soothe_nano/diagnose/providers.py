@@ -140,11 +140,11 @@ async def _live_invoke_default(config: Any) -> CheckResult:
     try:
         from langchain_core.messages import HumanMessage
 
-        from soothe_nano.utils.llm.invoke_policy import (
+        from soothe_nano.llm.invoke_policy import (
             await_with_llm_call_policy,
             llm_rate_limit_config_from,
         )
-        from soothe_nano.utils.llm.observability import create_llm_call_metadata
+        from soothe_nano.llm.observability import create_llm_call_metadata
 
         model = config.create_chat_model("default")
         llm_config = llm_rate_limit_config_from(config).model_copy(

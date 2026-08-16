@@ -401,7 +401,7 @@ def _resolve_computer_llm_credentials(*, soothe_config: Any) -> tuple[str, str |
 
     provider_name, model_name = _parse_model_spec(spec.strip())
     providers = getattr(soothe_config, "providers", None) or []
-    from soothe_nano.utils.llm.registry import ProviderRegistry
+    from soothe_nano.llm.registry import ProviderRegistry
 
     registry = ProviderRegistry(providers)
     _, kwargs = registry.get_provider_kwargs(provider_name)
@@ -944,11 +944,11 @@ async def _synthesize_computer_use_result(
     run_id: str,
 ) -> _ComputerUseSynthesisDecision | None:
     """Run deep-research-style structured synthesis over computer_use run output."""
-    from soothe_nano.utils.llm.invoke_policy import (
+    from soothe_nano.llm.invoke_policy import (
         await_with_llm_call_policy,
         llm_rate_limit_config_from,
     )
-    from soothe_nano.utils.llm.structured import invoke_structured_chat_typed
+    from soothe_nano.llm.structured import invoke_structured_chat_typed
 
     role = (computer_config.synthesis_role or "").strip() or computer_use_model_role(soothe_config)
     try:
@@ -1128,7 +1128,7 @@ async def _decide_next_action(
     the model can actually see the desktop; without it the model has no way to
     locate UI targets and will keep asking for screenshots forever.
     """
-    from soothe_nano.utils.llm.structured import invoke_structured_chat_typed
+    from soothe_nano.llm.structured import invoke_structured_chat_typed
 
     system_prompt = (
         "You are a desktop automation agent. You drive the computer by choosing one action per step.\n\n"

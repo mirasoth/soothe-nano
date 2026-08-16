@@ -231,7 +231,7 @@ async def _invoke_llm_with_timeout(
     *,
     soothe_config: Any | None = None,
 ) -> Any:
-    from soothe_nano.utils.llm.invoke_policy import (
+    from soothe_nano.llm.invoke_policy import (
         await_with_llm_call_policy,
         llm_rate_limit_config_from,
     )

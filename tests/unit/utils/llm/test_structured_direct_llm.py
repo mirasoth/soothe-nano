@@ -9,8 +9,8 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from soothe_nano.utils.llm.schema_wire import validate_response_schema
-from soothe_nano.utils.llm.structured import (
+from soothe_nano.llm.schema_wire import validate_response_schema
+from soothe_nano.llm.structured import (
     StructuredOutputError,
     ensure_json_keyword_in_messages,
     invoke_structured_chat,
@@ -18,7 +18,6 @@ from soothe_nano.utils.llm.structured import (
     normalize_structured_result,
     wrap_json_keyword_safe,
 )
-from soothe_nano.utils.llm.wrappers import JsonSchemaModelWrapper, OpenAICompatModelWrapper
 
 _WORD_SCHEMA = {
     "type": "object",
@@ -236,13 +235,21 @@ async def test_invoke_structured_chat_recovers_from_empty_object_payload() -> No
     """A reasoning model emitting bare ``{}`` recovers instead of failing the caller.
 
     Mirrors thinking models that spend the completion budget on reasoning tokens
-    and return an empty object through the strict json_schema wrapper.
+    and return an empty object. ``invoke_structured_chat`` retries the same
+    method once before falling through; the second attempt yields valid JSON.
     """
-    inner = MagicMock()
-    inner.ainvoke = AsyncMock(
-        side_effect=[AIMessage(content="{}"), AIMessage(content='{"word": "OK"}')]
-    )
-    chat = OpenAICompatModelWrapper(inner, provider_name="test")
+    json_schema_runnable = MagicMock()
+    json_schema_runnable.ainvoke = AsyncMock(side_effect=[{"word": ""}, {"word": "OK"}])
+
+    def _with_structured_output(
+        _schema: object, method: str | None = None, **_kwargs: object
+    ) -> MagicMock:
+        if method == "json_schema":
+            return json_schema_runnable
+        raise RuntimeError(f"unexpected method {method!r}")
+
+    chat = MagicMock()
+    chat.with_structured_output = MagicMock(side_effect=_with_structured_output)
 
     out = await invoke_structured_chat(
         chat,
@@ -253,7 +260,7 @@ async def test_invoke_structured_chat_recovers_from_empty_object_payload() -> No
         methods=("json_schema",),
     )
     assert out == {"word": "OK"}
-    assert inner.ainvoke.await_count == 2
+    assert json_schema_runnable.ainvoke.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -374,162 +381,68 @@ async def test_invoke_structured_chat_raises_when_all_methods_fail() -> None:
 
 
 @pytest.mark.asyncio
-async def test_json_schema_wrapper_dict_schema() -> None:
-    inner = MagicMock()
-    inner.ainvoke = AsyncMock(
-        return_value=AIMessage(content='{"word": "OK"}'),
-    )
-    rf = {
-        "type": "json_schema",
-        "json_schema": {"name": "WordReply", "strict": True, "schema": _WORD_SCHEMA},
-    }
-    wrapper = JsonSchemaModelWrapper(inner, rf, _WORD_SCHEMA, strict=True)
+async def test_structured_output_runnable_parses_plain_json() -> None:
+    """``_StructuredOutputRunnable._parse`` returns the dict from a plain JSON response."""
+    from soothe_nano.llm.provider import ChatLitellmModel, _StructuredOutputRunnable
 
-    out = await wrapper.ainvoke([])
-    assert out == {"word": "OK"}
-
-
-@pytest.mark.asyncio
-async def test_invoke_structured_chat_applies_normalize_before_validation() -> None:
-    """Partial provider payloads reach normalize before jsonschema validation."""
-    # Inline schema (host Veritas must not be imported from nano tests).
-    schema = {
-        "type": "object",
-        "properties": {
-            "defer": {"type": "boolean"},
-            "answers": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-            "confidence": {"type": "number"},
-        },
-        "required": ["defer", "answers", "confidence"],
-        "additionalProperties": False,
-    }
-
-    def _normalize(data: object) -> dict:
-        if not isinstance(data, dict):
-            return {"defer": False, "answers": [""], "confidence": 0.0}
-        answers = data.get("answers")
-        if not isinstance(answers, list) or not answers:
-            answers = [""]
-        conf = data.get("confidence")
-        if not isinstance(conf, (int, float)):
-            conf = 0.7
-        return {
-            "defer": bool(data.get("defer", False)),
-            "answers": [str(a) for a in answers],
-            "confidence": float(conf),
-        }
-
-    inner = MagicMock()
-    inner.ainvoke = AsyncMock(
-        return_value=AIMessage(content='{"answers": ["pushed commit to origin"]}'),
-    )
-    fc_runnable = MagicMock()
-    fc_runnable.ainvoke = AsyncMock(
-        side_effect=RuntimeError(
-            "tool_choice parameter does not support being set to required in thinking mode"
-        )
-    )
-    json_mode_runnable = MagicMock()
-    json_mode_runnable.ainvoke = AsyncMock(
-        side_effect=RuntimeError("json_object must contain the word json")
-    )
-
-    def _with_structured_output(
-        _schema: object, method: str | None = None, **_kwargs: object
-    ) -> MagicMock:
-        if method == "function_calling":
-            return fc_runnable
-        if method == "json_mode":
-            return json_mode_runnable
-        return json_mode_runnable
-
-    inner.with_structured_output = MagicMock(side_effect=_with_structured_output)
-    chat = OpenAICompatModelWrapper(inner, provider_name="test")
-
-    out = await invoke_structured_chat(
-        chat,
-        [HumanMessage(content="Respond in JSON format")],
-        json_schema=schema,
-        schema_name="NormalizedAnswer",
-        strict=True,
-        normalize=_normalize,
-    )
-    assert out["defer"] is False
-    assert out["answers"] == ["pushed commit to origin"]
-    assert out["confidence"] == pytest.approx(0.7)
+    model = ChatLitellmModel(model="openai/test")
+    runnable = _StructuredOutputRunnable(model, response_format=None, schema=_WORD_SCHEMA)
+    assert runnable._parse(AIMessage(content='{"word": "OK"}')) == {"word": "OK"}
 
 
 def test_limited_provider_wrapper_dict_schema() -> None:
-    inner = MagicMock(spec=["with_structured_output"])
-    wrapped = OpenAICompatModelWrapper(inner, "lmstudio")
-    out = wrapped.with_structured_output(
-        _WORD_SCHEMA,
-        schema_name="WordReply",
-        strict=True,
-        method="json_schema",
-    )
-    assert isinstance(out, JsonSchemaModelWrapper)
+    """``with_structured_output`` returns a runnable for a dict schema (not a wrapper class)."""
+    from soothe_nano.llm.provider import ChatLitellmModel, _StructuredOutputRunnable
+
+    model = ChatLitellmModel(model="openai/test")
+    out = model.with_structured_output(_WORD_SCHEMA, schema_name="WordReply", strict=True)
+    assert isinstance(out, _StructuredOutputRunnable)
 
 
 def test_limited_provider_wrapper_delegates_function_calling() -> None:
-    inner = MagicMock(spec=["with_structured_output"])
-    inner.with_structured_output.return_value = "fc-runnable"
-    wrapped = OpenAICompatModelWrapper(inner, "dashscope")
-    out = wrapped.with_structured_output(
+    """``with_structured_output`` with method= passes through (no strict-strip per method)."""
+    from soothe_nano.llm.provider import ChatLitellmModel, _StructuredOutputRunnable
+
+    model = ChatLitellmModel(model="openai/test")
+    out = model.with_structured_output(
         _WORD_SCHEMA,
         method="function_calling",
         strict=True,
         tool_choice="auto",
     )
-    assert out == "fc-runnable"
-    inner.with_structured_output.assert_called_once_with(
-        _WORD_SCHEMA,
-        method="function_calling",
-        strict=True,
-        tool_choice="auto",
-    )
+    assert isinstance(out, _StructuredOutputRunnable)
 
 
 def test_limited_provider_wrapper_delegates_json_mode_without_strict() -> None:
-    """json_mode bind must not pass strict= through the compat wrapper."""
-    inner = MagicMock(spec=["with_structured_output"])
-    inner.with_structured_output.return_value = "json-mode-runnable"
-    wrapped = OpenAICompatModelWrapper(inner, "dashscope")
+    """``with_structured_output`` does not forward ``strict`` to litellm (it applies post-parse)."""
+    from soothe_nano.llm.provider import ChatLitellmModel, _StructuredOutputRunnable
 
-    out = wrapped.with_structured_output(_WORD_SCHEMA, method="json_mode", strict=True)
-    assert out == "json-mode-runnable"
-    inner.with_structured_output.assert_called_once_with(
-        _WORD_SCHEMA,
-        method="json_mode",
-    )
-
-    inner.with_structured_output.reset_mock()
-    out_default = wrapped.with_structured_output(_WORD_SCHEMA, strict=True)
-    assert out_default == "json-mode-runnable"
-    inner.with_structured_output.assert_called_once_with(_WORD_SCHEMA, method="json_mode")
+    model = ChatLitellmModel(model="openai/test")
+    out = model.with_structured_output(_WORD_SCHEMA, method="json_mode", strict=True)
+    assert isinstance(out, _StructuredOutputRunnable)
+    # strict is popped at bind time; response_format carries strictness, not the model.
+    assert "strict" not in model.model_kwargs
 
 
 @pytest.mark.asyncio
 async def test_invoke_structured_chat_binds_json_mode_through_compat_wrapper() -> None:
-    """method=None/json_mode must bind on OpenAICompatModelWrapper (no strict=)."""
-    inner = MagicMock()
+    """method=None/json_mode path succeeds when json_mode is the working method."""
+    chat = MagicMock()
     json_mode_runnable = MagicMock()
     json_mode_runnable.ainvoke = AsyncMock(return_value={"word": "OK"})
     fc_runnable = MagicMock()
     fc_runnable.ainvoke = AsyncMock(side_effect=[None, None])
 
     def _with_structured_output(
-        _schema: object, method: str | None = None, **kwargs: object
+        _schema: object, method: str | None = None, **_kwargs: object
     ) -> MagicMock:
-        assert "strict" not in kwargs or method == "function_calling"
         if method == "json_mode" or method is None:
             return json_mode_runnable
         if method == "function_calling":
             return fc_runnable
         raise RuntimeError(f"unexpected method {method!r}")
 
-    inner.with_structured_output = MagicMock(side_effect=_with_structured_output)
-    chat = OpenAICompatModelWrapper(inner, "dashscope")
+    chat.with_structured_output = MagicMock(side_effect=_with_structured_output)
 
     out = await invoke_structured_chat(
         chat,
@@ -652,30 +565,78 @@ async def test_invoke_structured_chat_retries_after_empty_json_schema_response()
 
 
 @pytest.mark.asyncio
-async def test_json_schema_wrapper_repairs_truncated_json() -> None:
-    """Truncated json_schema provider output should parse after repair."""
-    inner = MagicMock()
-    inner.ainvoke = AsyncMock(
-        return_value=AIMessage(
-            content='{"is_task":false,"confidence":"high","social_response":"Hello'
-        ),
-    )
-    pass1_schema = {
+@pytest.mark.asyncio
+async def test_structured_output_runnable_recovers_fenced_json() -> None:
+    """``_StructuredOutputRunnable._parse`` strips markdown fences/prose to recover JSON.
+
+    Port of the old ``JsonSchemaModelWrapper._parse_response`` fenced-JSON
+    recovery: providers wrap json_schema output in ````` ```json ... ``` `````
+    or prefix prose. The new runnable's ``_parse`` does the same recovery via
+    a ``{.*}`` regex fallback when ``json.loads`` fails on the raw content.
+    """
+    from soothe_nano.llm.provider import ChatLitellmModel, _StructuredOutputRunnable
+
+    model = ChatLitellmModel(model="openai/test")
+    runnable = _StructuredOutputRunnable(model, response_format=None, schema=_WORD_SCHEMA)
+    fenced = AIMessage(content='```json\n{\n  "word": "GOJSON"\n}\n```')
+    assert runnable._parse(fenced) == {"word": "GOJSON"}
+
+    prose = AIMessage(content='Here is the JSON: {"word": "OK"}')
+    assert runnable._parse(prose) == {"word": "OK"}
+
+
+@pytest.mark.asyncio
+async def test_invoke_structured_chat_applies_normalize_before_validation() -> None:
+    """Partial provider payloads reach normalize before jsonschema validation."""
+    # Inline schema (host Veritas must not be imported from nano tests).
+    schema = {
         "type": "object",
         "properties": {
-            "is_task": {"type": "boolean"},
-            "confidence": {"type": "string"},
-            "social_response": {"type": "string"},
+            "defer": {"type": "boolean"},
+            "answers": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "confidence": {"type": "number"},
         },
-        "required": ["is_task", "confidence"],
-        "additionalProperties": True,
+        "required": ["defer", "answers", "confidence"],
+        "additionalProperties": False,
     }
-    rf = {
-        "type": "json_schema",
-        "json_schema": {"name": "Pass1", "strict": False, "schema": pass1_schema},
-    }
-    wrapper = JsonSchemaModelWrapper(inner, rf, pass1_schema, strict=False)
 
-    out = await wrapper.ainvoke([])
-    assert out["is_task"] is False
-    assert out["social_response"] == "Hello"
+    def _normalize(data: object) -> dict:
+        if not isinstance(data, dict):
+            return {"defer": False, "answers": [""], "confidence": 0.0}
+        answers = data.get("answers")
+        if not isinstance(answers, list) or not answers:
+            answers = [""]
+        conf = data.get("confidence")
+        if not isinstance(conf, (int, float)):
+            conf = 0.7
+        return {
+            "defer": bool(data.get("defer", False)),
+            "answers": [str(a) for a in answers],
+            "confidence": float(conf),
+        }
+
+    json_schema_runnable = MagicMock()
+    json_schema_runnable.ainvoke = AsyncMock(return_value={"answers": ["pushed commit to origin"]})
+
+    def _with_structured_output(
+        _schema: object, method: str | None = None, **_kwargs: object
+    ) -> MagicMock:
+        if method == "json_schema":
+            return json_schema_runnable
+        raise RuntimeError(f"unexpected method {method!r}")
+
+    chat = MagicMock()
+    chat.with_structured_output = MagicMock(side_effect=_with_structured_output)
+
+    out = await invoke_structured_chat(
+        chat,
+        [HumanMessage(content="Respond in JSON format")],
+        json_schema=schema,
+        schema_name="NormalizedAnswer",
+        strict=True,
+        methods=("json_schema",),
+        normalize=_normalize,
+    )
+    assert out["defer"] is False
+    assert out["answers"] == ["pushed commit to origin"]
+    assert out["confidence"] == pytest.approx(0.7)

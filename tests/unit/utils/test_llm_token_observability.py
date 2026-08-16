@@ -1,13 +1,11 @@
 """Tests for LLM token extraction and Langfuse-oriented ``llm_output`` enrichment."""
 
 import pytest
-from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
-from soothe_nano.utils.llm.observability import (
-    SootheTokenUsageChatModel,
+from soothe_nano.llm.observability import (
     bind_llm_token_observability,
     ensure_openai_style_token_usage_on_llm_result,
     extract_token_counts_from_llm_result,
@@ -58,22 +56,6 @@ def test_ensure_skips_when_token_usage_present() -> None:
     assert result.llm_output["token_usage"]["prompt_tokens"] == 9
 
 
-def test_soothe_token_usage_model_delegates_with_structured_output() -> None:
-    """Regression: wrapper must not inherit BaseChatModel.with_structured_output (daemon IntentClassifier)."""
-    from unittest.mock import MagicMock
-
-    from soothe_nano.utils.llm.structured import _JsonKeywordSafeRunnable
-
-    inner = MagicMock(spec=BaseChatModel)
-    inner.bind_tools.side_effect = lambda *a, **k: inner
-    inner.with_structured_output.return_value = "structured-runnable"
-    wrapped = SootheTokenUsageChatModel(inner)
-    assert type(wrapped).bind_tools is not BaseChatModel.bind_tools
-    out = wrapped.with_structured_output("schema", method="json_mode")
-    assert isinstance(out, _JsonKeywordSafeRunnable)
-    inner.with_structured_output.assert_called_once_with("schema", method="json_mode")
-
-
 def test_bind_llm_token_observability_invokes_callback() -> None:
     msg = AIMessage(
         content="done",
@@ -95,30 +77,9 @@ def test_merge_token_usage_callbacks_attaches_handler() -> None:
 
 
 @pytest.mark.asyncio
-async def test_json_schema_wrapper_forwards_config() -> None:
-    from unittest.mock import AsyncMock, MagicMock
-
-    from pydantic import BaseModel
-
-    from soothe_nano.utils.llm.wrappers import JsonSchemaModelWrapper
-
-    class _Schema(BaseModel):
-        answer: str
-
-    inner = MagicMock()
-    inner.ainvoke = AsyncMock(
-        return_value=AIMessage(
-            content='{"answer": "yes"}',
-            usage_metadata={"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
-        )
-    )
-    rf = {"type": "json_schema", "json_schema": {"name": "x", "strict": True, "schema": {}}}
-    wrapper = JsonSchemaModelWrapper(inner, rf, _Schema)
-
-    cfg = {"metadata": {"soothe_call_purpose": "test"}}
-
-    await wrapper.ainvoke([], config=cfg)
-
-    inner.ainvoke.assert_called_once()
-    call_kw = inner.ainvoke.call_args
-    assert call_kw.kwargs.get("config") == cfg
+async def test_merge_token_usage_callbacks_passthrough_when_none() -> None:
+    """``merge_token_usage_callbacks(None)`` still attaches the shared handler."""
+    merged = merge_token_usage_callbacks(None)
+    callbacks = merged.get("callbacks")
+    assert callbacks is not None
+    assert get_llm_token_usage_callback_handler() in callbacks

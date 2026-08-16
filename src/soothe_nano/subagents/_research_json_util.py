@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from soothe_nano.utils.llm.response_text import llm_response_text, parse_json_object
+from soothe_nano.llm.response_text import llm_response_text, parse_json_object
 
 __all__ = [
     "compact_search_query",

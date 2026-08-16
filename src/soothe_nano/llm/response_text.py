@@ -1,4 +1,8 @@
-"""Extract parseable text and JSON objects from provider AIMessage responses."""
+"""Extract parseable text and JSON objects from provider AIMessage responses.
+
+Ported from the former ``soothe_nano.utils.llm.response_text``. Depends on
+:mod:`soothe_nano.llm.thinking` (the ported thinking filter).
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,7 @@ import json
 import re
 from typing import Any
 
-from soothe_nano.utils.llm.thinking_filter import strip_thinking
+from soothe_nano.llm.thinking import strip_thinking
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL | re.IGNORECASE)
 
@@ -33,7 +37,7 @@ def llm_response_text(response: Any) -> str:
 
     Thinking models may put JSON in ``additional_kwargs["reasoning_content"]``
     or list-style ``content`` blocks while leaving primary ``content`` empty.
-    ``strip_thinking`` is applied so inline ``</think>...<thinking>`` blocks never surface.
+    ``strip_thinking`` is applied so inline thinking blocks never surface.
     """
     if hasattr(response, "content") and response.content:
         return strip_thinking(text_from_message_content(response.content))
@@ -80,4 +84,40 @@ def parse_json_object(content: str) -> dict[str, Any] | None:
     return None
 
 
-__all__ = ["llm_response_text", "parse_json_object", "text_from_message_content"]
+__all__ = [
+    "llm_response_text",
+    "parse_json_object",
+    "text_from_message_content",
+    "_extract_json_str_from_response",
+    "_strip_json_text",
+]
+
+
+# Back-compat alias: the old ``soothe_nano.utils.llm.wrappers._extract_json_str_from_response``
+# extracted JSON text (content → reasoning_content → fence-stripped string). ``llm_response_text``
+# does the same (content / reasoning_content, with thinking stripping); alias it so the planner
+# and any other caller can import the same behavior from the unified module.
+_extract_json_str_from_response = llm_response_text
+
+
+def _strip_json_text(raw: str) -> str:
+    """Normalize model output to a JSON-parseable string.
+
+    Ported from the former ``soothe_nano.utils.llm.wrappers._strip_json_text``.
+    Local OpenAI-compatible providers (oMLX/GLM/gemma) sometimes wrap
+    ``json_schema`` output in a markdown fence (````` ```json ... ``` `````)
+    or prefix it with prose even though ``response_format`` requested strict
+    JSON. Strip the fence and, if prose remains, slice to the first ``{`` so
+    ``json.loads`` succeeds. Returns a string (the caller parses it).
+    """
+    text = (raw or "").strip()
+    if not text:
+        return text
+    fence = _JSON_FENCE_RE.search(text)
+    if fence:
+        text = fence.group(1).strip()
+    start = text.find("{")
+    if start > 0:
+        # Leading prose before the first object — slice it off.
+        text = text[start:]
+    return text

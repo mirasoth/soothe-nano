@@ -8,7 +8,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from soothe_nano.config import SootheConfig
-from soothe_nano.utils.llm.structured import invoke_structured_chat
+from soothe_nano.llm.structured import invoke_structured_chat
 
 pytestmark = pytest.mark.integration
 

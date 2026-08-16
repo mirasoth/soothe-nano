@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage
 
-from soothe_nano.utils.llm.response_text import (
+from soothe_nano.llm.response_text import (
     llm_response_text,
     parse_json_object,
     text_from_message_content,

@@ -29,6 +29,9 @@ if TYPE_CHECKING:
     from soothe_deepagents.middleware.llm_rate_limit import LLMRateLimitMiddleware
     from soothe_deepagents.middleware.tool_timeout import ToolTimeoutMiddleware
 
+    from soothe_nano.llm.observability import (
+        create_llm_call_metadata as create_llm_call_metadata,
+    )
     from soothe_nano.middleware._builder import (
         build_soothe_middleware_stack as build_soothe_middleware_stack,
     )
@@ -49,9 +52,6 @@ if TYPE_CHECKING:
     from soothe_nano.middleware.tool_enforcement import ToolEnforcementMiddleware
     from soothe_nano.middleware.tool_optimization_middleware import ToolOptimizationMiddleware
     from soothe_nano.middleware.workspace_context import WorkspaceContextMiddleware
-    from soothe_nano.utils.llm.observability import (
-        create_llm_call_metadata as create_llm_call_metadata,
-    )
 
 __all__ = [
     "CodeInterpreterMiddleware",
@@ -85,7 +85,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "CodeInterpreterMiddleware",
     ),
     "create_llm_call_metadata": (
-        "soothe_nano.utils.llm.observability",
+        "soothe_nano.llm.observability",
         "create_llm_call_metadata",
     ),
     "SootheFilesystemMiddleware": (

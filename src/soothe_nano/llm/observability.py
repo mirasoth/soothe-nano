@@ -1,7 +1,12 @@
-"""LLM token usage extraction, Langfuse-friendly ``llm_output`` enrichment, and debug logging.
+"""Token usage extraction and Langfuse-friendly ``llm_output`` enrichment.
 
-Moved from ``utils/observability/llm_token_observability.py`` to consolidate
-all LLM-related utilities under ``utils/llm/``.
+Ported fully from the former ``soothe_nano.utils.llm.observability``. The old
+``SootheTokenUsageChatModel`` wrapper is removed — ``ChatLitellmModel`` surfaces
+token usage directly via ``ChatResult.llm_output`` (litellm populates
+``response.usage``), which the handlers below read.
+
+The ``SootheTokenUsageChatModel`` name is kept as a back-compat alias for
+``ChatLitellmModel`` so type-checks in external consumers don't break.
 """
 
 from __future__ import annotations
@@ -12,6 +17,8 @@ from typing import Any
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models import BaseChatModel
 from langchain_core.outputs import ChatGeneration, LLMResult
+
+from soothe_nano.llm.provider import ChatLitellmModel as SootheTokenUsageChatModel
 
 logger = logging.getLogger(__name__)
 
@@ -114,9 +121,6 @@ def ensure_openai_style_token_usage_on_llm_result(response: LLMResult) -> None:
     Langfuse reads ``LLMResult.llm_output['token_usage']`` (and ``usage``) before message
     metadata. Some providers only populate ``AIMessage.usage_metadata``; copying those
     counts here lets generation usage flow into Langfuse without duplicate API calls.
-
-    Args:
-        response: The LangChain result passed to ``on_llm_end`` callbacks.
     """
     llm_out = response.llm_output
     if isinstance(llm_out, dict):
@@ -193,8 +197,8 @@ def merge_token_usage_callbacks(config: dict[str, Any] | None) -> dict[str, Any]
     """Merge the shared token-usage callback into a LangChain ``RunnableConfig`` dict.
 
     Structured-output runnables invoke the inner chat model without passing through
-    ``SootheTokenUsageChatModel._agenerate``; attaching the handler here ensures
-    planner/intent calls still fold usage into scoped token targets when active.
+    the adapter; attaching the handler here ensures planner/intent calls still fold
+    usage into scoped token targets when active.
     """
     from langchain_core.runnables.config import merge_configs
 
@@ -216,117 +220,28 @@ def _prepend_token_usage_handler(run_manager: Any) -> None:
     handlers.insert(0, h)
 
 
-class SootheTokenUsageChatModel(BaseChatModel):
-    """``BaseChatModel`` wrapper that prepends token usage handling on every generate path.
-
-    Applied automatically by ``LLMFactory`` to all models for consistent token tracking
-    across provider types. Ensures Langfuse callbacks receive properly formatted token
-    counts even when providers only populate ``AIMessage.usage_metadata``.
-    """
-
-    def __init__(self, model: BaseChatModel, *, hide_thinking_tokens: bool = True) -> None:
-        """Initialize the token-usage wrapper.
-
-        Args:
-            model: The underlying chat model to delegate to.
-            hide_thinking_tokens: When True (default), strip inline reasoning
-                blocks from model output. Passed through from
-                ``SootheConfig.hide_thinking_tokens`` by ``LLMFactory``; the
-                stripping logic lives in
-                ``soothe_nano.utils.llm.thinking_filter``.
-        """
-        self._model = model
-        self._hide_thinking_tokens = hide_thinking_tokens
-
-    def bind_tools(self, tools: list[Any], **kwargs: Any) -> Any:
-        """Delegate so ``type(self).bind_tools is not BaseChatModel.bind_tools`` (structured output)."""
-        return self._model.bind_tools(tools, **kwargs)
-
-    def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
-        """Delegate structured output and wrap for json_object prompt compatibility."""
-        from soothe_nano.utils.llm.structured import wrap_json_keyword_safe
-
-        return wrap_json_keyword_safe(self._model.with_structured_output(schema, **kwargs))
-
-    def _generate(
-        self,
-        messages: list[Any],
-        stop: list[str] | None = None,
-        run_manager: Any = None,
-        **kwargs: Any,
-    ) -> Any:
-        _prepend_token_usage_handler(run_manager)
-        return self._model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
-
-    async def _agenerate(
-        self,
-        messages: list[Any],
-        stop: list[str] | None = None,
-        run_manager: Any = None,
-        **kwargs: Any,
-    ) -> Any:
-        _prepend_token_usage_handler(run_manager)
-        return await self._model._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
-
-    def _stream(
-        self,
-        messages: list[Any],
-        stop: list[str] | None = None,
-        run_manager: Any = None,
-        **kwargs: Any,
-    ) -> Any:
-        _prepend_token_usage_handler(run_manager)
-        return self._model._stream(messages, stop=stop, run_manager=run_manager, **kwargs)
-
-    async def _astream(
-        self,
-        messages: list[Any],
-        stop: list[str] | None = None,
-        run_manager: Any = None,
-        **kwargs: Any,
-    ) -> Any:
-        _prepend_token_usage_handler(run_manager)
-        async for chunk in self._model._astream(
-            messages, stop=stop, run_manager=run_manager, **kwargs
-        ):
-            yield chunk
-
-    @property
-    def _llm_type(self) -> str:
-        return getattr(self._model, "_llm_type", "unknown")
-
-    @property
-    def _identifying_params(self) -> dict[str, Any]:
-        return getattr(self._model, "_identifying_params", {})
-
-    @property
-    def _model_name(self) -> str:
-        return getattr(self._model, "_model_name", "unknown")
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._model, name)
+# Back-compat alias: the old ``SootheTokenUsageChatModel`` wrapper is removed;
+# token handling now lives inside ``ChatLitellmModel``. Consumers that type-check
+# against this name match ``ChatLitellmModel``.
+# (Imported at the top of the module; this comment documents the back-compat shim.)
 
 
 def bind_llm_token_observability(model: BaseChatModel | None) -> BaseChatModel | None:
-    """Wrap a chat model so token stats run on every LLM call (idempotent).
+    """No-op back-compat shim.
 
-    Uses a ``BaseChatModel`` subclass so downstream code (e.g. profile lookup)
-    still receives a real chat model, not a ``RunnableBinding``.
+    Token observability is built into :class:`ChatLitellmModel` directly, so the
+    old wrapping step is unnecessary. Kept so callers don't break.
     """
-    if model is None:
-        return None
-    if isinstance(model, SootheTokenUsageChatModel):
-        return model
-    return SootheTokenUsageChatModel(model)
+    return model
 
 
 __all__ = [
-    "create_llm_call_metadata",
     "SootheLLMTokenUsageCallbackHandler",
     "SootheTokenUsageChatModel",
     "bind_llm_token_observability",
-    "extract_token_counts_from_llm_result",
+    "create_llm_call_metadata",
     "ensure_openai_style_token_usage_on_llm_result",
+    "extract_token_counts_from_llm_result",
     "get_llm_token_usage_callback_handler",
     "merge_token_usage_callbacks",
 ]

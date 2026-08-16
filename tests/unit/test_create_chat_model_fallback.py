@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from soothe_nano.config.settings import SootheConfig
-from soothe_nano.utils.llm.factory import LLMFactory
+from soothe_nano.llm.factory import LLMFactory
 
 
 def test_think_falls_back_to_default_on_failure() -> None:

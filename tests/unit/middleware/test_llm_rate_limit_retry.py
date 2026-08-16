@@ -18,7 +18,7 @@ from soothe_deepagents.middleware.llm_rate_limit import (
     effective_llm_call_timeout,
 )
 
-from soothe_nano.utils.llm.structured import StructuredOutputError
+from soothe_nano.llm.structured import StructuredOutputError
 
 
 @pytest.fixture(autouse=True)

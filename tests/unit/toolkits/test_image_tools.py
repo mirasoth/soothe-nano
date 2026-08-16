@@ -94,7 +94,7 @@ class TestAnalyzeImageInvoke:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _tiny_png(Path(tmpdir) / "ok.png")
             with patch(
-                "soothe_nano.utils.llm.invoke_policy.await_with_llm_call_policy",
+                "soothe_nano.llm.invoke_policy.await_with_llm_call_policy",
                 side_effect=_passthrough,
             ):
                 result = asyncio.run(tool._arun(str(path), question=""))
@@ -125,7 +125,7 @@ class TestAnalyzeImageInvoke:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _tiny_png(Path(tmpdir) / "ok.png")
             with patch(
-                "soothe_nano.utils.llm.invoke_policy.await_with_llm_call_policy",
+                "soothe_nano.llm.invoke_policy.await_with_llm_call_policy",
                 side_effect=_passthrough,
             ):
                 asyncio.run(tool._arun(str(path), question="What color?"))
@@ -148,7 +148,7 @@ class TestAnalyzeImageInvoke:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = _tiny_png(Path(tmpdir) / "ok.png")
             with patch(
-                "soothe_nano.utils.llm.invoke_policy.await_with_llm_call_policy",
+                "soothe_nano.llm.invoke_policy.await_with_llm_call_policy",
                 side_effect=_passthrough,
             ):
                 result = asyncio.run(tool._arun(str(path), question="q"))

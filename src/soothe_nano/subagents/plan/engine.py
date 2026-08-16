@@ -29,7 +29,7 @@ from soothe_sdk.ux.stream_tool_wire import STREAM_TOOL_CALL_UPDATE
 
 from soothe_nano.config import SubagentConfig
 from soothe_nano.events.catalog import register_event
-from soothe_nano.utils.llm.structured import invoke_structured_chat_typed
+from soothe_nano.llm.structured import invoke_structured_chat_typed
 from soothe_nano.utils.progress import emit_progress
 from soothe_nano.utils.subagent_emit import emit_subagent_wire_event
 from soothe_nano.utils.text_preview import log_preview
@@ -383,7 +383,7 @@ def build_plan_engine(
     workspace: str | None = None,
 ) -> Any:
     """Compile the plan subagent graph."""
-    from soothe_nano.utils.llm.invoke_policy import (
+    from soothe_nano.llm.invoke_policy import (
         await_with_llm_call_policy,
         llm_rate_limit_config_from,
     )

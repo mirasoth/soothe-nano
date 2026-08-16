@@ -171,7 +171,7 @@ class SootheConfig(BaseSettings):
             LLMFactory instance bound to this config.
         """
         if self._llm_factory is None:
-            from soothe_nano.utils.llm import LLMFactory
+            from soothe_nano.llm import LLMFactory
 
             self._llm_factory = LLMFactory(self)
         return self._llm_factory

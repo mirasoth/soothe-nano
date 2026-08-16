@@ -1,27 +1,36 @@
-"""Tests for auto-detection of OpenAI compatibility wrappers."""
+"""Tests for provider-capability resolution (replaces old compat-wrapper detection).
+
+The old ``ProviderRegistry.requires_openai_compat_wrapper`` decided whether a
+custom OpenAI-compatible endpoint (DashScope, oMLX, vLLM, LMStudio) needed the
+``OpenAICompatModelWrapper`` adapter. The unified litellm adapter folds those
+quirks into :class:`ProviderCapabilities` flags instead. The surviving decision
+is ``supports_json_schema``: standard OpenAI honors ``response_format:
+json_schema``; custom OpenAI-compatible endpoints do not, so structured output
+falls back to ``function_calling`` / instructor.
+"""
 
 from __future__ import annotations
-
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from soothe_nano.config.models import ModelProviderConfig
 from soothe_nano.config.settings import SootheConfig
-from soothe_nano.utils.llm.registry import ProviderRegistry
-from soothe_nano.utils.llm.wrappers import OpenAICompatModelWrapper
+from soothe_nano.llm.registry import ProviderRegistry
 
 
 @pytest.mark.parametrize(
-    ("api_base_url", "expected"),
+    ("api_base_url", "supports_json_schema"),
     [
-        (None, False),
-        ("https://api.openai.com/v1", False),
-        ("http://100.75.70.86:9642/v1", True),
-        ("http://localhost:1234/v1", True),
+        (None, True),
+        ("https://api.openai.com/v1", True),
+        ("http://100.75.70.86:9642/v1", False),
+        ("http://localhost:1234/v1", False),
     ],
 )
-def test_requires_openai_compat_wrapper(api_base_url: str | None, expected: bool) -> None:
+def test_supports_json_schema_for_openai_endpoints(
+    api_base_url: str | None, supports_json_schema: bool
+) -> None:
+    """Custom (non-api.openai.com) OpenAI-compatible endpoints reject json_schema."""
     registry = ProviderRegistry(
         [
             ModelProviderConfig(
@@ -32,10 +41,12 @@ def test_requires_openai_compat_wrapper(api_base_url: str | None, expected: bool
             )
         ]
     )
-    assert registry.requires_openai_compat_wrapper("local") is expected
+    caps = registry.provider_capabilities("local")
+    assert caps.supports_json_schema is supports_json_schema
 
 
-def test_requires_openai_compat_wrapper_anthropic_never() -> None:
+def test_supports_json_schema_anthropic_never_rejects() -> None:
+    """Non-openai providers route structured output through their own path."""
     registry = ProviderRegistry(
         [
             ModelProviderConfig(
@@ -46,10 +57,20 @@ def test_requires_openai_compat_wrapper_anthropic_never() -> None:
             )
         ]
     )
-    assert registry.requires_openai_compat_wrapper("anthropic") is False
+    caps = registry.provider_capabilities("anthropic")
+    assert caps.supports_json_schema is True
 
 
-def test_factory_applies_compat_wrapper_for_custom_openai_endpoint() -> None:
+def test_factory_builds_chat_litellm_model_for_custom_openai_endpoint() -> None:
+    """A custom OpenAI-compatible endpoint yields a single ``ChatLitellmModel``.
+
+    Replaces the old assertion that ``model._model`` was an
+    ``OpenAICompatModelWrapper``: the unified adapter IS the model, so the
+    capabilities (json_schema fallback, thinking strip) are read directly.
+    """
+    from soothe_nano.llm.factory import LLMFactory
+    from soothe_nano.llm.provider import ChatLitellmModel
+
     config = SootheConfig(
         providers=[
             ModelProviderConfig(
@@ -65,12 +86,16 @@ def test_factory_applies_compat_wrapper_for_custom_openai_endpoint() -> None:
                 "router": {"default": "omlx:test-model"},
             }
         ],
-        embedding_profile=[{"model_role": "openai:text-embedding-3-small", "embedding_dims": 1536}],
         active_router_profile="test",
     )
 
-    raw_model = MagicMock()
-    with patch("soothe_nano.utils.llm.factory.init_chat_model", return_value=raw_model):
-        model = config.create_chat_model("default")
+    factory = LLMFactory(config)
+    # Patch the litellm call path (not init_chat_model, which no longer exists).
+    with __import__("unittest.mock", fromlist=["patch"]).patch(
+        "soothe_nano.llm.provider.litellm"
+    ) as _mock_litellm:
+        model = factory.create_chat_model("default")
 
-    assert isinstance(model._model, OpenAICompatModelWrapper)  # noqa: SLF001
+    assert isinstance(model, ChatLitellmModel)
+    # Custom endpoint -> json_schema not supported; streaming flag from config.
+    assert model.capabilities.supports_json_schema is False

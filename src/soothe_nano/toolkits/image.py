@@ -139,7 +139,7 @@ async def _invoke_image_model(
     config: Any,
 ) -> str:
     """Call the image-role model under LLM call policy."""
-    from soothe_nano.utils.llm.invoke_policy import (
+    from soothe_nano.llm.invoke_policy import (
         await_with_llm_call_policy,
         llm_rate_limit_config_from,
     )

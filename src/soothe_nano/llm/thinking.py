@@ -14,10 +14,6 @@ Two entry points:
 - :class:`ThinkingStreamFilter` -- stateful filter for streaming chunks that
   buffers partial ``<think`` / ``</think`` tag fragments split across chunk
   boundaries so no tag fragments leak into visible output.
-
-The filter is provider-agnostic: it handles the inline XML-tag style used by
-DeepSeek-R1-style models. API-level ``reasoning_content`` fields are captured
-in the wrapper layer (see ``wrappers.py``) and routed through here as text.
 """
 
 from __future__ import annotations
@@ -33,33 +29,21 @@ logger = logging.getLogger(__name__)
 
 # --- compiled tag regexes -----------------------------------------------------
 
-# Complete opening tag, capturing the variant so it can be paired with the
-# matching close tag. ``think`` is listed last; the trailing ``>`` makes
-# ``<think>`` and ``<thinking>`` unambiguous regardless.
 _THINK_OPEN_RE = re.compile(r"<(thinking|reasoning|think)>", re.IGNORECASE)
-
-# Any complete closing tag (used for general detection).
 _THINK_CLOSE_RE = re.compile(r"</(?:thinking|reasoning|think)>", re.IGNORECASE)
 
 # Complete block (open + content + matching close) for stateless stripping.
-# The backreference (``\1``) pairs ``<thinking>`` with ``</thinking>`` so a
-# stray ``</think>`` fragment inside the reasoning text cannot close the block
-# prematurely. ``re.DOTALL`` lets the content span newlines.
 _THINK_BLOCK_RE = re.compile(
     r"<(thinking|reasoning|think)>.*?</\1>",
     re.IGNORECASE | re.DOTALL,
 )
 
-# Per-variant close-tag matchers used by the streaming filter so an open
-# ``<thinking>`` only closes on ``</thinking>`` (not ``</think>``).
 _THINK_CLOSE_RES: dict[str, re.Pattern[str]] = {
     "think": re.compile(r"</think>", re.IGNORECASE),
     "thinking": re.compile(r"</thinking>", re.IGNORECASE),
     "reasoning": re.compile(r"</reasoning>", re.IGNORECASE),
 }
 
-# Lowercase complete opening tags, used for partial-prefix detection at chunk
-# boundaries by the streaming filter.
 _OPEN_TAGS_LOWER: tuple[str, ...] = ("<think>", "<thinking>", "<reasoning>")
 
 
@@ -106,17 +90,12 @@ class ThinkingStreamFilter:
     ``<reasoning>``) fragments that arrive split across chunk boundaries are
     buffered until the tag completes or is ruled out, so no tag fragments leak
     into visible output.
-
-    Each completed thinking segment is logged at ``DEBUG`` as it closes. Call
-    :meth:`finalize` at end-of-stream to flush any remaining safe literal text
-    and log unterminated thinking fragments.
     """
 
     def __init__(self, logger: Logger | None = None) -> None:
         self._log = _resolve_logger(logger)
         self._buffer: str = ""
         self._inside: bool = False
-        # Open-tag variant ("think" | "thinking" | "reasoning") when inside.
         self._variant: str | None = None
 
     def feed(self, chunk: str) -> str:
@@ -127,13 +106,7 @@ class ThinkingStreamFilter:
         return self._drain()
 
     def finalize(self) -> str:
-        """Flush remaining safe text at end-of-stream.
-
-        Any buffered literal text (e.g. a trailing partial open-tag prefix that
-        never completed into a real tag) is returned. If a thinking block was
-        left unterminated, its buffered fragment is logged at ``DEBUG`` with an
-        ``unterminated`` note and suppressed from the returned text.
-        """
+        """Flush remaining safe text at end-of-stream."""
         if self._inside:
             variant = self._variant
             segment = self._buffer
@@ -147,8 +120,6 @@ class ThinkingStreamFilter:
             self._inside = False
             self._variant = None
             return ""
-        # Outside a thinking block: any held partial open-tag prefix is just
-        # literal text now that the stream has ended, so it is safe to emit.
         remaining = self._buffer
         self._buffer = ""
         return remaining
@@ -160,7 +131,7 @@ class ThinkingStreamFilter:
         while self._buffer:
             if self._inside:
                 variant = self._variant
-                assert variant is not None  # set when entering the inside state
+                assert variant is not None
                 close_re = _THINK_CLOSE_RES[variant]
                 match = close_re.search(self._buffer)
                 if match:
@@ -175,22 +146,16 @@ class ThinkingStreamFilter:
                     self._inside = False
                     self._variant = None
                     continue
-                # No close tag yet: hold all buffered reasoning content and
-                # emit only the literal text accumulated before this block.
                 return "".join(out)
 
             match = _THINK_OPEN_RE.search(self._buffer)
             if match:
-                # Emit literal text preceding the opening tag.
                 out.append(self._buffer[: match.start()])
                 self._variant = match.group(1).lower()
                 self._buffer = self._buffer[match.end() :]
                 self._inside = True
                 continue
 
-            # No complete opening tag: hold back a trailing partial-tag prefix
-            # (e.g. buffer ends with "<thi") that may still complete into a tag
-            # on the next chunk; emit the rest as safe literal text.
             held = self._trailing_open_prefix_len()
             if held:
                 out.append(self._buffer[:-held])
@@ -202,11 +167,7 @@ class ThinkingStreamFilter:
         return "".join(out)
 
     def _trailing_open_prefix_len(self) -> int:
-        """Length of the trailing buffer slice that could still become an opening tag.
-
-        Returns 0 when the buffer does not end with a prefix of any opening
-        tag, so the whole buffer is safe to emit.
-        """
+        """Length of the trailing buffer slice that could still become an opening tag."""
         idx = self._buffer.rfind("<")
         if idx < 0:
             return 0
