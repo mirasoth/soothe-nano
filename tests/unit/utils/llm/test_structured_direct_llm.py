@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import jsonschema
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import BaseModel
 
 from soothe_nano.llm.schema_wire import validate_response_schema
@@ -397,6 +398,87 @@ async def test_structured_output_runnable_parses_plain_json() -> None:
     model = ChatLitellmModel(model="openai/test")
     runnable = _StructuredOutputRunnable(model, response_format=None, schema=_WORD_SCHEMA)
     assert runnable._parse(AIMessage(content='{"word": "OK"}')) == {"word": "OK"}
+
+
+@pytest.mark.asyncio
+async def test_structured_output_runnable_strips_config_from_litellm_kwargs() -> None:
+    """The LangChain ``config`` RunnableConfig must not leak into litellm kwargs.
+
+    Regression for the JSON-serialization failure
+    (``Object of type SootheLLMTokenUsageCallbackHandler is not JSON serializable``)
+    that routed every intake query through the heuristic fallback: the shared
+    token-usage callback handler traveled via ``config['callbacks']`` into
+    ``litellm.completion``, whose body serializer rejected it. ``config`` is a
+    RunnableConfig, not a litellm kwarg — the runnable must pull it out.
+    """
+    from soothe_nano.llm.provider import ChatLitellmModel, _StructuredOutputRunnable
+
+    model = ChatLitellmModel(model="openai/test")
+    runnable = _StructuredOutputRunnable(model, response_format=None, schema=_WORD_SCHEMA)
+
+    class _NotJsonSerializable:
+        """Stand-in for a live callback handler instance."""
+
+    captured: dict[str, object] = {}
+
+    async def _fake_agenerate(messages, stop=None, run_manager=None, **kwargs):  # type: ignore[no-untyped-def]
+        captured.update(kwargs)
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content='{"word": "OK"}'))],
+            llm_output={
+                "token_usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}
+            },
+        )
+
+    model._agenerate = _fake_agenerate  # type: ignore[assignment]
+
+    config: dict[str, object] = {
+        "callbacks": [_NotJsonSerializable()],
+        "metadata": {"soothe_call_purpose": "classify_pass1"},
+        "tags": ["intake"],
+    }
+    out = await runnable.ainvoke([HumanMessage(content="hi")], config=config)
+    assert out == {"word": "OK"}
+    # The RunnableConfig (callbacks/metadata/tags) must not reach litellm.
+    assert "config" not in captured
+    assert "callbacks" not in captured
+    assert "metadata" not in captured
+    assert "tags" not in captured
+
+
+@pytest.mark.asyncio
+async def test_structured_output_runnable_fires_token_usage_callback() -> None:
+    """Structured-output calls still fold token usage into the loop scope.
+
+    Because the runnable bypasses ``BaseChatModel``'s callback machinery, it
+    invokes the shared ``SootheLLMTokenUsageCallbackHandler.on_llm_end`` inline
+    so loop token accumulation keeps working for planner/intent calls.
+    """
+    from soothe_nano.llm.observability import get_llm_token_usage_callback_handler
+    from soothe_nano.llm.provider import ChatLitellmModel, _StructuredOutputRunnable
+
+    model = ChatLitellmModel(model="openai/test")
+    runnable = _StructuredOutputRunnable(model, response_format=None, schema=_WORD_SCHEMA)
+
+    async def _fake_agenerate(messages, stop=None, run_manager=None, **kwargs):  # type: ignore[no-untyped-def]
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content='{"word": "OK"}'))],
+            llm_output={
+                "token_usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}
+            },
+        )
+
+    model._agenerate = _fake_agenerate  # type: ignore[assignment]
+
+    handler = get_llm_token_usage_callback_handler()
+    with patch.object(handler, "on_llm_end") as mock_on_llm_end:
+        out = await runnable.ainvoke([HumanMessage(content="hi")], config={"callbacks": [handler]})
+
+    assert out == {"word": "OK"}
+    mock_on_llm_end.assert_called_once()
+    # The ChatResult is passed through duck-typed as an LLMResult.
+    passed = mock_on_llm_end.call_args.args[0]
+    assert getattr(passed, "llm_output", {}).get("token_usage", {}).get("total_tokens") == 4
 
 
 def test_limited_provider_wrapper_dict_schema() -> None:

@@ -5,6 +5,34 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-08-16
+
+### Fixed
+- **`_StructuredOutputRunnable` leaked the LangChain `config` into litellm kwargs.**
+  `invoke_structured_chat` passes the LangChain `config` RunnableConfig (with
+  `callbacks=[SootheLLMTokenUsageCallbackHandler()]`, injected by
+  `merge_token_usage_callbacks`) through `**kwargs`. The runnable forwarded
+  every kwarg into `_generate`/`_agenerate` → `_litellm_kwargs` →
+  `litellm.completion`, so the live callback-handler object reached the HTTP
+  body and failed JSON serialization:
+  `litellm.InternalServerError: OpenAIException - Object of type
+  SootheLLMTokenUsageCallbackHandler is not JSON serializable`. The structured
+  call then raised `StructuredOutputError`, and callers fell back to
+  heuristics — every intake `Pass1`/`Pass2` classification degraded to the
+  task/simple fallback, so queries routed via heuristic instead of the LLM
+  verdict even though the classifiers were initialized in LLM mode. `config`
+  is a RunnableConfig, not a litellm kwarg: `invoke`/`ainvoke` now call
+  `_split_call_kwargs` to pop it out before forwarding.
+- **Token-usage callback now fires inline for structured-output calls.**
+  Because the runnable bypasses `BaseChatModel`'s callback machinery, the
+  shared handler's `on_llm_end` would no longer run — loop token
+  accumulation silently stopped for planner/intent calls. `_fire_token_callback`
+  invokes the handler inline, passing the `ChatResult` directly (it
+  duck-types as `LLMResult` — do not rebuild an `LLMResult`, pydantic
+  revalidation breaks on `ChatResult.generations`).
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.1...v1.2.2
+
 ## [1.2.1] - 2026-08-16
 
 ### Fixed

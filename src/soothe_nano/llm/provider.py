@@ -412,20 +412,62 @@ class _StructuredOutputRunnable:
         self._response_format = response_format
         self._schema = schema
 
+    @staticmethod
+    def _split_call_kwargs(kwargs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Separate litellm call kwargs from the LangChain ``config`` RunnableConfig.
+
+        ``invoke_structured_chat`` passes the LangChain ``config`` (containing
+        callbacks, tags, metadata — including the token-usage callback handler)
+        through ``**kwargs``. ``_generate``/``_agenerate`` forward every kwarg
+        into ``litellm.completion``, so the live callback-handler object would
+        reach the HTTP body and fail JSON serialization
+        (``Object of type SootheLLMTokenUsageCallbackHandler is not JSON serializable``).
+        ``config`` is a RunnableConfig, not a litellm kwarg — pull it out here.
+        """
+        config = kwargs.pop("config", None)
+        call_kwargs = dict(kwargs)
+        return config, call_kwargs
+
     def _enrich_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         if self._response_format is not None:
             kwargs["response_format"] = self._response_format
         return kwargs
 
     def invoke(self, messages: list[BaseMessage], **kwargs: Any) -> Any:
-        result = self._model._generate(messages, **self._enrich_kwargs(kwargs))
+        _config, call_kwargs = self._split_call_kwargs(kwargs)
+        result = self._model._generate(messages, **self._enrich_kwargs(call_kwargs))
+        self._fire_token_callback(result)
         msg = result.generations[0].message
         return self._parse(msg)
 
     async def ainvoke(self, messages: list[BaseMessage], **kwargs: Any) -> Any:
-        result = await self._model._agenerate(messages, **self._enrich_kwargs(kwargs))
+        _config, call_kwargs = self._split_call_kwargs(kwargs)
+        result = await self._model._agenerate(messages, **self._enrich_kwargs(call_kwargs))
+        self._fire_token_callback(result)
         msg = result.generations[0].message
         return self._parse(msg)
+
+    @staticmethod
+    def _fire_token_callback(result: ChatResult) -> None:
+        """Run the token-usage handler inline (no LangChain run_manager path here).
+
+        ``ChatLitellmModel`` populates ``ChatResult.llm_output['token_usage']``
+        directly from the litellm response. Because this runnable bypasses
+        ``BaseChatModel``'s callback machinery, ``on_llm_end`` wouldn't fire on
+        the shared handler — invoke it inline so loop token accumulation still
+        works for structured-output calls. ``ChatResult`` duck-types as the
+        ``LLMResult`` the handler reads (both expose ``.generations`` and
+        ``.llm_output``), so it is passed directly instead of being rebuilt.
+        """
+        from soothe_nano.llm.observability import (
+            get_llm_token_usage_callback_handler,
+        )
+
+        handler = get_llm_token_usage_callback_handler()
+        try:
+            handler.on_llm_end(result, run_id=None)
+        except Exception:  # noqa: BLE001
+            logger.debug("token-usage callback failed for structured output", exc_info=True)
 
     def _parse(self, msg: AIMessage) -> Any:
         """Parse the AI message content into the pydantic schema."""
