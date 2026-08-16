@@ -28,8 +28,15 @@ into this adapter, read from :class:`~soothe_nano.llm.registry.ProviderCapabilit
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
+
+# litellm fetches a remote model-cost-map JSON from raw.githubusercontent.com
+# on every import, timing out and logging a warning when offline. Pin to the
+# local backup shipped with the wheel so no network fetch happens (and the
+# warning is silenced). Must be set before ``import litellm``.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 import litellm
 from langchain_core.callbacks import (
