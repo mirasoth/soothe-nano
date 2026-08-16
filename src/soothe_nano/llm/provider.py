@@ -39,6 +39,7 @@ from langchain_core.callbacks import (
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from pydantic import ConfigDict
 
 from soothe_nano.llm.message import lc_to_litellm_messages
 from soothe_nano.llm.registry import ProviderCapabilities
@@ -78,8 +79,7 @@ class ChatLitellmModel(BaseChatModel):
     bound_tool_choice: Any = None
     model_kwargs: dict[str, Any] = {}
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # ------------------------------------------------------------------
     # langchain identity
