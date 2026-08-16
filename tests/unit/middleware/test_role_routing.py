@@ -121,7 +121,7 @@ class TestResolveModelRoleForRequest:
 
 class TestRoleRoutingMiddleware:
     def test_disabled_is_noop(self) -> None:
-        config = SootheConfig()
+        config = SootheConfig(agent={"runtime": {"role_routing": {"enabled": False}}})
         middleware = RoleRoutingMiddleware(config)
         base_model = object()
         request = ModelRequest(

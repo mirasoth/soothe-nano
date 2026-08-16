@@ -251,10 +251,19 @@ async def test_invoke_structured_chat_recovers_from_empty_object_payload() -> No
     chat = MagicMock()
     chat.with_structured_output = MagicMock(side_effect=_with_structured_output)
 
+    # minLength:1 makes the empty-string first payload fail post-validation,
+    # triggering the validation-retry path (the new-arch equivalent of the old
+    # wrapper's empty-object recovery).
+    schema = {
+        "type": "object",
+        "properties": {"word": {"type": "string", "minLength": 1}},
+        "required": ["word"],
+        "additionalProperties": False,
+    }
     out = await invoke_structured_chat(
         chat,
         [HumanMessage(content="Return JSON")],
-        json_schema=_WORD_SCHEMA,
+        json_schema=schema,
         schema_name="WordReply",
         strict=True,
         methods=("json_schema",),

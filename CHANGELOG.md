@@ -5,6 +5,43 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-16
+
+### Changed
+- **LLM utilities refactored into a top-level `soothe_nano.llm` package.**
+  Consolidate LLM primitives previously scattered under `utils/llm` into
+  `src/soothe_nano/llm` with a single coherent surface: `factory`, `registry`,
+  `provider` abstraction, `base` model wrapper, `message`, `tools`,
+  `structured` output, `thinking`-token filter, `observability`,
+  `invoke_policy`, `response_text`, `schema_wire`, and `types`. The old
+  `utils/llm` shims (`factory.py`, `registry.py`, `types.py`, `wrappers.py`)
+  are removed; the thin `utils/llm/__init__` re-exports keep existing imports
+  working during migration.
+- **Provider abstraction is first-class.** `llm/provider.py` (478 lines) and
+  `llm/registry.py` (263 lines) formalize provider configs, multi-provider
+  factory construction, streaming resolution, and `max_tokens` injection.
+- **Structured output re-architecture.** `llm/structured.py` now drives
+  `json_schema` method routing with validation-retry recovery from empty
+  object payloads — the new-arch equivalent of the legacy wrapper's
+  empty-object recovery path.
+- **Subagents, middleware, and toolkits** updated to import from the new
+  `soothe_nano.llm` package; `diagnose/providers` and `config/settings`
+  aligned to the new registry.
+
+### Added
+- `examples/llm/` with eight runnable examples (openai, gemini, openrouter,
+  anthropic, ollama, dashscope custom endpoint, structured output,
+  multi-provider factory) plus a shared `_helpers` module and README.
+
+### Fixed
+- `test_role_routing` now constructs a config with role routing disabled,
+  matching the middleware's real no-op contract.
+- `test_invoke_structured_chat_recovers_from_empty_object_payload` uses a
+  `minLength:1` schema so the empty-string first payload fails
+  post-validation, exercising the validation-retry path.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.19...v1.2.0
+
 ## [1.1.19] - 2026-08-14
 
 ### Changed
