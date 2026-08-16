@@ -5,6 +5,19 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-08-16
+
+### Fixed
+- **Disable litellm remote model-cost-map fetch.** Set
+  `LITELLM_LOCAL_MODEL_COST_MAP=True` before importing litellm so it uses the
+  local backup instead of fetching `raw.githubusercontent.com` on every import
+  (which timed out and logged a warning when offline).
+- **Use `ConfigDict` instead of deprecated `class Config` in
+  `ChatLitellmModel`.** Silences the `PydanticDeprecatedSince20` warning
+  emitted on every import; class-based config is removed in Pydantic v3.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.0...v1.2.1
+
 ## [1.2.0] - 2026-08-16
 
 ### Changed
