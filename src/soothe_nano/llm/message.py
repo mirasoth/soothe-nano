@@ -26,6 +26,14 @@ from pydantic import BaseModel, Field
 
 SupportedImageMediaType = Literal["image/jpeg", "image/png", "image/gif", "image/webp"]
 
+# Map OpenAI/litellm role aliases that appear in hand-built dict messages to the
+# canonical litellm role names. LangChain ``BaseMessage`` aliases ("human"/"ai")
+# are handled separately in :func:`lc_to_litellm_messages` via ``m.type``.
+_LITELLM_ROLE_ALIAS: dict[str, str] = {
+    "human": "user",
+    "ai": "assistant",
+}
+
 
 def _truncate(text: str, max_length: int = 50) -> str:
     """Truncate text to max_length characters, adding ellipsis if truncated."""
@@ -130,12 +138,31 @@ def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
 
     Preserves ``tool_calls`` and ``tool_call_id`` (for ``ToolMessage``) so the
     litellm ``messages`` payload carries the full agent-turn context.
+
+    Also accepts plain ``{"role", "content"}`` dicts: callers like the planner
+    engine build message lists directly as dicts rather than ``BaseMessage``
+    objects, and LangChain's structured-output runnable passes them through to
+    ``_agenerate`` uncoerced. Without this dict path the converter raised
+    ``AttributeError: 'dict' object has no attribute 'type'`` (deployed
+    ``soothe_nano.subagents.plan.engine`` structured-output draft).
     """
     out: list[dict[str, Any]] = []
     for m in messages:
+        if isinstance(m, dict):
+            # Already in litellm/OpenAI shape; normalize role aliases and pass
+            # through, preserving any tool_calls / tool_call_id / name fields.
+            entry: dict[str, Any] = dict(m)
+            role = entry.get("role", "user")
+            entry["role"] = _LITELLM_ROLE_ALIAS.get(role, role)
+            content = entry.get("content")
+            if not isinstance(content, str):
+                entry["content"] = "" if content is None else str(content)
+            out.append(entry)
+            continue
+
         role = m.type  # "human" | "ai" | "system" | "tool"
         content = m.content if isinstance(m.content, str) else str(m.content)
-        entry: dict[str, Any] = {"role": role, "content": content}
+        entry = {"role": role, "content": content}
         # AI tool_calls
         tcs = getattr(m, "tool_calls", None)
         if tcs:
