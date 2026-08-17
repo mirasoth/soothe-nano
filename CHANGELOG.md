@@ -5,6 +5,21 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-08-17
+
+### Fixed
+- **`lc_to_litellm_messages` now accepts plain dict messages.** The planner
+  engine (`soothe_nano.subagents.plan.engine`) builds message lists as plain
+  `{"role", "content"}` dicts, and LangChain's structured-output runnable
+  passes them through to `_agenerate` uncoerced. The converter previously
+  raised `AttributeError: 'dict' object has no attribute 'type'` on the
+  structured-output draft path. Dict entries are now normalized (role aliases
+  like `human`/`ai` mapped to `user`/`assistant`, content coerced to `str`)
+  and passed through, preserving any `tool_calls` / `tool_call_id` / `name`
+  fields. The `BaseMessage` path is unchanged.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.2...v1.2.3
+
 ## [1.2.2] - 2026-08-16
 
 ### Fixed
