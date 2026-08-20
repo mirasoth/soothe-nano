@@ -66,6 +66,11 @@ from soothe_nano.llm.structured import (
     wrap_json_keyword_safe,
 )
 from soothe_nano.llm.thinking import ThinkingStreamFilter, strip_thinking
+from soothe_nano.llm.traced import (
+    ainvoke_structured_traced,
+    ainvoke_traced,
+    build_traced_invoke_config,
+)
 from soothe_nano.llm.tools import (
     bind_tools_litellm,
     extract_tool_calls_from_litellm,
@@ -122,6 +127,10 @@ __all__ = [
     # Thinking filter
     "ThinkingStreamFilter",
     "strip_thinking",
+    # Unified traced LLM invocation
+    "ainvoke_traced",
+    "ainvoke_structured_traced",
+    "build_traced_invoke_config",
     # Exceptions
     "LLMError",
     "ContentPolicyError",
