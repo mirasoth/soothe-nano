@@ -5,6 +5,20 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-08-20
+
+### Added
+- **Unified Langfuse-traced LLM invocation helpers** (`soothe_nano.llm.traced`).
+  Adds `ainvoke_traced`, `ainvoke_structured_traced`, and
+  `build_traced_invoke_config` as the single entry point for direct LLM
+  `ainvoke` calls. Every call gets Langfuse callbacks (when observability is
+  enabled), is wrapped in `await_with_llm_call_policy` for rate-limit/timeout/
+  retry, and structured-output calls are traced the same way as plain
+  `ainvoke`. The helpers are safe to call without a config (unit tests,
+  headless runs) — the call still works, just without tracing.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.3...v1.2.4
+
 ## [1.2.3] - 2026-08-17
 
 ### Fixed
