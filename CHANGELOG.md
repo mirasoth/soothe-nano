@@ -5,6 +5,21 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-08-20
+
+### Fixed
+- **Structured-output calls now emit Langfuse generations.**
+  `_StructuredOutputRunnable` invoked `ChatLitellmModel._agenerate` directly,
+  which skipped LangChain callbacks. Pass 1 / intent, veritas, and other
+  `invoke_structured_chat` paths produced a parent span with no child
+  GENERATION even when a traced RunnableConfig was passed. The runnable now
+  uses public `invoke` / `ainvoke` with `config=`, keeps `response_format` in
+  litellm kwargs, and still strips `config`/`callbacks` so handlers are not
+  JSON-serialized into the HTTP body. Token usage is recorded via those
+  callbacks instead of a second inline `on_llm_end`.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.4...v1.2.5
+
 ## [1.2.4] - 2026-08-20
 
 ### Added

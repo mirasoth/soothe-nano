@@ -196,9 +196,8 @@ def get_llm_token_usage_callback_handler() -> SootheLLMTokenUsageCallbackHandler
 def merge_token_usage_callbacks(config: dict[str, Any] | None) -> dict[str, Any]:
     """Merge the shared token-usage callback into a LangChain ``RunnableConfig`` dict.
 
-    Structured-output runnables invoke the inner chat model without passing through
-    the adapter; attaching the handler here ensures planner/intent calls still fold
-    usage into scoped token targets when active.
+    Structured-output callers attach this handler via RunnableConfig so planner
+    and intent calls still fold usage into scoped token targets when active.
     """
     from langchain_core.runnables.config import merge_configs
 

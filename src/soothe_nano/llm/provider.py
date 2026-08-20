@@ -400,7 +400,14 @@ class _StructuredOutputRunnable:
     For ``json_schema``-capable providers, attaches ``response_format`` to
     the litellm call. For others, parses the JSON text response into the
     pydantic schema (instructor-style fallback).
+
+    Invokes the public ``ChatLitellmModel.invoke`` / ``ainvoke`` path so
+    LangChain callbacks (Langfuse generations, token usage) fire. ``config``
+    is never forwarded into ``_generate``/``litellm.completion`` — those
+    kwargs are JSON-serialized and cannot hold live callback handlers.
     """
+
+    _LC_CALL_KEYS = frozenset({"config", "callbacks", "tags", "metadata", "run_name", "run_id"})
 
     def __init__(
         self,
@@ -412,62 +419,74 @@ class _StructuredOutputRunnable:
         self._response_format = response_format
         self._schema = schema
 
-    @staticmethod
-    def _split_call_kwargs(kwargs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Separate litellm call kwargs from the LangChain ``config`` RunnableConfig.
+    @classmethod
+    def _split_call_kwargs(
+        cls, config: Any | None, kwargs: dict[str, Any]
+    ) -> tuple[Any | None, dict[str, Any]]:
+        """Keep LangChain ``config`` off the litellm HTTP kwargs.
 
-        ``invoke_structured_chat`` passes the LangChain ``config`` (containing
-        callbacks, tags, metadata — including the token-usage callback handler)
-        through ``**kwargs``. ``_generate``/``_agenerate`` forward every kwarg
-        into ``litellm.completion``, so the live callback-handler object would
-        reach the HTTP body and fail JSON serialization
-        (``Object of type SootheLLMTokenUsageCallbackHandler is not JSON serializable``).
-        ``config`` is a RunnableConfig, not a litellm kwarg — pull it out here.
+        ``invoke_structured_chat`` / ``ainvoke_structured_traced`` pass a
+        RunnableConfig (callbacks, tags, metadata). ``_generate`` forwards
+        every remaining kwarg into ``litellm.completion``, which JSON-serializes
+        the body — live callback handlers are not serializable.
         """
-        config = kwargs.pop("config", None)
         call_kwargs = dict(kwargs)
+        if config is None:
+            config = call_kwargs.pop("config", None)
+        else:
+            call_kwargs.pop("config", None)
+        for key in cls._LC_CALL_KEYS:
+            call_kwargs.pop(key, None)
         return config, call_kwargs
 
     def _enrich_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        out = dict(kwargs)
         if self._response_format is not None:
-            kwargs["response_format"] = self._response_format
-        return kwargs
-
-    def invoke(self, messages: list[BaseMessage], **kwargs: Any) -> Any:
-        _config, call_kwargs = self._split_call_kwargs(kwargs)
-        result = self._model._generate(messages, **self._enrich_kwargs(call_kwargs))
-        self._fire_token_callback(result)
-        msg = result.generations[0].message
-        return self._parse(msg)
-
-    async def ainvoke(self, messages: list[BaseMessage], **kwargs: Any) -> Any:
-        _config, call_kwargs = self._split_call_kwargs(kwargs)
-        result = await self._model._agenerate(messages, **self._enrich_kwargs(call_kwargs))
-        self._fire_token_callback(result)
-        msg = result.generations[0].message
-        return self._parse(msg)
+            out["response_format"] = self._response_format
+        return out
 
     @staticmethod
-    def _fire_token_callback(result: ChatResult) -> None:
-        """Run the token-usage handler inline (no LangChain run_manager path here).
+    def _config_for_model(config: Any) -> Any:
+        """Attach the shared token-usage handler when the caller omitted it.
 
-        ``ChatLitellmModel`` populates ``ChatResult.llm_output['token_usage']``
-        directly from the litellm response. Because this runnable bypasses
-        ``BaseChatModel``'s callback machinery, ``on_llm_end`` wouldn't fire on
-        the shared handler — invoke it inline so loop token accumulation still
-        works for structured-output calls. ``ChatResult`` duck-types as the
-        ``LLMResult`` the handler reads (both expose ``.generations`` and
-        ``.llm_output``), so it is passed directly instead of being rebuilt.
+        ``invoke_structured_chat`` already merges the handler; re-merging
+        would double-count tokens. Bare ``with_structured_output().ainvoke``
+        still needs the handler so loop accumulation works.
         """
         from soothe_nano.llm.observability import (
             get_llm_token_usage_callback_handler,
+            merge_token_usage_callbacks,
         )
 
         handler = get_llm_token_usage_callback_handler()
-        try:
-            handler.on_llm_end(result, run_id=None)
-        except Exception:  # noqa: BLE001
-            logger.debug("token-usage callback failed for structured output", exc_info=True)
+        if isinstance(config, dict):
+            callbacks = list(config.get("callbacks") or [])
+            if handler in callbacks:
+                return config
+            return merge_token_usage_callbacks(config)
+        if config is None:
+            return merge_token_usage_callbacks(None)
+        return config
+
+    def invoke(self, messages: list[BaseMessage], config: Any | None = None, **kwargs: Any) -> Any:
+        config, call_kwargs = self._split_call_kwargs(config, kwargs)
+        msg = self._model.invoke(
+            messages,
+            config=self._config_for_model(config),
+            **self._enrich_kwargs(call_kwargs),
+        )
+        return self._parse(msg)
+
+    async def ainvoke(
+        self, messages: list[BaseMessage], config: Any | None = None, **kwargs: Any
+    ) -> Any:
+        config, call_kwargs = self._split_call_kwargs(config, kwargs)
+        msg = await self._model.ainvoke(
+            messages,
+            config=self._config_for_model(config),
+            **self._enrich_kwargs(call_kwargs),
+        )
+        return self._parse(msg)
 
     def _parse(self, msg: AIMessage) -> Any:
         """Parse the AI message content into the pydantic schema."""
