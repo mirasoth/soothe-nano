@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from soothe_deepagents.middleware.llm_rate_limit import LLMRateLimitRegistry
