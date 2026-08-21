@@ -84,7 +84,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Sync dependencies
-        run: make sync-dev
+        run: make sync
 
       - name: Build package
         run: make build
