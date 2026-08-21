@@ -5,6 +5,26 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.8] - 2026-08-21
+
+### Added
+- **New `plan` interaction mode.** A read-only mode that mirrors `ask` constraints
+  (read-only filesystem allowlist, write/execute-deny permissions, no mutating tool
+  groups, no general-purpose subagent) but is tuned for producing implementation
+  plans rather than answering questions. `AgentBuilder` now branches on `plan`:
+  applies `FILESYSTEM_TOOLS_PLAN`, `PLAN_POLICY_PROFILE`, `plan_permissions()`,
+  an empty `PLAN_SUBAGENT_ALLOWLIST`, and a `PLAN_SYSTEM_PROMPT_SUFFIX` that
+  instructs the agent to inspect the workspace with read-only tools and produce a
+  clear, actionable plan for approval and execution in Agent mode.
+  - `InteractionMode` is now `Literal["agent", "ask", "plan"]`.
+  - `resolve_interaction_mode` accepts `"plan"` from the kwarg or
+    `agent.runtime.interaction_mode`.
+  - `filter_subagents_for_mode` returns an empty list for `plan`.
+  - New `PLAN_PROFILE` security profile (read/network/MCP only; no subagent
+    spawning) registered in `DEFAULT_PROFILES` as `"plan"`.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.7...v1.2.8
+
 ## [1.2.7] - 2026-08-21
 
 ### Fixed

@@ -14,10 +14,14 @@ from soothe_nano.agent.interaction_mode import (
     ASK_POLICY_PROFILE,
     FILESYSTEM_TOOLS_AGENT,
     FILESYSTEM_TOOLS_ASK,
+    FILESYSTEM_TOOLS_PLAN,
+    PLAN_POLICY_PROFILE,
     InteractionMode,
     append_ask_system_prompt,
+    append_plan_system_prompt,
     ask_permissions,
     filter_subagents_for_mode,
+    plan_permissions,
     resolve_interaction_mode,
 )
 from soothe_nano.config import SootheConfig
@@ -94,6 +98,8 @@ class AgentBuilder:
 
         mode = resolve_interaction_mode(interaction_mode, self._config)
         is_ask = mode == "ask"
+        is_plan = mode == "plan"
+        is_readonly = is_ask or is_plan
 
         resolved_model: str | BaseChatModel
         resolved_model = model if model is not None else self._config.create_chat_model("default")
@@ -115,7 +121,7 @@ class AgentBuilder:
             self._config.tools,
             lazy=True,
             config=self._config,
-            exclude_tool_groups=ASK_MUTATING_TOOL_GROUPS if is_ask else None,
+            exclude_tool_groups=ASK_MUTATING_TOOL_GROUPS if is_readonly else None,
         )
         all_tools: list[BaseTool | Callable | dict[str, Any]] = list(config_tools)
         if tools:
@@ -173,7 +179,9 @@ class AgentBuilder:
 
         resolved_backend = backend or self._initialize_backend(resolved_policy)
 
-        policy_profile = ASK_POLICY_PROFILE if is_ask else None
+        policy_profile = (
+            ASK_POLICY_PROFILE if is_ask else (PLAN_POLICY_PROFILE if is_plan else None)
+        )
         default_middleware = build_soothe_middleware_stack(
             self._config,
             resolved_policy,
@@ -211,12 +219,20 @@ class AgentBuilder:
         system_prompt = self._config.resolve_system_prompt()
         if is_ask:
             system_prompt = append_ask_system_prompt(system_prompt)
+        elif is_plan:
+            system_prompt = append_plan_system_prompt(system_prompt)
 
-        filesystem_tools = FILESYSTEM_TOOLS_ASK if is_ask else FILESYSTEM_TOOLS_AGENT
-        fs_permissions = ask_permissions() if is_ask else None
+        filesystem_tools = (
+            FILESYSTEM_TOOLS_ASK
+            if is_ask
+            else (FILESYSTEM_TOOLS_PLAN if is_plan else FILESYSTEM_TOOLS_AGENT)
+        )
+        fs_permissions = ask_permissions() if is_ask else (plan_permissions() if is_plan else None)
 
         def _compile_deep_agent(cp: Checkpointer | None) -> Any:
-            gp_enabled = False if is_ask else self._config.agent.runtime.general_purpose_subagent
+            gp_enabled = (
+                False if is_readonly else self._config.agent.runtime.general_purpose_subagent
+            )
             return create_deep_agent(
                 model=resolved_model,
                 tools=all_tools or None,
