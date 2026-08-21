@@ -9,7 +9,7 @@ from pathlib import Path
 from soothe_deepagents.backends.filesystem import FilesystemBackend
 from soothe_deepagents.middleware.skills import list_skills
 
-_BUILTIN_SKILLS_DIR_NAME = "builtin_skills"
+_BUILTIN_SKILLS_DIR_NAME = "builtin"
 
 # Host packages (e.g. fj) register extra roots here. Process-local.
 _EXTRA_SKILL_ROOTS: list[tuple[Path, str]] = []
@@ -24,7 +24,7 @@ def register_builtin_skill_root(
     """Register a host-packaged skill root (directory of skill folders).
 
     Registered roots appear in :func:`iter_skill_roots` between nano's own
-    ``builtin_skills`` and ``~/.soothe/skills``, so user installs still win.
+    ``builtin`` and ``~/.soothe/skills``, so user installs still win.
 
     Args:
         root: Directory containing ``<skill-name>/SKILL.md`` children.
@@ -52,7 +52,7 @@ def iter_skill_roots() -> list[tuple[Path, str]]:
 
     Order:
     1. ``~/.agents/skills`` (user)
-    2. Package ``soothe_nano/skills/builtin_skills`` (builtin)
+    2. Package ``soothe_nano/skills/builtin`` (builtin)
     3. Host-registered roots via :func:`register_builtin_skill_root` (builtin)
     4. ``$SOOTHE_HOME/skills`` (user)
     """
@@ -99,7 +99,7 @@ def get_built_in_skills_paths(workspace: str | None = None) -> list[str]:
 
     A valid skill directory contains a `SKILL.md` file. The search includes:
     - User skills in `~/.agents/skills/`
-    - Package-bundled built-ins (`soothe_nano/skills/builtin_skills/`)
+    - Package-bundled built-ins (`soothe_nano/skills/builtin/`)
     - Host-registered builtin skill roots
     - User skills in `~/.soothe/skills/` (``SOOTHE_HOME/skills``)
     - Project skills in `<workspace>/.soothe/skills/` (if workspace provided)

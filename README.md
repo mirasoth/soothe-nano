@@ -207,7 +207,7 @@ if __name__ == "__main__":
 |---|---|
 | UX | One-shot `fj <query…>`; `-f` / `-t` resume threads; `-l` list |
 | Persistence | SQLite checkpointer under `$SOOTHE_DATA_DIR` |
-| Skills | Package `builtin_skills/` via `register_builtin_skill_root` |
+| Skills | Package `builtin/` via `register_builtin_skill_root` |
 | Workspace | `SOOTHE_WORKSPACE` / cwd for file + shell tools |
 | Streaming | Quiet progress line + full final answer (`stream.py`) |
 | Setup | `fj setup` writes `~/.soothe/config/nano.yml` |

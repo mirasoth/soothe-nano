@@ -34,7 +34,7 @@ def _write_skill(skill_dir: Path, name: str, body: str = "# Skill\n") -> None:
 
 def test_is_builtin_skill_directory() -> None:
     package_builtins = (
-        Path(__file__).resolve().parents[3] / "src" / "soothe_nano" / "skills" / "builtin_skills"
+        Path(__file__).resolve().parents[3] / "src" / "soothe_nano" / "skills" / "builtin"
     )
     assert package_builtins.is_dir()
     assert is_builtin_skill_directory(next(package_builtins.iterdir()))
@@ -127,11 +127,7 @@ def test_sync_is_idempotent_without_source_change(tmp_path: Path) -> None:
 def test_build_skill_context_omits_folder_for_builtin() -> None:
     builtin_path = next(
         (
-            Path(__file__).resolve().parents[3]
-            / "src"
-            / "soothe_nano"
-            / "skills"
-            / "builtin_skills"
+            Path(__file__).resolve().parents[3] / "src" / "soothe_nano" / "skills" / "builtin"
         ).iterdir()
     )
     meta = {
