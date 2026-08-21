@@ -5,6 +5,24 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.7] - 2026-08-21
+
+### Fixed
+- **`_StructuredOutputRunnable` tolerates a leaked `CallbackManager` in `config['callbacks']`.**
+  When Langfuse is off, a LangGraph node's `AsyncCallbackManager` can leak into
+  the structured-output `RunnableConfig`. `_config_for_model` did
+  `list(config.get("callbacks"))` to check for the token-usage handler, but a
+  `CallbackManager` is not iterable →
+  `TypeError: 'AsyncCallbackManager' object is not iterable` →
+  `StructuredOutputError` → intake fail-safe routed every query (including
+  chitchat like "how are u") as a complex task. Added
+  `_flatten_callback_handlers` which reads `.handlers` /
+  `.inheritable_handlers` (and recurses through nested lists/tuples) to
+  flatten any callback shape to a plain handler list before the membership
+  check.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.6...v1.2.7
+
 ## [1.2.6] - 2026-08-21
 
 ### Added

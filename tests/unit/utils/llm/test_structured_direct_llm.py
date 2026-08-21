@@ -522,6 +522,66 @@ async def test_structured_output_runnable_fires_langchain_model_callbacks() -> N
     assert handler.llm_ends >= 1
 
 
+@pytest.mark.asyncio
+async def test_structured_output_runnable_tolerates_callback_manager() -> None:
+    """A leaked LangGraph ``AsyncCallbackManager`` in ``config['callbacks']`` must not crash.
+
+    Regression for the intake misroute (loop 5361): when Langfuse is off, a
+    LangGraph node's ``AsyncCallbackManager`` can leak into the structured-output
+    ``RunnableConfig``. ``_config_for_model`` did ``list(config.get("callbacks"))``
+    to check for the token-usage handler, but a ``CallbackManager`` is not
+    iterable → ``TypeError: 'AsyncCallbackManager' object is not iterable`` →
+    ``StructuredOutputError`` → intake fail-safe routed every query (including
+    chitchat like "how are u") as a complex task. Flatten instead of list()-ifying.
+    """
+    from langchain_core.callbacks import AsyncCallbackManager
+
+    from soothe_nano.llm.provider import ChatLitellmModel, _StructuredOutputRunnable
+
+    model = ChatLitellmModel(model="openai/test")
+    runnable = _StructuredOutputRunnable(model, response_format=None, schema=_WORD_SCHEMA)
+
+    async def _fake_agenerate(messages, stop=None, run_manager=None, **kwargs):  # type: ignore[no-untyped-def]
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content='{"word": "OK"}'))],
+            llm_output={
+                "token_usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}
+            },
+        )
+
+    model._agenerate = _fake_agenerate  # type: ignore[assignment]
+
+    # Mirrors a LangGraph node config whose AsyncCallbackManager leaked through.
+    config: dict[str, object] = {
+        "callbacks": AsyncCallbackManager(handlers=[]),
+        "metadata": {"soothe_call_purpose": "classify_intake"},
+    }
+    out = await runnable.ainvoke([HumanMessage(content="hi")], config=config)
+    assert out == {"word": "OK"}
+
+
+def test_flatten_callback_handlers_unpacks_callback_manager() -> None:
+    """``_flatten_callback_handlers`` reads ``.handlers``/``.inheritable_handlers``."""
+    from langchain_core.callbacks import AsyncCallbackManager, BaseCallbackHandler
+
+    from soothe_nano.llm.provider import _StructuredOutputRunnable
+
+    class _H(BaseCallbackHandler):
+        pass
+
+    h1, h2 = _H(), _H()
+    # AsyncCallbackManager stores handlers under .handlers
+    mgr = AsyncCallbackManager(handlers=[h1, h2])
+    flat = _StructuredOutputRunnable._flatten_callback_handlers(mgr)
+    assert h1 in flat and h2 in flat
+
+    # lists/tuples recurse; None yields []; bare objects pass through
+    assert _StructuredOutputRunnable._flatten_callback_handlers(None) == []
+    assert _StructuredOutputRunnable._flatten_callback_handlers([h1, [h2]]) == [h1, h2]
+    bare = "not-a-handler"
+    assert _StructuredOutputRunnable._flatten_callback_handlers(bare) == [bare]
+
+
 def test_limited_provider_wrapper_dict_schema() -> None:
     """``with_structured_output`` returns a runnable for a dict schema (not a wrapper class)."""
     from soothe_nano.llm.provider import ChatLitellmModel, _StructuredOutputRunnable

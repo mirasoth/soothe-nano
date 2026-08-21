@@ -446,6 +446,38 @@ class _StructuredOutputRunnable:
         return out
 
     @staticmethod
+    def _flatten_callback_handlers(callbacks: Any) -> list[Any]:
+        """Flatten LangChain ``callbacks`` (list or ``CallbackManager``) to handlers.
+
+        ``callbacks`` in a RunnableConfig may be a list of handlers, ``None``,
+        or a LangChain ``CallbackManager`` object (e.g. an
+        ``AsyncCallbackManager`` injected by a LangGraph node). A ``CallbackManager``
+        is not iterable, so ``list(callbacks)`` raises ``TypeError``; its handlers
+        live under ``.handlers`` and ``.inheritable_handlers``. Flatten every shape
+        to a plain handler list for membership checks.
+        """
+        if callbacks is None:
+            return []
+        if isinstance(callbacks, (list, tuple)):
+            out: list[Any] = []
+            for item in callbacks:
+                out.extend(_StructuredOutputRunnable._flatten_callback_handlers(item))
+            return out
+        nested = getattr(callbacks, "handlers", None)
+        if isinstance(nested, (list, tuple)):
+            out = []
+            for h in nested:
+                out.extend(_StructuredOutputRunnable._flatten_callback_handlers(h))
+            inheritable = getattr(callbacks, "inheritable_handlers", None)
+            if isinstance(inheritable, (list, tuple)):
+                for h in inheritable:
+                    for item in _StructuredOutputRunnable._flatten_callback_handlers(h):
+                        if item not in out:
+                            out.append(item)
+            return out
+        return [callbacks]
+
+    @staticmethod
     def _config_for_model(config: Any) -> Any:
         """Attach the shared token-usage handler when the caller omitted it.
 
@@ -460,7 +492,9 @@ class _StructuredOutputRunnable:
 
         handler = get_llm_token_usage_callback_handler()
         if isinstance(config, dict):
-            callbacks = list(config.get("callbacks") or [])
+            callbacks = _StructuredOutputRunnable._flatten_callback_handlers(
+                config.get("callbacks")
+            )
             if handler in callbacks:
                 return config
             return merge_token_usage_callbacks(config)
