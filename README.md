@@ -234,7 +234,7 @@ From `packages/soothe-nano/`:
 
 ```bash
 make help              # list targets
-make sync-dev          # sync deps
+make sync             # sync dev deps
 make format lint       # format + lint
 make test-unit         # unit tests
 make test-integration  # integration tests (--run-integration)

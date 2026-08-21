@@ -2,12 +2,12 @@
 #
 # Manages the soothe-nano package independently (coding CoreAgent).
 # In the monorepo, prefer root `make sync` / `uv sync --all-packages` and run
-# format/lint/test targets here without sync-dev (avoids pruning the workspace).
+# format/lint/test targets here without sync (avoids pruning the workspace).
 #
 # Optional: set UV_RUN='uv run --no-sync' after a forced SDK override in CI.
 UV_RUN ?= uv run
 
-.PHONY: sync sync-dev format format-check lint lint-fix autofix \
+.PHONY: sync format format-check lint lint-fix autofix \
 	test test-unit test-integration test-coverage \
 	examples example-01 example-02 example-03 example-04 example-05 \
 	build publish publish-test clean help
@@ -17,8 +17,7 @@ help:
 	@echo "soothe-nano Package"
 	@echo ""
 	@echo "Development:"
-	@echo "  make sync            - Sync dependencies with uv"
-	@echo "  make sync-dev        - Sync dev dependencies"
+	@echo "  make sync            - Sync dev dependencies with uv"
 	@echo "  make format          - Format code with ruff"
 	@echo "  make format-check    - Check code formatting (for CI)"
 	@echo "  make lint            - Lint code with ruff"
@@ -47,14 +46,8 @@ help:
 	@echo "Cleanup:"
 	@echo "  make clean           - Clean build artifacts"
 
-# Sync dependencies (standalone package / CI)
-sync:
-	@echo "Syncing dependencies..."
-	uv sync
-	@echo "✓ Dependencies synced"
-
 # Sync dev dependencies (standalone package / CI)
-sync-dev:
+sync:
 	@echo "Syncing dev dependencies..."
 	uv sync --extra dev
 	@echo "✓ Dev dependencies synced"
