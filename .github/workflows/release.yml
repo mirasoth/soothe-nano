@@ -34,7 +34,7 @@ jobs:
           sudo apt-get install -y ripgrep silversearcher-ag
 
       - name: Sync dependencies
-        run: make sync-dev
+        run: make sync
 
       - name: Guard — dependency packages must be on PyPI
         run: |
