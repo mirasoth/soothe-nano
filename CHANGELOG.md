@@ -5,6 +5,25 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.6] - 2026-08-21
+
+### Added
+- **New builtin skills: drawio, office, pdf, anydoc.** Renamed the package
+  skills directory `builtin_skills/` -> `builtin/` and updated references in
+  `builtins.py`, `index.py`, `README.md`, and tests. Added four new skills:
+  - **drawio** — `SKILL.md`, shape index data, references (autolayout,
+    derasterize, diagram-types, live-infra, mermaid-authoring, pr-bot,
+    shapes, style-extraction/presets, toolbox, troubleshooting, tubemap,
+    xml-authoring), ~40 authoring scripts, and built-in style presets.
+  - **office** — `SKILL.md`, OOXML (ISO/IEC 29500-4) schema bundles,
+    validators for docx/pptx, and scripts for docx/pptx editing, comments,
+    recalc, thumbnails, and merge runs.
+  - **pdf** — `SKILL.md`, forms/reference docs, and scripts for form
+    extraction, filling, bounding-box checks, and PDF-to-image conversion.
+  - **anydoc** — `SKILL.md` entry point.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.5...v1.2.6
+
 ## [1.2.5] - 2026-08-20
 
 ### Fixed
