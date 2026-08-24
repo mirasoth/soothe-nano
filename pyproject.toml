@@ -62,6 +62,11 @@ dependencies = [
     "PyMuPDF>=1.24.0",
     "docx2txt>=0.8.0",
     "firecrawl-anydoc>=0.1.8,<0.2.0",
+    # IG-761: tiktoken is a real runtime dependency for model-aware token
+    # estimation. Previously present only transitively (via langchain-openai
+    # and litellm); declaring it here ensures the estimation mechanism never
+    # silently degrades to len//4.
+    "tiktoken>=0.7.0",
 ]
 
 [project.optional-dependencies]

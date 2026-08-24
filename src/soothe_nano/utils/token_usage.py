@@ -150,11 +150,114 @@ def coerce_total_tokens_used(value: Any) -> int:
         return 0
 
 
+# IG-761: Per-message structural token overhead for role tags + separators.
+# This is a documented approximation for the tokens a provider adds around
+# each message (role tag, message boundary) that are not in ``.content``.
+# It is intentionally a small constant rather than a magic number inlined at
+# each call site, and it is applied only on the estimation path (never added
+# to actual usage returned by providers).
+_STRUCTURAL_TOKENS_PER_MESSAGE = 3
+
+
+def estimate_token_usage(
+    messages: list[BaseMessage],
+    *,
+    model: str | None = None,
+) -> dict[str, int]:
+    """Return ``{input_tokens, output_tokens, total_tokens}`` for a message list.
+
+    IG-761 unified token estimation. Actual-first, estimate-on-demand:
+
+    1. If any AI message carries ``usage_metadata``, sum actual usage across
+       all AI turns (via :func:`extract_token_usage_from_messages`) and return
+       it. No estimated counts are added on this path — no double-counting.
+    2. Otherwise, estimate:
+       - ``input_tokens``  = model-aware ``count_tokens`` over prompt messages
+         (Human / System / Tool messages) plus structural overhead per message.
+       - ``output_tokens`` = model-aware ``count_tokens`` over AI message
+         content plus structural overhead per AI message.
+       - ``total_tokens``  = ``input_tokens + output_tokens``.
+
+    Args:
+        messages: Full message list (prompt + response) for one or more turns.
+        model: Optional model name hint for tokenizer selection. ``None``
+            preserves the default (``cl100k_base``) encoding.
+
+    Returns:
+        Dict with ``input_tokens``, ``output_tokens``, ``total_tokens``.
+        A ``source`` key (``"actual"`` or ``"estimated"``) is included for
+        observability so callers can distinguish the two paths.
+    """
+    # Path 1: actual usage from provider responses (actual-first).
+    actual = extract_token_usage_from_messages(messages)
+    if actual and actual.get("total", 0) > 0:
+        return {
+            "input_tokens": int(actual.get("prompt", 0)),
+            "output_tokens": int(actual.get("completion", 0)),
+            "total_tokens": int(actual.get("total", 0)),
+            "source": "actual",
+        }
+
+    # Path 2: estimation over the full message structure (input + output).
+    from langchain_core.messages import AIMessage, AIMessageChunk
+
+    input_tokens = 0
+    output_tokens = 0
+    message_count = 0
+
+    for msg in messages:
+        is_ai = isinstance(msg, (AIMessage, AIMessageChunk))
+        content = getattr(msg, "content", "")
+        text_tokens = _count_content_tokens(content, model=model)
+        if is_ai:
+            output_tokens += text_tokens
+        else:
+            input_tokens += text_tokens
+        message_count += 1
+
+    # Structural overhead: role tags + separators per message.
+    input_tokens += _STRUCTURAL_TOKENS_PER_MESSAGE * message_count
+
+    total = input_tokens + output_tokens
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total,
+        "source": "estimated",
+    }
+
+
+def _count_content_tokens(content: Any, *, model: str | None) -> int:
+    """Count tokens in a message content (string or block list)."""
+    from soothe_nano.utils.token_counting import count_tokens
+
+    if content is None:
+        return 0
+    if isinstance(content, str):
+        return count_tokens(content, model=model)
+    if isinstance(content, list):
+        total = 0
+        for block in content:
+            if isinstance(block, str):
+                total += count_tokens(block, model=model)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    total += count_tokens(text, model=model)
+                else:
+                    total += count_tokens(str(block), model=model)
+            else:
+                total += count_tokens(str(block), model=model)
+        return total
+    return count_tokens(str(content), model=model)
+
+
 __all__ = [
     "DirectLLMTokenTarget",
     "accumulate_loop_tokens_from_llm_result",
     "coerce_total_tokens_used",
     "direct_llm_token_call_scope",
+    "estimate_token_usage",
     "extract_token_usage_from_messages",
     "loop_token_accumulation_scope",
     "merge_direct_llm_tokens_into_state",
