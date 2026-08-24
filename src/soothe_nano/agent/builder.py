@@ -231,18 +231,16 @@ class AgentBuilder:
         fs_permissions = ask_permissions() if is_ask else (plan_permissions() if is_plan else None)
 
         def _compile_deep_agent(cp: Checkpointer | None) -> Any:
-            gp_enabled = (
-                False if is_readonly else self._config.agent.runtime.general_purpose_subagent
-            )
-            # When readonly GP is requested, construct a profile that restricts
-            # the GP subagent to read-only filesystem tools and write-deny
-            # permissions, independent of the parent agent's full access.
+            gp_mode = self._config.agent.runtime.general_purpose_subagent
+            # GP is only available in agent interaction mode; ask/plan always off.
+            gp_enabled = gp_mode != "off" and not is_readonly
+            per_step = gp_enabled and gp_mode == "per_step"
+            readonly = gp_enabled and gp_mode == "readonly"
+
+            # Single-variant readonly: construct a profile that restricts the GP
+            # subagent to read-only filesystem tools and write-deny permissions.
             gp_profile = None
-            if (
-                gp_enabled
-                and not is_readonly
-                and self._config.agent.runtime.general_purpose_subagent_readonly
-            ):
+            if readonly:
                 from soothe_deepagents.profiles.harness.harness_profiles import (
                     GeneralPurposeSubagentProfile,
                 )
@@ -256,12 +254,43 @@ class AgentBuilder:
                     ),
                     system_prompt=READONLY_GP_SYSTEM_PROMPT,
                 )
+            # Per-step variant routing: register a second, read-only GP variant
+            # alongside the default (full) one so a host middleware can redirect
+            # ``task`` calls to it on plan/ask steps. The model-visible name stays
+            # ``general-purpose`` (full); ``general-purpose-readonly`` is the
+            # redirect target, never advertised to the model.
+            subagents_for_graph = graph_subagents or None
+            if per_step:
+                from soothe_deepagents.middleware.filesystem import (
+                    FilesystemMiddleware,
+                )
+
+                readonly_gp_spec: SubAgent = {
+                    "name": "general-purpose-readonly",
+                    "description": (
+                        "Read-only research subagent for inspecting the workspace, searching "
+                        "for files and content, and gathering context without modifying files."
+                    ),
+                    "system_prompt": READONLY_GP_SYSTEM_PROMPT,
+                    "model": resolved_model,
+                    # Restrict the FS tool surface to read-only tools; the custom
+                    # FilesystemMiddleware below replaces the default (parent-inheriting)
+                    # one by name match in _apply_custom_middleware.
+                    "middleware": [
+                        FilesystemMiddleware(
+                            backend=resolved_backend,
+                            _permissions=ask_permissions(),
+                            tools=list(FILESYSTEM_TOOLS_ASK),
+                        ),
+                    ],
+                }
+                subagents_for_graph = [*list(graph_subagents or []), readonly_gp_spec]
             return create_deep_agent(
                 model=resolved_model,
                 tools=all_tools or None,
                 system_prompt=system_prompt,
                 middleware=all_middleware,
-                subagents=graph_subagents or None,
+                subagents=subagents_for_graph,
                 skills=None,
                 memory=self._config.memory or None,
                 permissions=fs_permissions,

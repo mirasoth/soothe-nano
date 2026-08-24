@@ -5,6 +5,38 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.10] - 2026-08-24
+
+### Changed
+- **`general_purpose_subagent` is now a mode enum.** Replaced the two booleans
+  `general_purpose_subagent` (bool) and `general_purpose_subagent_readonly`
+  (bool) on `AgentRuntimeConfig` with a single
+  `general_purpose_subagent: Literal["off", "full", "readonly", "per_step"]`
+  field (default `"full"`). This collapses the prior flag combination into a
+  single knob and adds a new `per_step` variant.
+  - `off` disables the GP subagent entirely (was `general_purpose_subagent=False`).
+  - `full` registers a single GP variant with full filesystem access
+    (was `general_purpose_subagent=True, general_purpose_subagent_readonly=False`).
+  - `readonly` restricts the GP variant to read-only filesystem tools
+    (`ls`, `read_file`, `file_info`, `glob`, `grep`) with write-deny permissions
+    (was `general_purpose_subagent=True, general_purpose_subagent_readonly=True`).
+  - `per_step` (new) registers two variants — `general-purpose` (full) for
+    agent-mode steps (including Eval) and `general-purpose-readonly` for
+    plan/ask steps — so a host middleware can redirect `task` calls to the
+    read-only variant on plan/ask steps. The model only sees `general-purpose`.
+  - `AgentBuilder._compile_deep_agent` now branches on the mode to construct
+    the appropriate profile / extra subagent spec; the deprecated
+    `general_purpose_subagent_readonly` field has been removed.
+
+### Fixed
+- **Per-step GP variant wiring.** The `per_step` mode now constructs a
+  `general-purpose-readonly` `SubAgent` spec with a `FilesystemMiddleware`
+  restricted to `FILESYSTEM_TOOLS_ASK` and `ask_permissions()`, and appends it
+  to the graph subagents so a host middleware can route plan/ask `task` calls
+  to it without advertising the variant to the model.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.9...v1.2.10
+
 ## [1.2.9] - 2026-08-24
 
 ### Added

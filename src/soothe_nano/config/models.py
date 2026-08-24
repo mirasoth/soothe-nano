@@ -1451,13 +1451,27 @@ class RoleRoutingConfig(BaseModel):
     )
 
 
+GeneralPurposeSubagentMode = Literal["off", "full", "readonly", "per_step"]
+"""General-purpose subagent mode.
+
+Values:
+    off: GP subagent disabled (not registered on the ``task`` tool).
+    full: Single GP variant with full filesystem access (inherits parent tools/perms).
+    readonly: Single GP variant restricted to read-only filesystem tools
+        (ls, read_file, file_info, glob, grep) + write-deny permissions.
+    per_step: Two variants registered — ``general-purpose`` (full) for agent-mode
+        steps and ``general-purpose-readonly`` for plan/ask steps. A host middleware
+        redirects ``task`` calls to the readonly variant on plan/ask steps. Eval
+        steps ride agent mode. The model only sees ``general-purpose``.
+"""
+
+
 class AgentRuntimeConfig(BaseModel):
     """CoreAgent startup and materialization tuning.
 
     Args:
         lazy_core_agent: Defer ``create_deep_agent`` until first Layer-1 execution.
-        general_purpose_subagent: Expose soothe_deepagents ``general-purpose`` delegate via ``task``.
-        general_purpose_subagent_readonly: Configure the general-purpose subagent as readonly.
+        general_purpose_subagent: GP subagent mode (off/full/readonly/per_step).
         recursion_limit: LangGraph recursion limit for CoreAgent graph execution.
         role_routing: Per-hop orchestration vs generation model roles.
         interaction_mode: Default CoreAgent interaction mode (``agent`` or ``ask``).
@@ -1467,21 +1481,16 @@ class AgentRuntimeConfig(BaseModel):
         default=True,
         description="Defer CoreAgent graph compile until first execute access",
     )
-    general_purpose_subagent: bool = Field(
-        default=True,
+    general_purpose_subagent: GeneralPurposeSubagentMode = Field(
+        default="full",
         description=(
-            "When true (default), register soothe_deepagents general-purpose subagent on the task tool. "
-            "When false, general-purpose is hidden and blocked."
-        ),
-    )
-    general_purpose_subagent_readonly: bool = Field(
-        default=False,
-        description=(
-            "When true, configure the general-purpose subagent with read-only filesystem tools "
-            "(ls, read_file, file_info, glob, grep) and write-deny permissions so it can "
-            "safely research and inspect the workspace without modifying it. "
-            "The main agent retains full filesystem access. "
-            "Only effective when general_purpose_subagent is true and interaction_mode is agent."
+            "General-purpose subagent mode. ``off`` disables GP entirely; ``full`` "
+            "registers a single GP variant with full filesystem access; ``readonly`` "
+            "restricts it to read-only tools (ls, read_file, file_info, glob, grep) "
+            "with write-deny permissions; ``per_step`` registers both variants so a "
+            "host middleware routes full GP on agent-mode steps (incl. Eval) and "
+            "read-only GP on plan/ask steps. Only effective when interaction_mode "
+            "is agent."
         ),
     )
     recursion_limit: int = Field(
