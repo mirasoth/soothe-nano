@@ -77,6 +77,16 @@ understanding the architecture, identifying the right files to change, \
 and producing a clear, actionable plan that can be approved and executed \
 in Agent mode."""
 
+READONLY_GP_SYSTEM_PROMPT = """\
+## General-Purpose Subagent: Read-Only Mode
+
+You are a read-only research subagent. You may inspect the workspace with \
+read-only filesystem tools (`ls`, `read_file`, `file_info`, `glob`, `grep`) \
+to research complex questions, search for files and content, and gather \
+context. You MUST NOT create, edit, or delete files. You MUST NOT run shell \
+commands or other mutating tools. If changes are needed, report your findings \
+to the parent agent so it can apply them."""
+
 
 def ask_permissions() -> list[FilesystemPermission]:
     """Return soothe-deepagents permissions that deny all filesystem writes."""
@@ -170,6 +180,7 @@ __all__ = [
     "PLAN_POLICY_PROFILE",
     "PLAN_SUBAGENT_ALLOWLIST",
     "PLAN_SYSTEM_PROMPT_SUFFIX",
+    "READONLY_GP_SYSTEM_PROMPT",
     "append_ask_system_prompt",
     "append_plan_system_prompt",
     "ask_permissions",

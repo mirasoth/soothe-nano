@@ -1457,6 +1457,7 @@ class AgentRuntimeConfig(BaseModel):
     Args:
         lazy_core_agent: Defer ``create_deep_agent`` until first Layer-1 execution.
         general_purpose_subagent: Expose soothe_deepagents ``general-purpose`` delegate via ``task``.
+        general_purpose_subagent_readonly: Configure the general-purpose subagent as readonly.
         recursion_limit: LangGraph recursion limit for CoreAgent graph execution.
         role_routing: Per-hop orchestration vs generation model roles.
         interaction_mode: Default CoreAgent interaction mode (``agent`` or ``ask``).
@@ -1471,6 +1472,16 @@ class AgentRuntimeConfig(BaseModel):
         description=(
             "When true (default), register soothe_deepagents general-purpose subagent on the task tool. "
             "When false, general-purpose is hidden and blocked."
+        ),
+    )
+    general_purpose_subagent_readonly: bool = Field(
+        default=False,
+        description=(
+            "When true, configure the general-purpose subagent with read-only filesystem tools "
+            "(ls, read_file, file_info, glob, grep) and write-deny permissions so it can "
+            "safely research and inspect the workspace without modifying it. "
+            "The main agent retains full filesystem access. "
+            "Only effective when general_purpose_subagent is true and interaction_mode is agent."
         ),
     )
     recursion_limit: int = Field(

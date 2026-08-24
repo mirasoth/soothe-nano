@@ -16,6 +16,7 @@ from soothe_nano.agent.interaction_mode import (
     FILESYSTEM_TOOLS_ASK,
     FILESYSTEM_TOOLS_PLAN,
     PLAN_POLICY_PROFILE,
+    READONLY_GP_SYSTEM_PROMPT,
     InteractionMode,
     append_ask_system_prompt,
     append_plan_system_prompt,
@@ -233,6 +234,28 @@ class AgentBuilder:
             gp_enabled = (
                 False if is_readonly else self._config.agent.runtime.general_purpose_subagent
             )
+            # When readonly GP is requested, construct a profile that restricts
+            # the GP subagent to read-only filesystem tools and write-deny
+            # permissions, independent of the parent agent's full access.
+            gp_profile = None
+            if (
+                gp_enabled
+                and not is_readonly
+                and self._config.agent.runtime.general_purpose_subagent_readonly
+            ):
+                from soothe_deepagents.profiles.harness.harness_profiles import (
+                    GeneralPurposeSubagentProfile,
+                )
+
+                gp_profile = GeneralPurposeSubagentProfile(
+                    filesystem_tools=list(FILESYSTEM_TOOLS_ASK),
+                    permissions=ask_permissions(),
+                    description=(
+                        "Read-only research subagent for inspecting the workspace, searching "
+                        "for files and content, and gathering context without modifying files."
+                    ),
+                    system_prompt=READONLY_GP_SYSTEM_PROMPT,
+                )
             return create_deep_agent(
                 model=resolved_model,
                 tools=all_tools or None,
@@ -247,6 +270,7 @@ class AgentBuilder:
                 backend=resolved_backend,
                 interrupt_on=interrupt_on,
                 enable_general_purpose_subagent=gp_enabled,
+                general_purpose_subagent_profile=gp_profile,
                 filesystem_tools=filesystem_tools,
                 parent_owned_state_keys=_PARENT_OWNED_STATE_KEYS,
                 debug=self._config.debug,
