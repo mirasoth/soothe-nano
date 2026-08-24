@@ -5,6 +5,20 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.9] - 2026-08-24
+
+### Added
+- **General-purpose readonly subagent.** New `general_purpose_subagent_readonly` config flag
+  on `AgentRuntimeConfig` (default `false`). When true and `interaction_mode` is `agent`,
+  the general-purpose subagent is configured with read-only filesystem tools
+  (`ls`, `read_file`, `file_info`, `glob`, `grep`) and write-deny permissions via
+  `GeneralPurposeSubagentProfile`, while the main agent retains full filesystem access.
+  Requires `soothe-deepagents>=0.8.6`.
+  - `AgentBuilder` constructs a `GeneralPurposeSubagentProfile` with readonly
+    tools/permissions/prompt and passes it to `create_deep_agent` via the new
+    `general_purpose_subagent_profile` parameter.
+  - New `READONLY_GP_SYSTEM_PROMPT` constant in `interaction_mode.py`.
+
 ## [1.2.8] - 2026-08-21
 
 ### Added
