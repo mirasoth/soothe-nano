@@ -28,12 +28,13 @@ logger = logging.getLogger(__name__)
 
 
 def ephemeral_execute_stream_enabled() -> bool:
-    """Whether execute uses the checkpointer-free twin graph (default: on).
+    """Whether execute uses the twin graph (default: on).
 
-    LangGraph graphs compiled with a checkpointer load checkpoint channel history on
-    each ``astream`` tick, causing unbounded RSS during execute. CoreAgent therefore
-    builds a twin graph with ``checkpointer=None`` for execute-only streaming while
-    the main graph keeps durable checkpointer state for other sessions.
+    The twin graph is a separate compiled instance that shares the main
+    checkpointer. It was originally checkpointer-free to avoid RSS growth
+    from per-tick checkpoint loading, but now uses ``durability="exit"``
+    to write checkpoints only at graph exit (not every tick), which keeps
+    overhead low while enabling ``Command(resume=...)`` for interrupt resume.
 
     Set ``SOOTHE_EPHEMERAL_EXECUTE_STREAM=0`` only for emergency rollback.
     """
@@ -57,8 +58,7 @@ def _langgraph_durability_kwargs(graph: Any, durability: str | None) -> dict[str
 
     Passing ``durability`` without a checkpointer triggers LangGraph's
     ``UserWarning: durability has no effect when no checkpointer is present``.
-    Ephemeral execute twins are compiled with ``checkpointer=None``, so omit
-    the kwarg there.
+    The execute twin now shares the main checkpointer, so the kwarg is honored.
     """
     if durability is None:
         return {}
@@ -74,16 +74,11 @@ def _is_benign_state_read_error(exc: ValueError) -> bool:
 
 
 def _state_retrieval_config(config: RunnableConfig | None) -> dict[str, Any]:
-    """Build RunnableConfig safe for ``aget_state`` after ephemeral execute streams.
+    """Build RunnableConfig safe for ``aget_state`` after execute streams.
 
-    Ephemeral twin graphs can leave ``__pregel_checkpointer: None`` on the
-    shared config dict. LangGraph then refuses to read state even when the primary
-    graph has a checkpointer attached.
-
-    Host orchestration may also merge parent ``checkpoint_ns`` (e.g. StrangeLoop
-    node ``execute``) into CoreAgent config for tracing. After the null
-    checkpointer override is removed, LangGraph interprets a non-empty
-    ``checkpoint_ns`` as a CoreAgent subgraph lookup and raises
+    Host orchestration may merge parent ``checkpoint_ns`` (e.g. StrangeLoop
+    node ``execute``) into CoreAgent config for tracing. LangGraph interprets
+    a non-empty ``checkpoint_ns`` as a CoreAgent subgraph lookup and raises
     ``Subgraph execute not found``. Clear parent checkpoint coordinates so
     state is read from the CoreAgent root thread.
     """

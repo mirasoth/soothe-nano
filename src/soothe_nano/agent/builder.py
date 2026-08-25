@@ -321,7 +321,7 @@ class AgentBuilder:
         if ephemeral_execute_stream_enabled():
 
             def execute_graph_compiler() -> Any:
-                return _compile_deep_agent(None)
+                return _compile_deep_agent(checkpointer)
 
         capabilities = CoreAgentCapabilities(
             tools=tuple(self._collect_tool_names(all_tools)),

@@ -1,11 +1,7 @@
 """Middleware stack construction for CoreAgent.
 
-Defines the Soothe middleware layer.
-Note: ParallelToolsMiddleware removed - langchain handles tool parallelism
-via asyncio.gather in ToolNode.
-
-This module provides a single function to build the middleware stack
-in the correct order with proper dependency handling.
+Builds the Soothe middleware layer in the correct order with proper
+dependency handling.
 """
 
 from __future__ import annotations

@@ -15,11 +15,6 @@ from soothe_nano.agent.subagent_catalog import spec_subagent_name
 from soothe_nano.config import SootheConfig
 
 try:
-    NanoConfig = SootheConfig
-except Exception:  # pragma: no cover
-    NanoConfig = None  # type: ignore[misc, assignment]
-
-try:
     __version__ = importlib.metadata.version("soothe-nano")
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.0.0"
@@ -29,7 +24,6 @@ __all__ = [
     "DualModeCoreAgent",
     "InteractionMode",
     "LazyCoreAgent",
-    "NanoConfig",
     "SootheConfig",
     "SootheNanoAgent",
     "create_dual_mode_nano_agent",

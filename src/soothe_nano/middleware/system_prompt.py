@@ -444,8 +444,6 @@ class SystemPromptMiddleware(AgentMiddleware):
             )
             static_sections.append(directive_section)
 
-        # Agent loop output contract removed from nano (L2-only).
-
         # ── Semi-Static Tier (goal-stable) ────────────────────────────
         semi_static_sections: list[str] = []
 
@@ -464,8 +462,6 @@ class SystemPromptMiddleware(AgentMiddleware):
                 proto_section = self._build_protocols_section(state.get("protocol_summary", {}))
                 if proto_section:
                     semi_static_sections.append(proto_section)
-
-        # Scenario guidance removed from nano (L2-only).
 
         # Tool-specific sections from context registry (semi-static)
         if state and self._tool_context_registry:
@@ -513,23 +509,6 @@ class SystemPromptMiddleware(AgentMiddleware):
         parts.append(build_timestamp_xml_footer())
 
         return "\n\n".join(parts)
-
-    def _get_domain_scoped_prompt(
-        self, classification: RoutingClassification, state: dict[str, Any] | None = None
-    ) -> str:
-        """Build a prompt for the given classification.
-
-        Falls back to complexity-only optimization since capability_domains
-        were removed in unified planning.
-
-        Args:
-            classification: LLM classification with task_complexity.
-            state: Request state with context information.
-
-        Returns:
-            Formatted prompt based on complexity level with XML sections.
-        """
-        return self._get_prompt_for_complexity(classification.task_complexity, state)
 
     @staticmethod
     def _build_tool_selection_guidance_section() -> str:

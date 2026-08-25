@@ -238,7 +238,6 @@ def resolve_tools(
         if group_cfg and group_cfg.enabled:
             enabled_tools.append(name)
 
-    # Host-execution tools (run_command, run_python, etc.) do not require a
     # Host-execution tools run on the host via subprocess (see toolkits.execution).
 
     total_start = time.perf_counter()
