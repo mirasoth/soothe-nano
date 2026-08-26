@@ -5,6 +5,24 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.12] - 2026-08-26
+
+### Fixed
+- **`lc_to_litellm_messages` drops `tool_calls` with a missing/empty `function.name`.**
+  When a resumed long thread carried a historical assistant message whose
+  `tool_calls[i]` had `function.name == ""` or no `name` key at all, the
+  converter emitted it verbatim and providers rejected the whole request with a
+  non-retriable 400 `invalid_request_error`:
+  `messages[N].tool_calls[0].function missing required field "name"`. The
+  error surfaced in `fjf` (flowjet-agent) as
+  `litellm.BadRequestError: OpenAIException`. Extracted
+  `_normalize_tool_calls_entry`, shared by both the `BaseMessage` path and the
+  dict-passthrough path, which drops malformed `tool_calls` entries (and drops
+  the `tool_calls` field entirely when none survive) so a single corrupt
+  historical turn no longer fails the entire LLM call.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.11...v1.2.12
+
 ## [1.2.10] - 2026-08-24
 
 ### Changed

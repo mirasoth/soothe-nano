@@ -103,3 +103,127 @@ def test_mixed_dict_and_base_messages() -> None:
     assert [m["role"] for m in out] == ["system", "user"]
     assert out[0]["content"] == "sys"
     assert out[1]["content"] == "hi"
+
+
+# ==============================================================================
+# Sanitization: drop tool_calls with missing/empty function.name (avoids 400)
+# ==============================================================================
+# Providers reject ``tool_calls[i].function missing required field "name"`` with
+# a non-retriable 400 invalid_request_error. ``lc_to_litellm_messages`` must drop
+# such malformed entries instead of emitting them. See deployed fjf failure:
+# ``messages[400].tool_calls[0].function missing required field "name"``.
+
+
+def test_basemessage_tool_call_with_empty_name_is_dropped() -> None:
+    """An AIMessage tool_call whose 'name' is '' must not be emitted as-is.
+
+    Reproduces the 400: ``tc.get("name", "")`` previously produced
+    ``{"function": {"name": "", ...}}`` which providers reject.
+    """
+    messages = [
+        AIMessage(
+            content="ok",
+            tool_calls=[{"name": "", "args": {"x": 1}, "id": "t1", "type": "tool_call"}],
+        )
+    ]
+    out = lc_to_litellm_messages(messages)
+    # The malformed tool_call is dropped; entry keeps content/role but no tool_calls.
+    assert out[0]["role"] == "assistant"
+    assert "tool_calls" not in out[0]
+
+
+def test_basemessage_drops_only_malformed_tool_calls_keeps_valid_ones() -> None:
+    """A mix of valid and malformed tool_calls keeps the valid ones."""
+    messages = [
+        AIMessage(
+            content="ok",
+            tool_calls=[
+                {"name": "", "args": {}, "id": "bad", "type": "tool_call"},
+                {"name": "read_file", "args": {"p": "x"}, "id": "good", "type": "tool_call"},
+            ],
+        )
+    ]
+    out = lc_to_litellm_messages(messages)
+    tcs = out[0]["tool_calls"]
+    assert len(tcs) == 1
+    assert tcs[0]["function"]["name"] == "read_file"
+    assert tcs[0]["id"] == "good"
+
+
+def test_dict_passthrough_tool_call_missing_function_name_is_dropped() -> None:
+    """A dict message with a tool_call whose function has no 'name' is dropped.
+
+    Reproduces the exact deployed failure: dict passthrough previously emitted
+    ``{"function": {"arguments": "{}"}}`` with no ``name`` key, triggering
+    ``tool_calls[0].function missing required field "name"``.
+    """
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "3", "type": "function", "function": {"arguments": "{}"}},
+            ],
+        }
+    ]
+    out = lc_to_litellm_messages(messages)
+    assert out[0]["role"] == "assistant"
+    assert "tool_calls" not in out[0]
+
+
+def test_dict_passthrough_tool_call_with_empty_name_is_dropped() -> None:
+    """A dict tool_call with function.name == '' is dropped."""
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "4", "type": "function", "function": {"name": "", "arguments": "{}"}},
+            ],
+        }
+    ]
+    out = lc_to_litellm_messages(messages)
+    assert "tool_calls" not in out[0]
+
+
+def test_dict_passthrough_keeps_valid_tool_calls_among_malformed() -> None:
+    """Dict passthrough drops only malformed tool_calls, keeps valid ones."""
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "bad", "type": "function", "function": {"arguments": "{}"}},
+                {
+                    "id": "good",
+                    "type": "function",
+                    "function": {"name": "search", "arguments": "{}"},
+                },
+            ],
+        }
+    ]
+    out = lc_to_litellm_messages(messages)
+    tcs = out[0]["tool_calls"]
+    assert len(tcs) == 1
+    assert tcs[0]["function"]["name"] == "search"
+    assert tcs[0]["id"] == "good"
+
+
+def test_dict_passthrough_tool_call_missing_name_key_is_dropped() -> None:
+    """A dict tool_call whose function has no 'name' key at all is dropped.
+
+    The BaseMessage path cannot reach this state — langchain's AIMessage
+    validator rejects constructing a tool_call without 'name' — but the dict
+    passthrough path (planner engine / hand-built messages) can and does.
+    """
+    messages = [
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "5", "type": "function", "function": {"arguments": "{}"}},
+            ],
+        }
+    ]
+    out = lc_to_litellm_messages(messages)
+    assert "tool_calls" not in out[0]

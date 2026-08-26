@@ -133,6 +133,48 @@ BasePydanticMessage = UserMessage | SystemMessage | AssistantMessage
 # ============================================================================
 
 
+def _normalize_tool_calls_entry(tcs: Any) -> list[dict[str, Any]]:
+    """Coerce a raw ``tool_calls`` list to OpenAI/litellm shape, dropping malformed entries.
+
+    Each entry must carry a non-empty ``function.name``: providers reject
+    ``tool_calls[i].function missing required field "name"`` with a 400
+    ``invalid_request_error`` that is not retriable. Malformed entries — a
+    missing or empty ``name`` — are dropped rather than emitted, so the
+    request never reaches the provider in a shape it would reject.
+    """
+    if not tcs:
+        return []
+    normalized: list[dict[str, Any]] = []
+    for tc in tcs:
+        if not isinstance(tc, dict):
+            continue
+        name = tc.get("name")
+        if not name:
+            # Dict already in OpenAI shape: {id, type, function: {name, arguments}}.
+            fn = tc.get("function")
+            if isinstance(fn, dict):
+                name = fn.get("name")
+            if not name:
+                continue  # Drop tool_call with missing/empty name (avoid 400).
+            normalized.append(tc)
+            continue
+        normalized.append(
+            {
+                "id": tc.get("id", ""),
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": (
+                        tc.get("args", "{}")
+                        if isinstance(tc.get("args"), str)
+                        else _json_dumps(tc.get("args", {}))
+                    ),
+                },
+            }
+        )
+    return normalized
+
+
 def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
     """Convert langchain messages to the ``[{role, content}]`` dict list litellm expects.
 
@@ -145,6 +187,12 @@ def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
     ``_agenerate`` uncoerced. Without this dict path the converter raised
     ``AttributeError: 'dict' object has no attribute 'type'`` (deployed
     ``soothe_nano.subagents.plan.engine`` structured-output draft).
+
+    Malformed ``tool_calls`` entries (a missing or empty ``function.name``) are
+    dropped: providers return a non-retriable 400 ``invalid_request_error`` for
+    ``tool_calls[i].function missing required field "name"``. Dropping the bad
+    entry keeps a long resumed thread runnable instead of failing the whole
+    request on one corrupt historical assistant turn.
     """
     out: list[dict[str, Any]] = []
     for m in messages:
@@ -157,6 +205,14 @@ def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
             content = entry.get("content")
             if not isinstance(content, str):
                 entry["content"] = "" if content is None else str(content)
+            if "tool_calls" in entry:
+                tcs = _normalize_tool_calls_entry(entry["tool_calls"])
+                if tcs:
+                    entry["tool_calls"] = tcs
+                else:
+                    # All tool_calls were malformed; drop the field entirely so
+                    # the provider doesn't see an empty list.
+                    del entry["tool_calls"]
             out.append(entry)
             continue
 
@@ -166,22 +222,9 @@ def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
         # AI tool_calls
         tcs = getattr(m, "tool_calls", None)
         if tcs:
-            entry["tool_calls"] = [
-                {
-                    "id": tc.get("id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": tc.get("name", ""),
-                        "arguments": (
-                            tc.get("args", "{}")
-                            if isinstance(tc.get("args"), str)
-                            else _json_dumps(tc.get("args", {}))
-                        ),
-                    },
-                }
-                for tc in tcs
-                if isinstance(tc, dict)
-            ]
+            normalized = _normalize_tool_calls_entry(tcs)
+            if normalized:
+                entry["tool_calls"] = normalized
         # ToolMessage correlation id
         tcid = getattr(m, "tool_call_id", None)
         if tcid:
