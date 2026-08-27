@@ -5,6 +5,18 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.13] - 2026-08-27
+
+### Fixed
+- **`WorkspaceToolOperationSecurity` now blocks dangerous paths even without a `SecurityConfig`.** Added a bypass-immune `_DANGEROUS_PATH_COMPONENTS` check (`.git/`, `.bashrc`, `.vscode/`, etc.) that runs *before* the `security_config` branch in `_check_filesystem`, so sensitive paths are denied even when no `SecurityConfig` is wired. Mirrors the `DANGEROUS_COMPONENTS` set in `PathValidator`, keeping both layers in sync.
+- **Expanded banned command patterns.** `_BANNED_COMMAND_PATTERNS` now also matches `rm -rf` (bare), `rm -r`, `sudo` (bare), `shred`, `chmod 777` (bare), and `git push --force` — bringing coverage in line with soothe's `tool_safety_check.py`.
+- **`PathValidator` now flags UNC paths and more dangerous components.** Added `unc_path_forward` (`^//`) and `unc_path_backslash` (`^\\\\`) to `SUSPICIOUS_PATTERNS` (CRITICAL severity). Extended `DANGEROUS_COMPONENTS` with project-config dirs (`.vscode`, `.idea`, `.claude`), shell-config files (`.bashrc`, `.zshrc`, `.profile`, …), and git config files (`.gitconfig`, `.gitmodules`).
+
+### Changed
+- **`build_operation_security_request` is now a standalone exported function.** Extracted from `ConfigDrivenPolicy._build_operation_security_request` so external callers (e.g. the soothe tool-approval pipeline, RFC-622 §9b) can build an `OperationSecurityRequest` from a tool name + args without subclassing `ConfigDrivenPolicy`. The method now delegates to the standalone function and preserves the original `action_type`. Exported via `soothe_nano.security.security_api`.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.12...v1.2.13
+
 ## [1.2.12] - 2026-08-26
 
 ### Fixed
