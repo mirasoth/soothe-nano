@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from soothe_sdk.protocols.operation_security import (
-    OperationKind,
     OperationSecurityContext,
     OperationSecurityRequest,
 )
@@ -21,7 +20,6 @@ from soothe_sdk.protocols.policy import (
 from soothe_sdk.tools.metadata import (
     extract_filesystem_path_for_policy,
     get_tool_meta,
-    is_policy_filesystem_tool,
 )
 
 from .operation_guard import WorkspaceToolOperationSecurity
@@ -370,32 +368,13 @@ class ConfigDrivenPolicy:
         return None
 
     def _build_operation_security_request(self, action: ActionRequest) -> OperationSecurityRequest:
+        from soothe_nano.security.operation_guard import (
+            build_operation_security_request,
+        )
+
         tool_name = action.tool_name or ""
         tool_args = action.tool_args or {}
-        meta = get_tool_meta(tool_name)
-        operation_kind: OperationKind = "generic"
-        target_path: str | None = None
-        command: str | None = None
-
-        if is_policy_filesystem_tool(tool_name):
-            target_path = extract_filesystem_path_for_policy(tool_name, tool_args)
-            if meta and meta.outcome_type == "file_write":
-                operation_kind = "filesystem_write"
-            else:
-                operation_kind = "filesystem_read"
-        elif meta and meta.category == "execution":
-            command_value = tool_args.get("command") or tool_args.get("cmd")
-            if command_value is not None:
-                command = str(command_value)
-                operation_kind = "shell_execute"
-            elif tool_name == "run_python":
-                operation_kind = "python_execute"
-
-        return OperationSecurityRequest(
-            action_type=action.action_type,
-            tool_name=tool_name,
-            tool_args=tool_args,
-            operation_kind=operation_kind,
-            target_path=target_path,
-            command=command,
-        )
+        request = build_operation_security_request(tool_name, tool_args)
+        # Preserve the original action_type (which may differ for subagent spawns)
+        request = request.model_copy(update={"action_type": action.action_type})
+        return request

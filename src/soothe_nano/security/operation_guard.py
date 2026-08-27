@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import re
 from pathlib import Path
+from typing import Any
 
 from soothe_sdk.protocols.operation_security import (
     OperationSecurityContext,
@@ -21,16 +22,22 @@ from soothe_nano.workspace.workspace_paths import (
 
 _BANNED_COMMAND_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"rm\s+-rf\s+/", "command.dangerous.rm_root"),
+    (r"rm\s+-rf\b", "command.dangerous.rm_rf"),
+    (r"rm\s+-r\b", "command.dangerous.rm_r"),
     (r"sudo\s+rm\s+-rf", "command.dangerous.sudo_rm_rf"),
+    (r"sudo\s", "command.dangerous.sudo"),
     (r"mkfs(\.|$)", "command.dangerous.mkfs"),
     (r"dd\s+if=", "command.dangerous.dd"),
     (r"dd\s+of=/dev/", "command.dangerous.dd_block_device_write"),
+    (r"shred\b", "command.dangerous.shred"),
     (r":\(\)\s*\{\s*:\|:&\s*\};:", "command.dangerous.fork_bomb"),
     (r"(curl|wget).*\|\s*(sh|bash)", "command.dangerous.pipe_to_shell"),
     (r">\s*/(etc|bin|sbin|usr|System|Library)(/|$)", "command.dangerous.system_path_redirect"),
     (r"tee\s+/((etc|bin|sbin|usr|System|Library)(/|$))", "command.dangerous.system_path_tee"),
     (r"chmod\s+-R\s+777\s+/", "command.dangerous.chmod_root"),
+    (r"chmod\s+777\b", "command.dangerous.chmod_777"),
     (r"chown\s+-R\s+.+\s+/", "command.dangerous.chown_root"),
+    (r"git\s+push\s+(-f|--force)\b", "command.dangerous.git_force_push"),
     (r"\bpkill\b[^\n]*\bsoothe", "command.dangerous.pkill_soothe"),
     (r"\bkillall\b[^\n]*\bsoothe", "command.dangerous.killall_soothe"),
     (r"\bsoothed\s+(stop|restart)\b", "command.dangerous.soothed_lifecycle"),
@@ -61,16 +68,53 @@ _SENSITIVE_SYSTEM_PATH_PATTERNS: tuple[str, ...] = (
 class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
     """Evaluate workspace filesystem and execution command security."""
 
+    # Bypass-immune dangerous path components — checked before security_config
+    # so they fire even when no SecurityConfig is wired. Mirrors the
+    # DANGEROUS_COMPONENTS set in path_security.py's PathValidator, kept in
+    # sync so both layers enforce the same boundaries.
+    _DANGEROUS_PATH_COMPONENTS: frozenset[str] = frozenset(
+        {
+            ".git",
+            ".svn",
+            ".hg",
+            ".vscode",
+            ".idea",
+            ".claude",
+            ".bashrc",
+            ".bash_profile",
+            ".zshrc",
+            ".zprofile",
+            ".profile",
+            ".gitconfig",
+            ".gitmodules",
+            ".ripgreprc",
+            ".mcp.json",
+            ".claude.json",
+        }
+    )
+
     def _check_filesystem(
         self, context: OperationSecurityContext, target_path: str
     ) -> OperationSecurityDecision:
-        security = context.security_config
-        if security is None:
-            return OperationSecurityDecision(verdict="allow", reason="No security config")
-
         file_path = target_path.strip()
         if not file_path:
             return OperationSecurityDecision(verdict="allow", reason="No file path specified")
+
+        # Bypass-immune dangerous path check — runs regardless of security_config
+        # so that sensitive paths (.git/, .bashrc, .vscode/, etc.) are always
+        # blocked, even when no SecurityConfig is provided.
+        resolved_path = expand_path(file_path)
+        for part in Path(resolved_path).parts:
+            if part in self._DANGEROUS_PATH_COMPONENTS:
+                return OperationSecurityDecision(
+                    verdict="deny",
+                    reason=f"Path '{file_path}' contains dangerous component '{part}'",
+                    rule_id="filesystem.dangerous_component",
+                )
+
+        security = context.security_config
+        if security is None:
+            return OperationSecurityDecision(verdict="allow", reason="No security config")
 
         workspace_root: Path | None = None
         if context.workspace and str(context.workspace).strip():
@@ -254,3 +298,53 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
     def _path_matches_pattern(self, path: Path, pattern: str) -> bool:
         path_str = str(path)
         return fnmatch.fnmatch(path_str, pattern) or path_str.startswith(pattern.rstrip("*"))
+
+
+def build_operation_security_request(
+    tool_name: str,
+    tool_args: dict[str, Any],
+) -> OperationSecurityRequest:
+    """Build an :class:`OperationSecurityRequest` from a tool name + args.
+
+    Extracted from ``ConfigDrivenPolicy._build_operation_security_request``
+    so external callers (e.g., the soothe tool-approval pipeline, RFC-622 §9b)
+    can build requests without subclassing ``ConfigDrivenPolicy``.
+
+    Uses :func:`is_policy_filesystem_tool` /
+    :func:`extract_filesystem_path_for_policy` from ``soothe_sdk.tools.metadata``
+    to classify the operation kind and extract the target path.
+    """
+    from soothe_sdk.protocols.operation_security import OperationKind
+    from soothe_sdk.tools.metadata import (
+        extract_filesystem_path_for_policy,
+        get_tool_meta,
+        is_policy_filesystem_tool,
+    )
+
+    meta = get_tool_meta(tool_name)
+    operation_kind: OperationKind = "generic"
+    target_path: str | None = None
+    command: str | None = None
+
+    if is_policy_filesystem_tool(tool_name):
+        target_path = extract_filesystem_path_for_policy(tool_name, tool_args)
+        if meta and meta.outcome_type == "file_write":
+            operation_kind = "filesystem_write"
+        else:
+            operation_kind = "filesystem_read"
+    elif meta and meta.category == "execution":
+        command_value = tool_args.get("command") or tool_args.get("cmd")
+        if command_value is not None:
+            command = str(command_value)
+            operation_kind = "shell_execute"
+        elif tool_name == "run_python":
+            operation_kind = "python_execute"
+
+    return OperationSecurityRequest(
+        action_type="tool_call",
+        tool_name=tool_name,
+        tool_args=tool_args,
+        operation_kind=operation_kind,
+        target_path=target_path,
+        command=command,
+    )

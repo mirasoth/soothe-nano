@@ -74,6 +74,9 @@ class PathValidator:
         (r"[\x00-\x1f]", "control_chars", ValidationSeverity.HIGH),
         (r"\x7f", "delete_char", ValidationSeverity.MEDIUM),
         (r"[\ufff0-\uffff]", "unicode_special", ValidationSeverity.MEDIUM),
+        # UNC paths (defense-in-depth \u2014 RFC-622 \u00a79b migration)
+        (r"^//", "unc_path_forward", ValidationSeverity.CRITICAL),
+        (r"^\\\\\\\\", "unc_path_backslash", ValidationSeverity.CRITICAL),
     )
 
     DANGEROUS_COMPONENTS: frozenset[str] = frozenset(
@@ -82,12 +85,30 @@ class PathValidator:
             ".",
             "~",
             "",
+            # VCS / cache dirs (existing)
             ".git",
             ".svn",
             ".hg",
             "__pycache__",
             ".DS_Store",
             "Thumbs.db",
+            # Project config dirs (RFC-622 \u00a79b migration from soothe)
+            ".vscode",
+            ".idea",
+            ".claude",
+            # Shell config files (code execution on shell startup)
+            ".bashrc",
+            ".bash_profile",
+            ".zshrc",
+            ".zprofile",
+            ".profile",
+            # Git config files (hooks = arbitrary code execution)
+            ".gitconfig",
+            ".gitmodules",
+            # Other sensitive config
+            ".ripgreprc",
+            ".mcp.json",
+            ".claude.json",
         }
     )
 
