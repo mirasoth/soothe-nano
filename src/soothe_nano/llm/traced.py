@@ -204,6 +204,7 @@ async def ainvoke_structured_traced(
     independent_trace: bool = False,
     rate_limit_overrides: dict[str, Any] | None = None,
     normalize: Any | None = None,
+    methods: tuple[str | None, ...] | None = None,
 ) -> dict[str, Any]:
     """Invoke a chat model with structured output, Langfuse tracing, and rate-limit.
 
@@ -230,6 +231,10 @@ async def ainvoke_structured_traced(
         rate_limit_overrides: Override fields on ``LLMRateLimitConfig``.
         normalize: Optional normalisation callable applied to the structured
             result dict.
+        methods: Optional ordered structured-output methods to try (forwarded
+            to :func:`invoke_structured_chat`).  When ``None``, the default
+            order (``function_calling → None → json_schema → json_mode``)
+            is used.
 
     Returns:
         Parsed structured-output dictionary.
@@ -261,6 +266,7 @@ async def ainvoke_structured_traced(
             strict=strict,
             config=invoke_config,
             normalize=normalize,
+            methods=methods,
         )
 
     return await await_with_llm_call_policy(

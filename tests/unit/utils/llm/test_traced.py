@@ -224,6 +224,7 @@ async def test_ainvoke_structured_traced_invokes_structured_chat() -> None:
         strict: bool,
         config: Any,
         normalize: Any,
+        methods: tuple[str | None, ...] | None = None,
     ) -> dict[str, Any]:
         captured.update(
             model=model,
@@ -233,6 +234,7 @@ async def test_ainvoke_structured_traced_invokes_structured_chat() -> None:
             strict=strict,
             config=config,
             normalize=normalize,
+            methods=methods,
         )
         return payload
 
@@ -257,6 +259,7 @@ async def test_ainvoke_structured_traced_invokes_structured_chat() -> None:
     assert captured["schema_name"] == "Ans"
     assert captured["strict"] is False
     assert captured["config"]["metadata"]["soothe_call_purpose"] == "intent_hint"
+    assert captured["methods"] is None  # default: no override
 
 
 @pytest.mark.asyncio

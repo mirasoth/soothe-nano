@@ -38,16 +38,16 @@ jobs:
 
       - name: Guard — dependency packages must be on PyPI
         run: |
-          if ! curl -sf "https://pypi.org/pypi/soothe-sdk/1.0.6/json" >/dev/null; then
-            echo "Publish soothe-sdk 1.0.6 to PyPI before releasing soothe-nano"
+          if ! curl -sf "https://pypi.org/pypi/soothe-sdk/1.0.7/json" >/dev/null; then
+            echo "Publish soothe-sdk 1.0.7 to PyPI before releasing soothe-nano"
             exit 1
           fi
-          echo "soothe-sdk 1.0.6 is available on PyPI"
-          if ! curl -sf "https://pypi.org/pypi/soothe-deepagents/0.8.5/json" >/dev/null; then
-            echo "Publish soothe-deepagents 0.8.5 to PyPI before releasing soothe-nano"
+          echo "soothe-sdk 1.0.7 is available on PyPI"
+          if ! curl -sf "https://pypi.org/pypi/soothe-deepagents/0.8.6/json" >/dev/null; then
+            echo "Publish soothe-deepagents 0.8.6 to PyPI before releasing soothe-nano"
             exit 1
           fi
-          echo "soothe-deepagents 0.8.5 is available on PyPI"
+          echo "soothe-deepagents 0.8.6 is available on PyPI"
 
       - name: Read version
         id: version

@@ -925,6 +925,9 @@ class ToolTimeoutConfig(BaseModel):
             "read_file": 30.0,
             "browser_use": 1800.0,  # Browser automation (30 minutes)
             "task": float(DEFAULT_TASK_TIMEOUT_SECONDS),
+            # decompose_task wraps an internal structured LLM call (grounding
+            # critic) that may need schema-repair retries; give it 3x default.
+            "decompose_task": 180.0,
         },
         description="Per-tool timeout overrides (tool_name -> seconds)",
     )
