@@ -5,6 +5,11 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.15] - 2026-08-29
+
+### Fixed
+- **`_state_retrieval_config` now strips `__pregel_scratchpad`** alongside `checkpoint_ns`/`checkpoint_id`/`checkpoint_map`. The parent Pregel loop's scratchpad carries atomic counters whose `subgraph_counter()` can be > 0 on resume; `AsyncPregelLoop.__init__` then hard-accesses `checkpoint_ns` (already stripped) and raises `KeyError: 'checkpoint_ns'` (loops c982 / 7a90). Mirrors `strip_parent_checkpoint_coordinates` in the host package.
+
 ## [1.2.14] - 2026-08-28
 
 ### Added

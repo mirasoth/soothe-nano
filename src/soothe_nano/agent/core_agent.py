@@ -87,6 +87,7 @@ def _state_retrieval_config(config: RunnableConfig | None) -> dict[str, Any]:
         CONFIG_KEY_CHECKPOINT_MAP,
         CONFIG_KEY_CHECKPOINT_NS,
         CONFIG_KEY_CHECKPOINTER,
+        CONFIG_KEY_SCRATCHPAD,
     )
 
     if not config:
@@ -99,6 +100,9 @@ def _state_retrieval_config(config: RunnableConfig | None) -> dict[str, Any]:
     conf.pop(CONFIG_KEY_CHECKPOINT_NS, None)
     conf.pop(CONFIG_KEY_CHECKPOINT_ID, None)
     conf.pop(CONFIG_KEY_CHECKPOINT_MAP, None)
+    # Parent scratchpad carries the parent loop's atomic counters; keep them
+    # out of CoreAgent state reads (mirrors strip_parent_checkpoint_coordinates).
+    conf.pop(CONFIG_KEY_SCRATCHPAD, None)
     if conf:
         out["configurable"] = conf
     elif "configurable" in out:
