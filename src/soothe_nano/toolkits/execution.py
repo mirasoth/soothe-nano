@@ -948,6 +948,12 @@ class TailBackgroundLogTool(BaseTool):
         return self._run(pid, lines, runtime=runtime)
 
 
+class KillProcessInput(BaseModel):
+    """Arguments for ``kill_process``."""
+
+    pid: int = Field(..., description="Process ID returned by run_background.")
+
+
 class KillProcessTool(BaseTool):
     """Terminate a background process.
 
@@ -963,6 +969,7 @@ class KillProcessTool(BaseTool):
         "that spawned you. "
         "Returns: termination status. Appends a footer to bg-{pid}.log when present."
     )
+    args_schema: type[BaseModel] = KillProcessInput
     workspace_root: str = Field(default="", description="Working directory fallback for log lookup")
     background_log_dir: str | None = Field(
         default=None,
@@ -983,8 +990,12 @@ class KillProcessTool(BaseTool):
         Returns:
             Status message
         """
-        if pid <= 0:
-            return f"Error: invalid process ID {pid}"
+        # ``args_schema`` coerces streamed string args (e.g. ``"14449"``) to int
+        # before this point, but guard defensively in case a caller invokes
+        # ``_run`` directly. A string ``pid`` here would otherwise raise a
+        # ``TypeError`` on the ``<=`` comparison and abort the whole step.
+        if not isinstance(pid, int) or pid <= 0:
+            return f"Error: invalid process ID {pid!r}"
 
         refusal = _protected_kill_refusal(pid)
         if refusal is not None:

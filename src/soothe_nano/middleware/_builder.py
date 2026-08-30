@@ -97,6 +97,7 @@ def build_soothe_middleware_stack(
     from .per_turn_model import PerTurnModelMiddleware
     from .policy import SoothePolicyMiddleware
     from .system_prompt import SystemPromptMiddleware
+    from .tool_error_guard import ToolErrorGuardMiddleware
     from .workspace_context import WorkspaceContextMiddleware
 
     stack: list[AgentMiddleware] = []
@@ -167,6 +168,14 @@ def build_soothe_middleware_stack(
     # 8. Recoverable outbound network errors → tool messages
     stack.append(NetworkToolErrorsMiddleware())
     logger.debug("[Middleware] Network tool error recovery enabled")
+
+    # 8b. Catch-all tool error guard — outer to NetworkToolErrorsMiddleware.
+    # Any exception the network guard re-raises (and anything else that escapes
+    # a tool + langgraph's ToolNode default handler) is converted to an error
+    # ToolMessage here so the execute step can self-recover instead of aborting
+    # (a single tool failure would otherwise kill the whole step — d15f/33c1).
+    stack.append(ToolErrorGuardMiddleware())
+    logger.info("[Middleware] Tool error guard enabled (catch-all → error ToolMessage)")
 
     # 9. Cap tool output before graph state / model context
     tool_output = agent_middleware_config(config).tool_output

@@ -7,13 +7,33 @@ from unittest.mock import patch
 
 import pytest
 
-from soothe_nano.toolkits.execution import KillProcessTool, _kill_process_tree
+from soothe_nano.toolkits.execution import (
+    KillProcessInput,
+    KillProcessTool,
+    _kill_process_tree,
+)
 
 
 def test_kill_process_rejects_invalid_pid() -> None:
     tool = KillProcessTool()
     assert "invalid process ID" in tool._run(0)
     assert "invalid process ID" in tool._run(-1)
+
+
+def test_kill_process_coerces_string_pid_via_args_schema() -> None:
+    """LLMs stream numeric args as JSON strings (e.g. ``"14449"``).
+
+    The ``args_schema`` coerces to ``int`` before ``_run`` runs. A direct
+    call with a stray ``str`` (no schema in the path) must return a clean
+    error, not raise ``TypeError`` on the ``<=`` comparison and abort the
+    whole step.
+    """
+    tool = KillProcessTool()
+    # Coercion path: schema-validated invocation turns "42" into 42.
+    validated = KillProcessInput(pid="42")  # type: ignore[arg-type]
+    assert validated.pid == 42
+    # Defensive path: a stray string never reaches the ``<=`` comparison.
+    assert "invalid process ID" in tool._run("42")  # type: ignore[arg-type]
 
 
 def test_kill_process_not_found() -> None:
