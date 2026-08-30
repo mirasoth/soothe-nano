@@ -137,17 +137,17 @@ def register_builtin_mcp_server(
     """Register a host-packaged builtin MCP server into the catalog.
 
     Registration alone does not connect anything — callers still opt in via
-    ``mcp_builtins: [name]`` or explicit ``mcp_servers``.
+    `mcp_builtins: [name]` or explicit `mcp_servers`.
 
     Args:
-        server: Server configuration (prefer ``defer=True``).
+        server: Server configuration (prefer `defer=True`).
         replace: When True, overwrite an existing catalog entry with the same name.
 
     Returns:
         Unregister callback.
 
     Raises:
-        ValueError: Duplicate name when ``replace`` is False.
+        ValueError: Duplicate name when `replace` is False.
     """
     cfg = server.model_copy(deep=True)
     name = cfg.name

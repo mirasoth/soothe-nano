@@ -1,7 +1,7 @@
 """System prompt templates for Coding CoreAgent (defaults and tool guides).
 
-Static system prompt bodies live as ``.xml`` fragments under
-``soothe_nano.prompts.fragments``; this module composes them with the
+Static system prompt bodies live as `.xml` fragments under
+`soothe_nano.prompts.fragments`; this module composes them with the
 in-process tool/subagent guides into the final templates.
 """
 
@@ -176,7 +176,7 @@ _RESPONSE_LANGUAGE_DISPLAY: dict[str, str] = {
 
 
 def build_response_language_hint(language: object | None) -> str:
-    """Build explicit or fallback ``RESPONSE_LANGUAGE_HINT`` for system prompts."""
+    """Build explicit or fallback `RESPONSE_LANGUAGE_HINT` for system prompts."""
     if language is None:
         return RESPONSE_LANGUAGE_HINT_FALLBACK
     text = str(language).strip().lower()

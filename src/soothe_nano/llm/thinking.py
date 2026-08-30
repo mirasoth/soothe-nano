@@ -1,19 +1,10 @@
 """Thinking-token filter for local-model LLM output.
 
-Local reasoning models (DeepSeek-R1, QwQ, GLM with thinking enabled, ...)
-emit their chain-of-thought inline as ``<think>...</think>`` blocks (some
-variants use ``<thinking>`` or ``<reasoning>``). This module strips those
-blocks from model text so reasoning tokens never surface to the agent/UI,
-while recording the stripped content at ``DEBUG`` level first so it stays
-inspectable during debugging (the "record before strip" design rule).
-
-Two entry points:
-
-- :func:`strip_thinking` -- stateless removal of *complete* thinking blocks
-  from a fully-assembled response string.
-- :class:`ThinkingStreamFilter` -- stateful filter for streaming chunks that
-  buffers partial ``<think`` / ``</think`` tag fragments split across chunk
-  boundaries so no tag fragments leak into visible output.
+Strips inline thinking blocks so reasoning tokens never surface to the
+agent/UI, while logging stripped content at `DEBUG` first so it stays
+inspectable. `strip_thinking` handles complete blocks in a fully-assembled
+string; `ThinkingStreamFilter` handles streaming chunks with partial-tag
+buffering.
 """
 
 from __future__ import annotations
@@ -48,16 +39,16 @@ _OPEN_TAGS_LOWER: tuple[str, ...] = ("<think>", "<thinking>", "<reasoning>")
 
 
 def _resolve_logger(log: Logger | None) -> Logger:
-    """Return *log* or the module logger when *log* is ``None``."""
+    """Return *log* or the module logger when *log* is `None`."""
     return log if log is not None else logger
 
 
 def strip_thinking(text: str, *, logger: Logger | None = None) -> str:
-    """Remove complete ``<think>...</think>`` blocks from *text*.
+    """Remove complete `<think>...</think>` blocks from *text*.
 
-    Matches ``<think>``, ``<thinking>``, and ``<reasoning>`` variants
+    Matches `<think>`, `<thinking>`, and `<reasoning>` variants
     (case-insensitive; content may span newlines). Each extracted thinking
-    block is logged at ``DEBUG`` via *logger* (or the module logger) **before**
+    block is logged at `DEBUG` via *logger* (or the module logger) **before**
     removal, so the hidden reasoning remains recoverable from debug logs.
 
     Only complete blocks (open + matching close) are removed; an unterminated
@@ -86,8 +77,8 @@ class ThinkingStreamFilter:
     """Stateful filter that strips thinking tags from a stream of text chunks.
 
     Feed each arriving content chunk through :meth:`feed` and emit the returned
-    text to the consumer. Partial ``<think`` / ``</think`` (and ``<thinking>``,
-    ``<reasoning>``) fragments that arrive split across chunk boundaries are
+    text to the consumer. Partial `<think` / `</think` (and `<thinking>`,
+    `<reasoning>`) fragments that arrive split across chunk boundaries are
     buffered until the tag completes or is ruled out, so no tag fragments leak
     into visible output.
     """

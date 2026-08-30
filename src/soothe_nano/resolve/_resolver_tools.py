@@ -1,8 +1,4 @@
-"""Tool, goal, and subagent resolution for create_nano_agent.
-
-Extracted from ``resolver.py`` to isolate tool/subagent wiring from
-protocol and infrastructure resolution.
-"""
+"""Tool, goal, and subagent resolution for create_nano_agent."""
 
 from __future__ import annotations
 
@@ -145,7 +141,7 @@ SUBAGENT_FACTORIES = _SubagentFactoriesAccessor()
 def _call_subagent_factory(factory: Any, kwargs: dict[str, Any]) -> Any:
     """Invoke a subagent factory and return its spec (dict or agent object).
 
-    Plugin factories from ``@subagent`` are async; built-in factories are sync.
+    Plugin factories from `@subagent` are async; built-in factories are sync.
     When no event loop is running, coroutine results are driven with
     :func:`asyncio.run` (AgentBuilder runs in a synchronous context).
     When a loop is already running (e.g. async tests or nested async), the
@@ -179,8 +175,8 @@ def _resolve_subagent_chat_model(
 ) -> BaseChatModel:
     """Resolve a subagent chat model from an explicit spec or router role.
 
-    When ``sub_cfg.model`` is set (``provider:model``), it takes precedence over
-    ``sub_cfg.model_role`` and ``default_role``.
+    When `sub_cfg.model` is set (`provider:model`), it takes precedence over
+    `sub_cfg.model_role` and `default_role`.
     """
     if sub_cfg.model:
         return config.create_chat_model_for_spec(sub_cfg.model)
@@ -210,7 +206,7 @@ def resolve_tools(
             metadata probing.
         config: Optional Soothe config for tool configuration.
         exclude_tool_groups: Optional tool group names to skip (e.g. Ask mode
-            omits ``execution`` and ``file_ops``).
+            omits `execution` and `file_ops`).
 
     Returns:
         Flat list of fully-initialised `BaseTool` instances.

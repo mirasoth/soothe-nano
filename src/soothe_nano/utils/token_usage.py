@@ -35,7 +35,7 @@ _direct_llm_token_accumulation: ContextVar[bool] = ContextVar(
 
 @contextmanager
 def loop_token_accumulation_scope(target: _TokenTotalTarget):
-    """Bind token accumulation to ``target`` for the current async context."""
+    """Bind token accumulation to `target` for the current async context."""
     token = _token_target.set(target)
     try:
         yield
@@ -57,7 +57,7 @@ def merge_direct_llm_tokens_into_state(
     state: _TokenTotalTarget,
     source: _TokenTotalTarget,
 ) -> int:
-    """Fold tokens accumulated before state existed into ``state``."""
+    """Fold tokens accumulated before state existed into `state`."""
     delta = max(0, int(getattr(source, "total_tokens_used", 0) or 0))
     if delta > 0:
         state.total_tokens_used += delta
@@ -135,7 +135,7 @@ def _sum_token_usage_from_messages(
 
 
 def extract_token_usage_from_messages(messages: list[BaseMessage]) -> dict[str, int]:
-    """Sum prompt/completion/total across all CoreAgent AI turns in ``messages``."""
+    """Sum prompt/completion/total across all CoreAgent AI turns in `messages`."""
     usage = _sum_token_usage_from_messages(messages, include_chunks=False)
     if usage:
         return usage
@@ -143,7 +143,7 @@ def extract_token_usage_from_messages(messages: list[BaseMessage]) -> dict[str, 
 
 
 def coerce_total_tokens_used(value: Any) -> int:
-    """Parse a non-negative ``total_tokens_used`` field from event payloads."""
+    """Parse a non-negative `total_tokens_used` field from event payloads."""
     try:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
@@ -164,28 +164,28 @@ def estimate_token_usage(
     *,
     model: str | None = None,
 ) -> dict[str, int]:
-    """Return ``{input_tokens, output_tokens, total_tokens}`` for a message list.
+    """Return `{input_tokens, output_tokens, total_tokens}` for a message list.
 
-    IG-761 unified token estimation. Actual-first, estimate-on-demand:
+    Unified token estimation. Actual-first, estimate-on-demand:
 
-    1. If any AI message carries ``usage_metadata``, sum actual usage across
+    1. If any AI message carries `usage_metadata`, sum actual usage across
        all AI turns (via :func:`extract_token_usage_from_messages`) and return
        it. No estimated counts are added on this path — no double-counting.
     2. Otherwise, estimate:
-       - ``input_tokens``  = model-aware ``count_tokens`` over prompt messages
+       - `input_tokens`  = model-aware `count_tokens` over prompt messages
          (Human / System / Tool messages) plus structural overhead per message.
-       - ``output_tokens`` = model-aware ``count_tokens`` over AI message
+       - `output_tokens` = model-aware `count_tokens` over AI message
          content plus structural overhead per AI message.
-       - ``total_tokens``  = ``input_tokens + output_tokens``.
+       - `total_tokens`  = `input_tokens + output_tokens`.
 
     Args:
         messages: Full message list (prompt + response) for one or more turns.
-        model: Optional model name hint for tokenizer selection. ``None``
-            preserves the default (``cl100k_base``) encoding.
+        model: Optional model name hint for tokenizer selection. `None`
+            preserves the default (`cl100k_base`) encoding.
 
     Returns:
-        Dict with ``input_tokens``, ``output_tokens``, ``total_tokens``.
-        A ``source`` key (``"actual"`` or ``"estimated"``) is included for
+        Dict with `input_tokens`, `output_tokens`, `total_tokens`.
+        A `source` key (`"actual"` or `"estimated"`) is included for
         observability so callers can distinguish the two paths.
     """
     # Path 1: actual usage from provider responses (actual-first).

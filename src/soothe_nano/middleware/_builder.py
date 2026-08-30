@@ -77,8 +77,8 @@ def build_soothe_middleware_stack(
         config: SootheConfig with performance settings.
         policy: PolicyProtocol instance for safety enforcement.
         mcp_registry: Optional MCPRegistry for MCP tool integration.
-        policy_profile_name: Optional override for ``SoothePolicyMiddleware``
-            profile (defaults to ``config.agent.protocols.policy.profile``).
+        policy_profile_name: Optional override for `SoothePolicyMiddleware`
+            profile (defaults to `config.agent.protocols.policy.profile`).
     Returns:
         Tuple of middleware instances in execution order.
     """

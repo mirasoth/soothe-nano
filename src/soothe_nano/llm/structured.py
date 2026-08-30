@@ -1,13 +1,11 @@
 """Structured chat invocation for client-provided JSON Schema.
 
-Ported fully from the former ``soothe_nano.utils.llm.structured``. The sanctioned
-entry point for structured LLM output in Soothe. Walks
-``function_calling → json_schema → json_mode`` at invoke time, caches the working
-method per chat model, and post-validates against the schema.
-
-``BaseChatModel.with_structured_output`` is treated as an internal primitive,
-called only from inside this module. New code should call
-``invoke_structured_chat`` or ``invoke_structured_chat_typed``.
+The sanctioned entry point for structured LLM output. Walks
+`function_calling → json_schema → json_mode` at invoke time, caches the
+working method per chat model, and post-validates against the schema.
+`BaseChatModel.with_structured_output` is an internal primitive used only
+here; callers should use `invoke_structured_chat` /
+`invoke_structured_chat_typed`.
 """
 
 from __future__ import annotations
@@ -204,11 +202,11 @@ async def invoke_structured_chat(
     normalize: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     methods: tuple[str | None, ...] | None = None,
 ) -> dict[str, Any]:
-    """Invoke chat with strict structured output enforced by ``json_schema``.
+    """Invoke chat with strict structured output enforced by `json_schema`.
 
     Args:
-        chat: LangChain chat model (e.g. ``ChatLitellmModel``).
-        messages: Message list for ``ainvoke``.
+        chat: LangChain chat model (e.g. `ChatLitellmModel`).
+        messages: Message list for `ainvoke`.
         json_schema: Client JSON Schema dict.
         schema_name: Optional provider schema name override.
         strict: When True, post-validate with jsonschema after parsing.
@@ -367,7 +365,7 @@ async def invoke_structured_chat_typed(
     normalize: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     methods: tuple[str | None, ...] | None = None,
 ) -> T:
-    """Invoke ``invoke_structured_chat`` and return a typed Pydantic instance."""
+    """Invoke `invoke_structured_chat` and return a typed Pydantic instance."""
     json_schema = schema.model_json_schema()
     result_dict = await invoke_structured_chat(
         chat,

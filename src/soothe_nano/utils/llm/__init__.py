@@ -1,10 +1,4 @@
-"""Back-compat shim: re-exports the unified ``soothe_nano.llm`` module.
-
-The canonical LLM layer is :mod:`soothe_nano.llm` (litellm-backed). This
-package exists only so the old import path
-``from soothe_nano.utils.llm import ...`` keeps working during the migration.
-New code must import from ``soothe_nano.llm`` directly.
-"""
+"""Back-compat shim re-exporting `soothe_nano.llm`. New code should import from `soothe_nano.llm` directly."""
 
 from __future__ import annotations
 

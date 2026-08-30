@@ -23,7 +23,7 @@ def _resolve_plugin_tool_name(tool_like: Any) -> str | None:
 
 
 def _rfc210_metadata_from_tool_like(tool_like: Any) -> dict[str, Any] | None:
-    """Build ``triggers`` / ``system_context`` from ``@tool`` or wrapped BaseTool."""
+    """Build `triggers` / `system_context` from `@tool` or wrapped BaseTool."""
 
     def _extract(target: Any) -> dict[str, Any] | None:
         triggers = getattr(target, "_tool_triggers", None)
@@ -250,15 +250,15 @@ class PluginRegistry:
     def get_tool_metadata(self, tool_name: str) -> dict[str, Any] | None:
         """Return trigger/context metadata for a plugin-registered tool by invoke name.
 
-        Used by ``ToolTriggerRegistry`` / ``ToolContextRegistry``. Resolves metadata
-        from ``@tool``-decorated callables and from LangChain ``BaseTool`` instances
-        (metadata may live on the wrapped ``func`` / ``coroutine``).
+        Used by `ToolTriggerRegistry` / `ToolContextRegistry`. Resolves metadata
+        from `@tool`-decorated callables and from LangChain `BaseTool` instances
+        (metadata may live on the wrapped `func` / `coroutine`).
 
         Args:
-            tool_name: Tool name as exposed to the model (e.g. ``glob``).
+            tool_name: Tool name as exposed to the model (e.g. `glob`).
 
         Returns:
-            Dict with optional ``triggers`` and ``system_context`` keys, or ``None``.
+            Dict with optional `triggers` and `system_context` keys, or `None`.
         """
         for entry in self._plugins.values():
             for tool in entry.tools:
@@ -271,10 +271,10 @@ class PluginRegistry:
         """Return trigger/context metadata for a plugin subagent factory by name.
 
         Args:
-            subagent_name: Subagent name (e.g. ``claude``).
+            subagent_name: Subagent name (e.g. `claude`).
 
         Returns:
-            Dict with optional ``triggers`` and ``system_context`` keys, or ``None``.
+            Dict with optional `triggers` and `system_context` keys, or `None`.
         """
         factory = self.get_subagent_factory(subagent_name)
         if factory is None:

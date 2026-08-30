@@ -236,7 +236,7 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
 
     @staticmethod
     def _pids_from_kill_args(args: str) -> list[int]:
-        """Parse numeric PIDs from ``kill`` argument text (skip signal tokens)."""
+        """Parse numeric PIDs from `kill` argument text (skip signal tokens)."""
         pids: list[int] = []
         tokens = args.split()
         i = 0
@@ -255,10 +255,10 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         return pids
 
     def _protected_kill_in_shell(self, command: str) -> OperationSecurityDecision | None:
-        """Deny ``kill <pid>`` when a protected-kill hook refuses the PID.
+        """Deny `kill <pid>` when a protected-kill hook refuses the PID.
 
-        Closes the gap where agents bypass ``kill_process`` via ``run_command``
-        ``kill 12345`` against the live daemon / self / parent.
+        Closes the gap where agents bypass `kill_process` via `run_command`
+        `kill 12345` against the live daemon / self / parent.
         """
         # Lazy import avoids a cycle: execution.py imports this module.
         from soothe_nano.toolkits.execution import _protected_kill_refusal
@@ -304,15 +304,11 @@ def build_operation_security_request(
     tool_name: str,
     tool_args: dict[str, Any],
 ) -> OperationSecurityRequest:
-    """Build an :class:`OperationSecurityRequest` from a tool name + args.
+    """Build an `OperationSecurityRequest` from a tool name + args.
 
-    Extracted from ``ConfigDrivenPolicy._build_operation_security_request``
-    so external callers (e.g., the soothe tool-approval pipeline, RFC-622 §9b)
-    can build requests without subclassing ``ConfigDrivenPolicy``.
-
-    Uses :func:`is_policy_filesystem_tool` /
-    :func:`extract_filesystem_path_for_policy` from ``soothe_sdk.tools.metadata``
-    to classify the operation kind and extract the target path.
+    Uses `is_policy_filesystem_tool` / `extract_filesystem_path_for_policy`
+    from `soothe_sdk.tools.metadata` to classify the operation kind and
+    extract the target path.
     """
     from soothe_sdk.protocols.operation_security import OperationKind
     from soothe_sdk.tools.metadata import (

@@ -1,4 +1,4 @@
-"""PostgreSQL persistence backend using psycopg (async with connection pooling)."""
+"""PostgreSQL persistence backend with async connection pooling and JSONB storage."""
 
 from __future__ import annotations
 
@@ -13,18 +13,16 @@ _T = TypeVar("_T")
 
 
 class PostgreSQLPersistStore:
-    """AsyncPersistStore implementation using PostgreSQL with JSONB storage.
+    """`AsyncPersistStore` backed by PostgreSQL with JSONB storage.
 
-    Uses psycopg's AsyncConnectionPool for concurrent operations with connection pooling.
+    Uses psycopg's `AsyncConnectionPool` for concurrent operations with
+    namespace isolation and automatic schema initialization. Owned pools
+    are lazily created on first use; shared (process singleton) pools are
+    borrowed from the registry and never closed by this store.
 
-    Features:
-    - Async connection pooling via psycopg_pool.AsyncConnectionPool
-    - JSONB storage with namespace isolation
-    - Automatic table creation with indexes
-    - Async-safe lazy initialization with asyncio.Lock
-    - Concurrent operation support (10 connections by default)
-
-    Async methods with connection pooling matching the PostgreSQL checkpointer pattern.
+    Example:
+        >>> store = PostgreSQLPersistStore(dsn=dsn, namespace="durability")
+        >>> await store.save("thread:abc", {"status": "active"})
     """
 
     def __init__(
@@ -39,11 +37,11 @@ class PostgreSQLPersistStore:
         """Initialize PostgreSQL store.
 
         Args:
-            dsn: PostgreSQL connection string
-            namespace: Namespace for key isolation (e.g., "context", "memory", "durability")
-            pool_size: Connection pool size (default: 10). Use 0 with ``shared_pool`` for
+            dsn: PostgreSQL connection string.
+            namespace: Namespace for key isolation (e.g. "context", "memory", "durability").
+            pool_size: Connection pool size. Use 0 with `shared_pool` for
                 process-wide singleton mode.
-            shared_pool: Externally managed ``AsyncConnectionPool`` (process singleton).
+            shared_pool: Externally managed `AsyncConnectionPool` (process singleton).
             pool_timing: Optional psycopg pool options when creating an owned pool.
         """
         self._dsn = dsn
@@ -180,14 +178,14 @@ class PostgreSQLPersistStore:
         raise RuntimeError(msg)
 
     async def _ensure_pool(self) -> Any:
-        """Lazy pool initialization with automatic table creation (async).
+        """Lazily create the owned pool and initialize schema.
 
         Returns:
-            AsyncConnectionPool instance
+            The `AsyncConnectionPool` instance.
 
         Raises:
-            ImportError: If psycopg[pool] is not installed
-            RuntimeError: If pool initialization fails
+            ImportError: If psycopg[pool] is not installed.
+            RuntimeError: If pool initialization fails.
         """
         if self._pool is not None:
             if not self._schema_initialized:
@@ -263,17 +261,17 @@ class PostgreSQLPersistStore:
             self._pool = None
 
     async def _initialize_schema(self, pool: Any) -> None:
-        """Apply soothe_metadata init script (async)."""
+        """Apply the `soothe_metadata` init script to the pool."""
         from soothe_nano.persistence.db_init import initialize_database
 
         await initialize_database(pool, "soothe_metadata")
 
     async def save(self, key: str, data: Any) -> None:
-        """Persist data under the given key (upsert) (async).
+        """Persist data under the given key (upsert).
 
         Args:
-            key: Storage key
-            data: JSON-serializable data
+            key: Storage key.
+            data: JSON-serializable data.
         """
         adapted_data = self._adapt_data(data)
 
@@ -295,14 +293,14 @@ class PostgreSQLPersistStore:
     def _adapt_data(self, data: Any) -> Any:
         """Adapt data for PostgreSQL JSONB storage.
 
-        psycopg3 handles JSONB automatically, but we use json.dumps with
+        psycopg3 handles JSONB automatically, but this uses `json.dumps` with
         a custom default handler for non-serializable types.
 
         Args:
-            data: Python object to adapt
+            data: Python object to adapt.
 
         Returns:
-            JSON-serializable object or Json wrapper
+            JSON-serializable object or `Json` wrapper.
         """
         # Use Json adapter for proper JSONB handling
         try:
@@ -314,13 +312,13 @@ class PostgreSQLPersistStore:
             return json.dumps(data, default=str)
 
     async def load(self, key: str) -> Any | None:
-        """Load data for the given key (async).
+        """Load data for the given key.
 
         Args:
-            key: Storage key
+            key: Storage key.
 
         Returns:
-            The stored data, or None if not found
+            The stored data, or None if not found.
         """
 
         async def _load_with_pool(pool: Any) -> Any | None:
@@ -354,10 +352,10 @@ class PostgreSQLPersistStore:
         return await self._run_with_pool_recovery("load", _load_with_pool)
 
     async def delete(self, key: str) -> None:
-        """Delete data for the given key (async).
+        """Delete data for the given key.
 
         Args:
-            key: Storage key
+            key: Storage key.
         """
 
         async def _delete_with_pool(pool: Any) -> None:
@@ -371,13 +369,13 @@ class PostgreSQLPersistStore:
         await self._run_with_pool_recovery("delete", _delete_with_pool)
 
     async def list_keys(self, namespace: str | None = None) -> list[str]:
-        """List all keys in the namespace (async).
+        """List all keys in the namespace.
 
         Args:
-            namespace: Optional namespace to list keys from. If None, uses default namespace.
+            namespace: Optional namespace. If None, uses the store's default namespace.
 
         Returns:
-            List of keys in the namespace.
+            Keys in the namespace.
         """
         ns = namespace or self._namespace
 

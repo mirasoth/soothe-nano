@@ -146,15 +146,15 @@ def emit_progress(event: dict[str, Any], logger: logging.Logger) -> None:
 
     Always logs to file first for backend audit trail, then attempts stream emission.
     This is the canonical way for Soothe subagent graph nodes to surface
-    ``soothe.*`` custom events to the TUI / headless renderer.
+    `soothe.*` custom events to the TUI / headless renderer.
 
     Automatically injects step_id from context if available and not already present.
 
     When an intake-only wire bridge is installed, events go only through that sink
-    (avoiding duplicate astream ``custom`` delivery).
+    (avoiding duplicate astream `custom` delivery).
 
     Args:
-        event: Event dict with at minimum a ``type`` key.
+        event: Event dict with at minimum a `type` key.
         logger: Caller's logger instance for logging.
     """
     # Always log to file first for audit trail (compact format)

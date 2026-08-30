@@ -1,4 +1,4 @@
-"""Base class for durability backends using AsyncPersistStore (async methods)."""
+"""Base durability backend: thread lifecycle management on top of `AsyncPersistStore`."""
 
 from __future__ import annotations
 
@@ -12,13 +12,18 @@ from soothe_nano.utils.thread_id import generate_thread_id
 
 
 class BasePersistStoreDurability:
-    """Base implementation of DurabilityProtocol using AsyncPersistStore.
+    """DurabilityProtocol base backed by an `AsyncPersistStore`.
 
-    Provides thread lifecycle management.  State persistence (checkpoints,
-    artifacts) is handled by ``RunArtifactStore``.
-    Subclasses only need to provide an AsyncPersistStore instance.
+    Manages thread lifecycle (create, resume, suspend, archive, list) on top of a
+    key-value persistence store. State persistence (checkpoints, artifacts) is
+    handled by `RunArtifactStore`, not this class. Subclasses supply the store.
 
-    All PersistStore methods are async.
+    Example:
+        >>> store = SQLitePersistStore(namespace="durability")
+        >>> backend = BasePersistStoreDurability(store)
+        >>> info = await backend.create_thread(metadata=ThreadMetadata(...))
+
+    All methods are async.
     """
 
     def __init__(self, persist_store: AsyncPersistStore) -> None:
@@ -40,7 +45,7 @@ class BasePersistStoreDurability:
         Args:
             metadata: Thread metadata.
             thread_id: Optional thread ID. If not provided, a new UUID is generated.
-                       Use this to persist a draft thread with its existing ID.
+                Use this to persist a draft thread with its existing ID.
 
         Returns:
             ThreadInfo for the created thread.
@@ -199,7 +204,7 @@ class BasePersistStoreDurability:
         return results
 
     async def _update_thread_index(self, thread_id: str, action: str = "add") -> None:
-        """Update the thread index for list_threads() (async).
+        """Update the thread index used by `list_threads`.
 
         Args:
             thread_id: Thread ID to add/remove from index.
@@ -216,13 +221,13 @@ class BasePersistStoreDurability:
         await self._store.save(self._thread_index_key, list(thread_ids))
 
     async def _find_threads_by_prefix(self, prefix: str) -> list[ThreadInfo]:
-        """Find threads whose IDs start with the given prefix (async).
+        """Find threads whose IDs start with the given prefix.
 
         Args:
             prefix: Thread ID prefix to search for.
 
         Returns:
-            List of ThreadInfo objects matching the prefix.
+            Matching ThreadInfo objects.
         """
         # Load thread index
         index_data = await self._store.load(self._thread_index_key)

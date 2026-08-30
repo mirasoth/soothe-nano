@@ -1,12 +1,9 @@
-"""High-level ``BaseLLMClient`` for direct (non-agent-graph) LLM callers.
+"""Direct-call LLM client surface for non-agent-graph callers.
 
-A simpler ``completion()`` / ``structured_completion()`` / ``embed()`` /
-``rerank()`` surface for callers that talk to the LLM layer directly — cron
-extraction, image understanding, embed/rerank services — without the
-langchain ``BaseChatModel`` ceremony.
-
-The concrete :class:`LLMClient` delegates to litellm so the direct path and
-the agent-graph path share one provider engine and one credential resolver.
+Provides `completion()` / `structured_completion()` / `embed()` / `rerank()`
+for cron extraction, image understanding, and embed/rerank services without
+the langchain `BaseChatModel` ceremony. `LLMClient` delegates to litellm so
+the direct path and agent-graph path share one provider engine.
 """
 
 from __future__ import annotations
@@ -81,7 +78,7 @@ class LLMClient(BaseLLMClient):
     For agent-graph callers, use :class:`~soothe_nano.llm.provider.ChatLitellmModel`
     via :class:`~soothe_nano.llm.factory.LLMFactory`. This client is for simpler
     direct-call paths (cron, embeddings, rerank, image understanding) where the
-    langchain ``BaseChatModel`` interface isn't needed.
+    langchain `BaseChatModel` interface isn't needed.
     """
 
     def __init__(
@@ -140,7 +137,7 @@ class LLMClient(BaseLLMClient):
     def structured_completion(
         self, messages, response_model, temperature=0.7, max_tokens=None, **kwargs
     ):
-        """Structured completion via litellm ``response_format`` + pydantic parse."""
+        """Structured completion via litellm `response_format` + pydantic parse."""
         import json
 
         schema = response_model.model_json_schema()

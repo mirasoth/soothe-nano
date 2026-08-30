@@ -54,12 +54,12 @@ class ProgressiveToolState(AgentState[Any]):
 
 
 def stash_tool_activation_update(activation: dict[str, Any]) -> None:
-    """Record a pending ``tool_activation`` write for ``aafter_model``."""
+    """Record a pending `tool_activation` write for `aafter_model`."""
     _tool_activation_update.set(snapshot_tool_activation(activation))
 
 
 def pop_tool_activation_update() -> dict[str, set[str]] | None:
-    """Return and clear a pending ``tool_activation`` write, if any."""
+    """Return and clear a pending `tool_activation` write, if any."""
     pending = _tool_activation_update.get()
     _tool_activation_update.set(None)
     return pending
@@ -98,7 +98,7 @@ class ProgressiveToolMiddleware(AgentMiddleware):
         self._catalog = self._registry.descriptors_from_tools(tools)
 
     def full_tools_for_listing(self) -> list[Any]:
-        """Unfiltered tool list for ``<AVAILABLE_TOOLS>`` (before per-hop binding)."""
+        """Unfiltered tool list for `<AVAILABLE_TOOLS>` (before per-hop binding)."""
         return list(self._full_tools)
 
     async def abefore_agent(self, state: dict, runtime: Any) -> dict | None:

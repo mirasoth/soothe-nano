@@ -1,4 +1,4 @@
-"""Emit curated ``soothe.subagent.*`` wire events with truncation."""
+"""Emit curated `soothe.subagent.*` wire events with truncation."""
 
 from __future__ import annotations
 
@@ -14,15 +14,15 @@ from soothe_nano.utils.progress import emit_progress
 
 
 def emit_subagent_wire_event(event: dict[str, Any], logger: logging.Logger) -> None:
-    """Emit allowlisted subagent progress to LangGraph ``custom`` stream.
+    """Emit allowlisted subagent progress to LangGraph `custom` stream.
 
-    Delegates wire allowlisting and clipping to ``soothe_sdk``, then uses
-    ``emit_progress`` so step context and compact logging match core agents.
+    Delegates wire allowlisting and clipping to `soothe_sdk`, then uses
+    `emit_progress` so step context and compact logging match core agents.
 
-    Unknown types are dropped (types must be registered via the subagent ``events`` module).
+    Unknown types are dropped (types must be registered via the subagent `events` module).
 
     Args:
-        event: Dict with ``type`` registered for emission (see ``register_event``).
+        event: Dict with `type` registered for emission (see `register_event`).
         logger: Caller logger for audit trail.
     """
     et = event.get("type", "")

@@ -1,9 +1,4 @@
-"""Output capture utilities for third-party library output redirection.
-
-This module provides context managers to capture stdout/stderr output from
-third-party libraries and convert them to structured progress events instead
-of polluting the console with unstructured messages.
-"""
+"""Context managers to capture stdout/stderr from third-party libraries and convert to structured progress events."""
 
 from __future__ import annotations
 

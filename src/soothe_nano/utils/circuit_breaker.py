@@ -1,15 +1,6 @@
 """Circuit breaker pattern for fail-fast behavior.
 
-The circuit breaker has three states:
-- CLOSED: Normal operation, requests pass through
-- OPEN: Fail-fast mode, requests are rejected immediately
-- HALF_OPEN: Testing if the service has recovered
-
-State transitions:
-- CLOSED -> OPEN: When failure threshold is reached
-- OPEN -> HALF_OPEN: After timeout period expires
-- HALF_OPEN -> CLOSED: If test request succeeds
-- HALF_OPEN -> OPEN: If test request fails
+Three states: CLOSED (normal), OPEN (fail-fast), HALF_OPEN (testing recovery).
 """
 
 import asyncio

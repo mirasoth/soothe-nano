@@ -1,4 +1,4 @@
-"""Budgeted skill-listing formatter (Claude Code parity)."""
+"""Budgeted skill-listing formatter."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from soothe_nano.skills.index import SkillIndexEntry
 
 
 class BudgetTelemetry(TypedDict):
+    """Outcome of a budgeted listing: counts, mode, and char usage."""
+
     included_count: int
     truncated_count: int
     mode: str  # "full" | "truncated" | "names_only"
@@ -45,18 +47,9 @@ def format_skills_within_budget(
 ) -> tuple[str, BudgetTelemetry]:
     """Format skill listing within a character budget.
 
-    Modes:
-      - "full"        — under budget, every entry gets full description
-      - "truncated"   — over budget, non-built-ins share remaining budget;
-                        built-ins always keep full description
-      - "names_only"  — extreme case (per-entry quota < min), non-built-ins
-                        become names-only; built-ins keep full description
-
-    Args:
-        entries: Skill entries to format.
-        budget_chars: Total character budget for the listing.
-        per_entry_cap_chars: Hard per-entry character cap.
-        min_per_entry_chars: Below this threshold, fall back to names-only.
+    Modes: ``full`` (under budget), ``truncated`` (over budget; built-ins keep
+    full descriptions, others share the remainder), ``names_only`` (extreme
+    case; non-built-ins become names only).
 
     Returns:
         Tuple of (formatted_text, telemetry).

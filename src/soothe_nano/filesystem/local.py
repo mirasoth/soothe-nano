@@ -77,7 +77,7 @@ class LocalFilesystem(UnifiedFilesystem):
             virtual_mode: Whether to sandbox paths to workspace.
             max_file_size_mb: Maximum file size in MB.
             backup_dir: Directory for backup files. Relative paths are resolved
-                under ``workspace`` (default ``.soothe/backups``).
+                under `workspace` (default `.soothe/backups`).
         """
         if isinstance(backup_dir, str) and not backup_dir.strip():
             backup_dir = WORKSPACE_BACKUP_DIR
@@ -101,10 +101,10 @@ class LocalFilesystem(UnifiedFilesystem):
 
         Args:
             path: Input path.
-            allow_host_absolute: When ``True``, host-root absolutes outside the
-                workspace (for example ``/Users/...``) resolve to the real path
+            allow_host_absolute: When `True`, host-root absolutes outside the
+                workspace (for example `/Users/...`) resolve to the real path
                 instead of being remapped into the sandbox. Used by read-only
-                operations (``grep``, ``read``).
+                operations (`grep`, `read`).
 
         Returns:
             Resolved Path object.
@@ -198,7 +198,7 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         encoding: str = "utf-8",
     ) -> None:
-        """Write content atomically via temp-file + ``os.replace``."""
+        """Write content atomically via temp-file + `os.replace`."""
         if isinstance(content, str):
             write_atomic(resolved, content, encoding=encoding)
             return
@@ -217,8 +217,8 @@ class LocalFilesystem(UnifiedFilesystem):
     def _check_file_size(self, resolved: Path, path: str) -> None:
         """Guard against reading or writing oversized files.
 
-        Raises ``FilesystemError`` if the file exists and exceeds
-        ``max_file_size_bytes``.
+        Raises `FilesystemError` if the file exists and exceeds
+        `max_file_size_bytes`.
 
         Args:
             resolved: Absolute path to check.
@@ -236,11 +236,11 @@ class LocalFilesystem(UnifiedFilesystem):
                 )
 
     def _backend_path(self, path: str, resolved: Path) -> str:
-        """Path form expected by ``FilesystemBackend`` for this mode."""
+        """Path form expected by `FilesystemBackend` for this mode."""
         return path if self.virtual_mode else str(resolved)
 
     def _map_backend_error(self, error: str | None, path: str) -> None:
-        """Raise nano typed exceptions from a deepagents ``*.error`` string."""
+        """Raise nano typed exceptions from a deepagents `*.error` string."""
         if not error:
             return
         lowered = error.lower()
@@ -404,7 +404,7 @@ class LocalFilesystem(UnifiedFilesystem):
         encoding: str = "utf-8",
         backup: bool = False,
     ) -> WriteResult:
-        """Write content to file via deepagents ``FilesystemBackend`` (text) or atomic bytes."""
+        """Write content to file via deepagents `FilesystemBackend` (text) or atomic bytes."""
         resolved = self._resolve_path(path)
 
         try:
@@ -501,7 +501,7 @@ class LocalFilesystem(UnifiedFilesystem):
         replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
-        """Replace old_string with new_string via deepagents ``FilesystemBackend``."""
+        """Replace old_string with new_string via deepagents `FilesystemBackend`."""
         resolved = self._resolve_path(path)
         if not resolved.exists():
             raise PathNotFoundError(f"File not found: {path}", path=path)
@@ -531,7 +531,7 @@ class LocalFilesystem(UnifiedFilesystem):
         replace_all: bool = False,
         backup: bool = True,
     ) -> EditResult:
-        """Async replace via deepagents ``FilesystemBackend``."""
+        """Async replace via deepagents `FilesystemBackend`."""
         resolved = self._resolve_path(path)
         if not resolved.exists():
             raise PathNotFoundError(f"File not found: {path}", path=path)
@@ -783,11 +783,11 @@ class LocalFilesystem(UnifiedFilesystem):
         """Apply unified diff patch to file with atomic write.
 
         Reads the current content, applies the patch in-memory, and writes
-        the result atomically via temp file + ``os.replace``. A version
+        the result atomically via temp file + `os.replace`. A version
         stamp is captured before reading and verified before writing; if
         an external writer modified the file, the operation retries once.
 
-        Falls back to the ``patch`` command-line tool for diffs that
+        Falls back to the `patch` command-line tool for diffs that
         cannot be applied via the in-memory approach.
         """
         resolved = self._resolve_path(path)
@@ -889,8 +889,8 @@ class LocalFilesystem(UnifiedFilesystem):
     ) -> EditResult:
         """Async apply unified diff patch to file with atomic write.
 
-        Delegates to the sync ``apply_diff`` which performs in-memory
-        patching followed by an atomic temp-file + ``os.replace`` write.
+        Delegates to the sync `apply_diff` which performs in-memory
+        patching followed by an atomic temp-file + `os.replace` write.
         Optimistic concurrency (version stamp) is used to detect external
         writers and retry once.
         """
@@ -1036,7 +1036,7 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         backup: bool = True,
     ) -> DeleteResult:
-        """Delete file via deepagents ``FilesystemBackend`` (file-only semantics)."""
+        """Delete file via deepagents `FilesystemBackend` (file-only semantics)."""
         resolved = self._resolve_path(path)
 
         if not resolved.exists():
@@ -1058,7 +1058,7 @@ class LocalFilesystem(UnifiedFilesystem):
         *,
         backup: bool = True,
     ) -> DeleteResult:
-        """Async delete file via deepagents ``FilesystemBackend``."""
+        """Async delete file via deepagents `FilesystemBackend`."""
         resolved = self._resolve_path(path)
 
         if not resolved.exists():
@@ -1171,8 +1171,8 @@ class LocalFilesystem(UnifiedFilesystem):
     ) -> GlobResult:
         """Glob pattern matching (files and directories).
 
-        Trailing ``/`` means directories only. Uses ``fd`` when available, otherwise
-        ``os.scandir`` with pattern depth bounding.
+        Trailing `/` means directories only. Uses `fd` when available, otherwise
+        `os.scandir` with pattern depth bounding.
         """
         if pattern.startswith("/"):
             pattern = pattern.lstrip("/")
@@ -1258,7 +1258,7 @@ class LocalFilesystem(UnifiedFilesystem):
     ) -> GrepResult | list[str] | str:
         """Search for pattern in files via deepagents public search API.
 
-        Uses ``FilesystemBackend.grep`` (ripgrep + Python fallback). Paths in
+        Uses `FilesystemBackend.grep` (ripgrep + Python fallback). Paths in
         results are normalized to the same workspace-relative / absolute form
         as other LocalFilesystem operations.
 
@@ -1266,7 +1266,7 @@ class LocalFilesystem(UnifiedFilesystem):
             pattern: Literal text pattern to search for.
             path: Directory or file to search.
             glob: Optional glob pattern for file filtering.
-            output_mode: ``files_with_matches``, ``count``, or ``content``.
+            output_mode: `files_with_matches`, `count`, or `content`.
 
         Returns:
             GrepResult, or simplified list[str] / str for files_with_matches / count modes.
@@ -1339,7 +1339,7 @@ class LocalFilesystem(UnifiedFilesystem):
         glob: str | None = None,
         output_mode: str = "files_with_matches",
     ) -> GrepResult | list[str] | str:
-        """Async search for pattern in files via ``ag`` or ``rg``."""
+        """Async search for pattern in files via `ag` or `rg`."""
         return await asyncio.to_thread(
             self.grep,
             pattern,

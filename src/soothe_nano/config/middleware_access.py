@@ -6,7 +6,7 @@ from typing import Any
 
 
 def agent_middleware_config(config: Any) -> Any:
-    """Return ``agent.middleware`` from strict split-config models."""
+    """Return `agent.middleware` from strict split-config models."""
     agent = getattr(config, "agent", None)
     if agent is None:
         raise AttributeError("config has no agent")

@@ -1,12 +1,8 @@
-"""Token usage extraction and Langfuse-friendly ``llm_output`` enrichment.
+"""Token usage extraction and Langfuse-friendly `llm_output` enrichment.
 
-Ported fully from the former ``soothe_nano.utils.llm.observability``. The old
-``SootheTokenUsageChatModel`` wrapper is removed — ``ChatLitellmModel`` surfaces
-token usage directly via ``ChatResult.llm_output`` (litellm populates
-``response.usage``), which the handlers below read.
-
-The ``SootheTokenUsageChatModel`` name is kept as a back-compat alias for
-``ChatLitellmModel`` so type-checks in external consumers don't break.
+`ChatLitellmModel` surfaces token usage via `ChatResult.llm_output`; the
+handlers here read it. `SootheTokenUsageChatModel` is kept as a back-compat
+alias for `ChatLitellmModel`.
 """
 
 from __future__ import annotations
@@ -50,11 +46,11 @@ def _coerce_int(value: Any) -> int | None:
 
 
 def extract_token_counts_from_llm_result(response: LLMResult) -> dict[str, int] | None:
-    """Best-effort token totals from ``LLMResult`` (``llm_output`` and chat generations).
+    """Best-effort token totals from `LLMResult` (`llm_output` and chat generations).
 
     Returns:
-        Dict with ``input_tokens``, ``output_tokens``, and ``total_tokens`` when any
-        counts are found; otherwise ``None``.
+        Dict with `input_tokens`, `output_tokens`, and `total_tokens` when any
+        counts are found; otherwise `None`.
     """
     inp: int | None = None
     out: int | None = None
@@ -116,10 +112,10 @@ def extract_token_counts_from_llm_result(response: LLMResult) -> dict[str, int] 
 
 
 def ensure_openai_style_token_usage_on_llm_result(response: LLMResult) -> None:
-    """Mutate ``response.llm_output`` so Langfuse's LangChain parser sees ``token_usage``.
+    """Mutate `response.llm_output` so Langfuse's LangChain parser sees `token_usage`.
 
-    Langfuse reads ``LLMResult.llm_output['token_usage']`` (and ``usage``) before message
-    metadata. Some providers only populate ``AIMessage.usage_metadata``; copying those
+    Langfuse reads `LLMResult.llm_output['token_usage']` (and `usage`) before message
+    metadata. Some providers only populate `AIMessage.usage_metadata`; copying those
     counts here lets generation usage flow into Langfuse without duplicate API calls.
     """
     llm_out = response.llm_output
@@ -145,7 +141,7 @@ def ensure_openai_style_token_usage_on_llm_result(response: LLMResult) -> None:
 
 
 class SootheLLMTokenUsageCallbackHandler(BaseCallbackHandler):
-    """``on_llm_end``: enrich ``llm_output`` for Langfuse and emit structured debug logs."""
+    """`on_llm_end`: enrich `llm_output` for Langfuse and emit structured debug logs."""
 
     run_inline: bool = True
 
@@ -194,7 +190,7 @@ def get_llm_token_usage_callback_handler() -> SootheLLMTokenUsageCallbackHandler
 
 
 def merge_token_usage_callbacks(config: dict[str, Any] | None) -> dict[str, Any]:
-    """Merge the shared token-usage callback into a LangChain ``RunnableConfig`` dict.
+    """Merge the shared token-usage callback into a LangChain `RunnableConfig` dict.
 
     Structured-output callers attach this handler via RunnableConfig so planner
     and intent calls still fold usage into scoped token targets when active.

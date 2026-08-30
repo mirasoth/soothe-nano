@@ -1,3 +1,5 @@
+"""Render each page of a PDF to a PNG, downscaling to a max dimension."""
+
 import os
 import sys
 

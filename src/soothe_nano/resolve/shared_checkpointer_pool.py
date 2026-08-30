@@ -1,7 +1,7 @@
 """Process-wide singleton LangGraph checkpointer pool (thread_pool / daemon).
 
-Each ``SootheRunner`` in the same process reuses this pool instead of creating
-``max_size`` connections per request (which exhausts PgBouncer under concurrency).
+Each `SootheRunner` in the same process reuses this pool instead of creating
+`max_size` connections per request (which exhausts PgBouncer under concurrency).
 """
 
 from __future__ import annotations
@@ -42,11 +42,11 @@ def _checkpointer_setup_lock_key() -> int:
 
 
 class SharedCheckpointerPool:
-    """Singleton ``AsyncConnectionPool`` for LangGraph ``AsyncPostgresSaver``.
+    """Singleton `AsyncConnectionPool` for LangGraph `AsyncPostgresSaver`.
 
-    ``_REGISTRY_CLS`` points at the pool-registry class whose singleton this
-    pool binds to. Host packages subclass and override ``_REGISTRY_CLS`` to
-    their own registry (which may open the host-owned ``checkpoints`` pool).
+    `_REGISTRY_CLS` points at the pool-registry class whose singleton this
+    pool binds to. Host packages subclass and override `_REGISTRY_CLS` to
+    their own registry (which may open the host-owned `checkpoints` pool).
     """
 
     _REGISTRY_CLS = PostgresPoolRegistry
@@ -123,15 +123,15 @@ class SharedCheckpointerPool:
         pool: AsyncConnectionPool,
         setup: Callable[[], Awaitable[None]],
     ) -> None:
-        """Run LangGraph checkpointer ``setup()`` once under a PostgreSQL advisory lock.
+        """Run LangGraph checkpointer `setup()` once under a PostgreSQL advisory lock.
 
-        Concurrent ``SootheRunner`` instances share one pool and may call setup in
+        Concurrent `SootheRunner` instances share one pool and may call setup in
         parallel (lazy CoreAgent materialization, thread-pool workers). Without
-        serialization, PostgreSQL raises ``UniqueViolation`` on checkpoint types.
+        serialization, PostgreSQL raises `UniqueViolation` on checkpoint types.
 
         Args:
             pool: Open checkpointer connection pool.
-            setup: Async callable that runs ``AsyncPostgresSaver.setup()``.
+            setup: Async callable that runs `AsyncPostgresSaver.setup()`.
         """
 
         global _checkpointer_setup_done, _setup_waiter

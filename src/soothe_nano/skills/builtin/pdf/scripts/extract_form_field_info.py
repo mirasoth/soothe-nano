@@ -1,3 +1,5 @@
+"""Extract AcroForm field metadata (type, page, rect) from a fillable PDF."""
+
 import json
 import sys
 

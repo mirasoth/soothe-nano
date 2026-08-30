@@ -1,31 +1,7 @@
 """Unified text preview utility for consistent truncation across the codebase.
 
-Provides char-based, line-based, and full-output preview modes with configurable
-markers.  Replace all hard-coded ``text[:N]`` slicing, ``%.Ns`` printf-style
-formatting, and ad-hoc truncation functions with calls to this module.
-
-Usage:
-    >>> from soothe_nano.utils.text_preview import preview, preview_first, log_preview
-
-    # Char-based (most common for logging)
-    >>> preview_first("A very long string", chars=10)
-    'A very lo[...8 chars abbr...]'
-
-    # First + last chars
-    >>> preview("Hello world!", mode="chars", first=5, last=3)
-    'Hello[...4 chars abbr...]d!'
-
-    # Line-based (marker on its own line)
-    >>> preview("Line1\\nLine2\\nLine3\\nLine4", mode="lines", first=1, last=1)
-    'Line1\\n[...2 lines abbr...]\\nLine4'
-
-    # Full output (no truncation)
-    >>> preview("Any text", mode="full")
-    'Any text'
-
-    # Logger-optimized shorthand
-    >>> log_preview("Debug output", chars=5)
-    'Debug...'
+Provides char-based, line-based, and full-output preview modes with
+configurable markers. Replaces ad-hoc `text[:N]` slicing and `%.Ns` formatting.
 """
 
 from __future__ import annotations
@@ -45,8 +21,8 @@ DEFAULT_PREVIEW_LINES: int = 5
 DEFAULT_MARKER_TEMPLATE: str = "[...{count} {unit} abbr...]"
 """Template for auto-generated truncation markers.
 
-Available variables: ``{count}`` (number of omitted units) and ``{unit}``
-(``"chars"`` or ``"lines"``).
+Available variables: `{count}` (number of omitted units) and `{unit}`
+(`"chars"` or `"lines"`).
 """
 
 # ---------------------------------------------------------------------------
@@ -61,8 +37,8 @@ def _build_marker(count: int, unit: str, marker: str | None) -> str:
 
     Args:
         count: Number of omitted chars/lines.
-        unit: ``"chars"`` or ``"lines"``.
-        marker: Custom marker.  ``None`` uses the default template.
+        unit: `"chars"` or `"lines"`.
+        marker: Custom marker.  `None` uses the default template.
 
     Returns:
         Marker string.
@@ -90,16 +66,16 @@ def preview(
     Args:
         text: Input text to preview.
         mode: Preview mode:
-            - ``"chars"``: Character-based truncation (default).
-            - ``"lines"``: Line-based truncation.
-            - ``"full"``: No truncation (return as-is).
+            - `"chars"`: Character-based truncation (default).
+            - `"lines"`: Line-based truncation.
+            - `"full"`: No truncation (return as-is).
         first: First N chars/lines to include.  Defaults to 200 (chars) or
             5 (lines).
-        last: Last N chars/lines to include.  When ``None``, only the
+        last: Last N chars/lines to include.  When `None`, only the
             *first* portion is shown.  When set, both *first* and *last*
             are shown with a marker in between.
-        marker: Custom truncation marker.  ``None`` uses the default
-            ``"[...N chars/lines abbr...]"``.  Set to ``""`` to suppress.
+        marker: Custom truncation marker.  `None` uses the default
+            `"[...N chars/lines abbr...]"`.  Set to `""` to suppress.
 
     Returns:
         Previewed text with optional truncation marker.
@@ -117,7 +93,7 @@ def preview(
     Note:
         In line mode, the truncation marker appears on its own single line
         between the first and last sections, formatted as:
-        ``first_lines\\n[...N lines abbr...]\\nlast_lines``
+        `first_lines\\n[...N lines abbr...]\\nlast_lines`
     """
     if mode == "full" or not text:
         return text
@@ -159,7 +135,7 @@ def preview_lines(
     Args:
         text: Input text.
         first: Number of leading lines.
-        last: Number of trailing lines.  ``0`` means no trailing lines.
+        last: Number of trailing lines.  `0` means no trailing lines.
 
     Returns:
         Previewed text with default marker if truncated.
@@ -168,17 +144,17 @@ def preview_lines(
 
 
 def log_preview(text: str, chars: int = DEFAULT_PREVIEW_CHARS) -> str:
-    """Logger-optimized preview with a minimal ``"..."`` marker.
+    """Logger-optimized preview with a minimal `"..."` marker.
 
-    Intended for ``logger.debug()`` and ``logger.info()`` calls where the
-    default ``[...N chars abbr...]`` marker is too verbose.
+    Intended for `logger.debug()` and `logger.info()` calls where the
+    default `[...N chars abbr...]` marker is too verbose.
 
     Args:
         text: Input text.
         chars: Maximum number of characters.
 
     Returns:
-        Previewed text with ``"..."`` marker if truncated.
+        Previewed text with `"..."` marker if truncated.
 
     Examples:
         >>> log_preview("Debug output here", chars=5)
@@ -203,8 +179,8 @@ def goal_description_for_log(
     """Return a log-safe goal description that omits extracted attachment bodies.
 
     Preserves the user ask and light context metadata (for example
-    ``Attached files: …``). When an extracted-attachment section is present,
-    everything from that marker onward is dropped so ``soothe.log`` stays
+    `Attached files: …`). When an extracted-attachment section is present,
+    everything from that marker onward is dropped so `soothe.log` stays
     readable.
 
     The stored goal description is unchanged; this helper is for logging only.

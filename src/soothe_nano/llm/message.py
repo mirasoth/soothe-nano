@@ -1,13 +1,9 @@
-"""Pydantic message model for non-langchain LLM callers.
+"""Pydantic message models for direct (non-langchain) LLM callers.
 
-Langchain ``BaseMessage`` types (``AIMessage``, ``HumanMessage``, ...) remain
-canonical across the agent graph and the ``ChatLitellmModel`` adapter. This
-module provides a pydantic message abstraction for callers that talk to the
-LLM layer directly (cron extraction, image understanding, embed/rerank) without
-the langchain ``BaseChatModel`` ceremony.
-
-:func:`lc_to_litellm_messages` / :func:`lc_from_litellm_message` bridge between
-the two at the provider boundary.
+Provides a pydantic message abstraction for cron extraction, image
+understanding, and embed/rerank services. `lc_to_litellm_messages` /
+`lc_from_litellm_message` bridge between langchain `BaseMessage` and these
+models at the provider boundary.
 """
 
 from __future__ import annotations
@@ -134,12 +130,12 @@ BasePydanticMessage = UserMessage | SystemMessage | AssistantMessage
 
 
 def _normalize_tool_calls_entry(tcs: Any) -> list[dict[str, Any]]:
-    """Coerce a raw ``tool_calls`` list to OpenAI/litellm shape, dropping malformed entries.
+    """Coerce a raw `tool_calls` list to OpenAI/litellm shape, dropping malformed entries.
 
-    Each entry must carry a non-empty ``function.name``: providers reject
-    ``tool_calls[i].function missing required field "name"`` with a 400
-    ``invalid_request_error`` that is not retriable. Malformed entries — a
-    missing or empty ``name`` — are dropped rather than emitted, so the
+    Each entry must carry a non-empty `function.name`: providers reject
+    `tool_calls[i].function missing required field "name"` with a 400
+    `invalid_request_error` that is not retriable. Malformed entries — a
+    missing or empty `name` — are dropped rather than emitted, so the
     request never reaches the provider in a shape it would reject.
     """
     if not tcs:
@@ -176,21 +172,21 @@ def _normalize_tool_calls_entry(tcs: Any) -> list[dict[str, Any]]:
 
 
 def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
-    """Convert langchain messages to the ``[{role, content}]`` dict list litellm expects.
+    """Convert langchain messages to the `[{role, content}]` dict list litellm expects.
 
-    Preserves ``tool_calls`` and ``tool_call_id`` (for ``ToolMessage``) so the
-    litellm ``messages`` payload carries the full agent-turn context.
+    Preserves `tool_calls` and `tool_call_id` (for `ToolMessage`) so the
+    litellm `messages` payload carries the full agent-turn context.
 
-    Also accepts plain ``{"role", "content"}`` dicts: callers like the planner
-    engine build message lists directly as dicts rather than ``BaseMessage``
+    Also accepts plain `{"role", "content"}` dicts: callers like the planner
+    engine build message lists directly as dicts rather than `BaseMessage`
     objects, and LangChain's structured-output runnable passes them through to
-    ``_agenerate`` uncoerced. Without this dict path the converter raised
-    ``AttributeError: 'dict' object has no attribute 'type'`` (deployed
-    ``soothe_nano.subagents.plan.engine`` structured-output draft).
+    `_agenerate` uncoerced. Without this dict path the converter raised
+    `AttributeError: 'dict' object has no attribute 'type'` (deployed
+    `soothe_nano.subagents.plan.engine` structured-output draft).
 
-    Malformed ``tool_calls`` entries (a missing or empty ``function.name``) are
-    dropped: providers return a non-retriable 400 ``invalid_request_error`` for
-    ``tool_calls[i].function missing required field "name"``. Dropping the bad
+    Malformed `tool_calls` entries (a missing or empty `function.name`) are
+    dropped: providers return a non-retriable 400 `invalid_request_error` for
+    `tool_calls[i].function missing required field "name"`. Dropping the bad
     entry keeps a long resumed thread runnable instead of failing the whole
     request on one corrupt historical assistant turn.
     """
@@ -242,10 +238,10 @@ def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
 
 
 def lc_from_litellm_message(message: Any) -> AIMessage:
-    """Build a langchain ``AIMessage`` from a litellm/OpenAI chat-completion message.
+    """Build a langchain `AIMessage` from a litellm/OpenAI chat-completion message.
 
-    Maps native ``tool_calls`` (``Function(name, arguments)``) to the langchain
-    ``tool_calls`` list-of-dicts shape the agent graph and executor read.
+    Maps native `tool_calls` (`Function(name, arguments)`) to the langchain
+    `tool_calls` list-of-dicts shape the agent graph and executor read.
     """
     content = getattr(message, "content", "") or ""
     tcs = getattr(message, "tool_calls", None) or []

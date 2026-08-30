@@ -1,4 +1,4 @@
-"""DurabilityProtocol implementation using SQLite backend."""
+"""SQLite durability backend: thread lifecycle backed by `SQLitePersistStore`."""
 
 from __future__ import annotations
 
@@ -12,9 +12,10 @@ if TYPE_CHECKING:
 
 
 class SQLiteDurability(BasePersistStoreDurability):
-    """Durability protocol implementation backed by SQLite.
+    """DurabilityProtocol backed by SQLite via `SQLitePersistStore`.
 
-    Wraps SQLitePersistStore via the BasePersistStoreDurability composition pattern.
+    Example:
+        >>> backend = SQLiteDurability(db_path="~/.soothe/metadata.db")
     """
 
     def __init__(
@@ -25,9 +26,10 @@ class SQLiteDurability(BasePersistStoreDurability):
         """Initialize SQLite durability backend.
 
         Args:
-            persist_store: Optional AsyncPersistStore instance. If None, creates SQLitePersistStore.
+            persist_store: Optional AsyncPersistStore. If None, a `SQLitePersistStore`
+                is created for `db_path`.
             db_path: Database file path. Used only when persist_store is None.
-                Defaults to metadata.db for ThreadInfo storage.
+                Defaults to `metadata.db` for ThreadInfo storage.
         """
         if persist_store is None:
             from soothe_sdk.paths import resolve_metadata_db_path

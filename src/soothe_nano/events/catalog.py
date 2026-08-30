@@ -1,10 +1,4 @@
-"""Core events for the Soothe protocol (nano-owned models).
-
-Event metadata types (``EventPriority`` / ``EventMeta`` / ``EventRegistry``),
-the shared ``REGISTRY`` singleton, and ``register_event`` are owned by
-:mod:`soothe_sdk.core.registry`. nano defines its protocol event models here
-and registers them into that shared registry at import time.
-"""
+"""Nano-owned Soothe protocol event models, registered into the shared sdk registry at import time."""
 
 from __future__ import annotations
 
@@ -26,7 +20,7 @@ from soothe_sdk.core.registry import (
 from soothe_sdk.core.verbosity import VerbosityTier
 
 StreamChunk = tuple[tuple[str, ...], str, Any]
-"""Deepagents-canonical stream chunk: ``(namespace, mode, data)``."""
+"""Deepagents-canonical stream chunk: `(namespace, mode, data)`."""
 
 
 def custom_event(data: dict[str, Any]) -> StreamChunk:

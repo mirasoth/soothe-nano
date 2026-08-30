@@ -32,7 +32,7 @@ class SkillIndexEntry:
     name: str
     description: str
     tags: str
-    source: str  # "user"
+    source: str  # "builtin" | "agents" | "project" | "user"
     path: str
     mtime: float
     paths: tuple[str, ...] | None = None  # conditional activation patterns
@@ -42,12 +42,12 @@ class SkillIndexEntry:
 
 @dataclass
 class SkillIndex:
-    """Mtime-aware skill index that avoids re-parsing unchanged SKILL.md files.
+    """Mtime-aware skill index; re-parses SKILL.md only when mtime changes.
 
-    The index scans community, built-in, host-registered, and user skill directories.
-    When a skill name appears in multiple roots, the later root wins
+    Scans community, built-in, host-registered, and user skill directories.
+    On name clashes across roots, the later root wins
     (``~/.soothe/skills`` > host builtins > nano builtins > ``~/.agents/skills``).
-    Workspace/project skills are resolved by the loop at runtime.
+    Workspace/project skills are resolved by the loop at runtime, not here.
     """
 
     _entries: dict[str, SkillIndexEntry] = field(default_factory=dict)

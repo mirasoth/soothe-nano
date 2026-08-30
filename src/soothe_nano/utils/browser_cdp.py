@@ -3,9 +3,9 @@
 Provides functions to discover and clean up stale soothe-owned
 Chrome processes that would block new launches via SingletonLock.
 
-Process discovery is cross-platform: it prefers ``psutil`` (no shell,
+Process discovery is cross-platform: it prefers `psutil` (no shell,
 works identically on Linux and macOS) and falls back to a
-platform-aware ``ps`` invocation via :mod:`subprocess`.
+platform-aware `ps` invocation via :mod:`subprocess`.
 """
 
 from __future__ import annotations
@@ -54,11 +54,11 @@ _CHROME_EXE_NAMES = frozenset(
 def _exe_name_is_chrome_like(exe_name: str) -> bool:
     """Return True if an executable basename is a known Chrome/Electron name.
 
-    ``exe_name`` is matched case-insensitively against
-    :data:`_CHROME_EXE_NAMES`. A bare ``chrome`` / ``electron`` token
+    `exe_name` is matched case-insensitively against
+    :data:`_CHROME_EXE_NAMES`. A bare `chrome` / `electron` token
     embedded as a *word* in the name also counts so that macOS
-    app-bundle names like ``Google Chrome Helper (Renderer)`` match,
-    without false-matching ``edge`` inside ``knowledge-agent``.
+    app-bundle names like `Google Chrome Helper (Renderer)` match,
+    without false-matching `edge` inside `knowledge-agent`.
     """
     if not exe_name:
         return False
@@ -79,10 +79,10 @@ def _exe_name_is_chrome_like(exe_name: str) -> bool:
 def _extract_exe_path_from_args(args: str) -> str:
     """Extract the executable path from a ps cmdline string.
 
-    ``ps`` output is ``"<pid> <exe-and-flags>"`` after the PID is
+    `ps` output is `"<pid> <exe-and-flags>"` after the PID is
     stripped. The executable may contain spaces (macOS app bundles),
     so we accumulate leading tokens until the first token that starts
-    with ``-`` (a flag). Returns the joined executable path, or ``""``.
+    with `-` (a flag). Returns the joined executable path, or `""`.
     """
     tokens = args.split()
     exe_tokens: list[str] = []
@@ -97,7 +97,7 @@ def _is_chrome_like_process(proc_info: dict[str, str]) -> bool:
     """Return True if the process looks like Chrome/Electron.
 
     A process is relevant if it was launched with
-    ``--remote-debugging-port`` AND its executable name matches a known
+    `--remote-debugging-port` AND its executable name matches a known
     Chrome/Chromium/Electron/Edge/Brave basename. This filters out
     unrelated processes that happen to pass the debugging flag while
     keeping Electron apps that embed CDP.
@@ -112,7 +112,7 @@ def _is_chrome_like_process(proc_info: dict[str, str]) -> bool:
 def _list_chrome_processes_psutil() -> list[dict[str, str]] | None:
     """List Chrome processes via psutil.
 
-    Returns ``None`` if psutil is unavailable, so the caller can fall
+    Returns `None` if psutil is unavailable, so the caller can fall
     back to subprocess. Uses cmdline reconstruction which is portable
     across Linux (/proc) and macOS (libproc).
     """
@@ -152,12 +152,12 @@ def _list_chrome_processes_psutil() -> list[dict[str, str]] | None:
 
 
 def _list_chrome_processes_subprocess() -> list[dict[str, str]]:
-    """List Chrome processes via a platform-aware ``ps`` invocation.
+    """List Chrome processes via a platform-aware `ps` invocation.
 
-    Uses ``ps -ax -o pid=,args=`` on macOS (BSD ps) and ``ps -e -o
-    pid=,args=`` on Linux (procps). Resolves ``ps`` via ``shutil.which``
-    rather than hard-coding ``/bin/ps`` so it works on systems where ps
-    lives in ``/usr/bin/ps``.
+    Uses `ps -ax -o pid=,args=` on macOS (BSD ps) and `ps -e -o
+    pid=,args=` on Linux (procps). Resolves `ps` via `shutil.which`
+    rather than hard-coding `/bin/ps` so it works on systems where ps
+    lives in `/usr/bin/ps`.
     """
     processes: list[dict[str, str]] = []
     import shutil
@@ -211,12 +211,12 @@ def _list_chrome_processes_subprocess() -> list[dict[str, str]]:
 def _list_chrome_processes() -> list[dict[str, str]]:
     """List Chrome/Electron processes with PID, args, and metadata.
 
-    Tries the platform-aware ``ps`` subprocess first (yields full
-    argv including ``--remote-debugging-port`` / ``--user-data-dir``
-    on both Linux and macOS), then falls back to ``psutil`` which
-    works without a shell but may return empty ``cmdline`` for
-    sandboxed processes on macOS. Returns dicts with keys: ``pid``,
-    ``args``, ``exe_name``, ``user_data_dir``, ``debug_port``.
+    Tries the platform-aware `ps` subprocess first (yields full
+    argv including `--remote-debugging-port` / `--user-data-dir`
+    on both Linux and macOS), then falls back to `psutil` which
+    works without a shell but may return empty `cmdline` for
+    sandboxed processes on macOS. Returns dicts with keys: `pid`,
+    `args`, `exe_name`, `user_data_dir`, `debug_port`.
     """
     ps_result = _list_chrome_processes_subprocess()
     if ps_result:
@@ -247,7 +247,7 @@ def cleanup_stale_chrome(user_data_dir: str) -> int:
     """Kill stale Chrome processes that are using a specific user-data-dir.
 
     This prevents SingletonLock conflicts when launching a new browser session.
-    Only kills processes whose ``--user-data-dir`` matches the given path.
+    Only kills processes whose `--user-data-dir` matches the given path.
 
     Args:
         user_data_dir: The soothe browser profile directory.
@@ -278,9 +278,9 @@ def cleanup_stale_chrome(user_data_dir: str) -> int:
 
 
 def _pid_is_alive(pid: int) -> bool:
-    """Return True if ``pid`` refers to a running process.
+    """Return True if `pid` refers to a running process.
 
-    Uses ``os.kill(pid, 0)`` for a zero-dependency liveness check that
+    Uses `os.kill(pid, 0)` for a zero-dependency liveness check that
     works on both Linux and macOS.
     """
     try:
@@ -297,8 +297,8 @@ def _pid_is_alive(pid: int) -> bool:
 def _remove_stale_singleton_lock(user_data_dir: str) -> None:
     """Remove the SingletonLock symlink if it belongs to a dead process.
 
-    Chromium's ``SingletonLock`` is a symlink whose target is
-    ``<hostname>-<pid>``. Only remove it when that owning PID is no
+    Chromium's `SingletonLock` is a symlink whose target is
+    `<hostname>-<pid>`. Only remove it when that owning PID is no
     longer alive; otherwise unlinking would corrupt a live session
     on multi-user macOS/Linux hosts.
     """
@@ -328,8 +328,8 @@ def _remove_stale_singleton_lock(user_data_dir: str) -> None:
 def _parse_singleton_owner_pid(symlink_target: str) -> int | None:
     """Extract the owning PID from a Chromium SingletonLock symlink target.
 
-    Chromium writes the target as ``<hostname>-<pid>``. This extracts
-    the trailing integer PID. Returns ``None`` if no PID can be parsed
+    Chromium writes the target as `<hostname>-<pid>`. This extracts
+    the trailing integer PID. Returns `None` if no PID can be parsed
     (in which case the caller should NOT assume the lock is stale).
     """
     # Hostnames may contain hyphens, so match the final hyphen-delimited

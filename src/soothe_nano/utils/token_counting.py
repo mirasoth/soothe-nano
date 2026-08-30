@@ -1,13 +1,9 @@
-"""Token counting utilities.
+"""Token counting utilities with model-aware tokenizer selection.
 
-This module provides utilities for counting tokens in text.
-
-IG-761: model-aware tokenizer selection replaces the former hardcoded
-``cl100k_base``. ``count_tokens`` accepts an optional ``model`` hint and
-selects the encoding via ``tiktoken.encoding_for_model`` for OpenAI models,
-falls back to ``cl100k_base`` (a documented approximation) for Claude /
-Gemini / local models whose native tokenizers are not in tiktoken, and uses
-``len // 4`` only behind a genuine import failure.
+`count_tokens` accepts an optional `model` hint and selects the encoding via
+`tiktoken.encoding_for_model` for OpenAI models, falls back to `cl100k_base`
+for Claude/Gemini/local models whose native tokenizers aren't in tiktoken,
+and uses `len // 4` only behind a genuine import failure.
 """
 
 from __future__ import annotations
@@ -45,12 +41,12 @@ def estimate_content_chars(content: Any) -> int:
 def _get_encoding_for_model(model: str | None) -> Any:
     """Return a cached tiktoken encoding for the given model hint.
 
-    Selection order (IG-761):
-    1. ``tiktoken.encoding_for_model(model)`` for OpenAI-family models
+    Selection order:
+    1. `tiktoken.encoding_for_model(model)` for OpenAI-family models
        (gpt-4*, gpt-3.5-turbo, o1*, etc.).
-    2. ``cl100k_base`` as a documented approximation for Claude / Gemini /
+    2. `cl100k_base` as a documented approximation for Claude / Gemini /
        local models whose native tokenizers are not available via tiktoken.
-    3. ``cl100k_base`` when no model hint is provided (preserves the prior
+    3. `cl100k_base` when no model hint is provided (preserves the prior
        default behavior).
     """
     import tiktoken
@@ -83,18 +79,18 @@ def count_tokens(
 ) -> int:
     """Count tokens using offline tokenizers.
 
-    Priority (IG-761):
+    Priority:
     1. tiktoken with model-aware encoding selection (most accurate)
     2. Estimation (len // 4) as fallback - zero dependency
 
     Args:
         text: Text to count tokens for.
         model: Optional model name hint for encoding selection. When provided
-            and the model is in the OpenAI family, ``tiktoken.encoding_for_model``
+            and the model is in the OpenAI family, `tiktoken.encoding_for_model`
             selects the exact encoding. For Claude / Gemini / local models
-            whose native tokenizers are not in tiktoken, ``cl100k_base`` is
-            used as a documented approximation. ``None`` preserves the prior
-            default (``cl100k_base``).
+            whose native tokenizers are not in tiktoken, `cl100k_base` is
+            used as a documented approximation. `None` preserves the prior
+            default (`cl100k_base`).
         use_tiktoken: Try to use tiktoken if available (default: True).
 
     Returns:

@@ -1,4 +1,4 @@
-"""PostgreSQL-based durability backend for thread lifecycle and metadata."""
+"""PostgreSQL durability backend: thread lifecycle and metadata persisted as JSONB."""
 
 from __future__ import annotations
 
@@ -8,10 +8,13 @@ from soothe_nano.backends.durability.base import BasePersistStoreDurability
 
 
 class PostgreSQLDurability(BasePersistStoreDurability):
-    """DurabilityProtocol implementation using PostgreSQL.
+    """DurabilityProtocol backed by PostgreSQL.
 
-    Uses PostgreSQLPersistStore for thread metadata storage.
-    All ThreadInfo objects are serialized as JSONB.
+    ThreadInfo objects are serialized as JSONB via `PostgreSQLPersistStore`.
+
+    Example:
+        >>> store = PostgreSQLPersistStore(dsn=dsn, namespace="durability")
+        >>> backend = PostgreSQLDurability(store)
     """
 
     def __init__(self, persist_store: AsyncPersistStore) -> None:

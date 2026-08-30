@@ -1,4 +1,4 @@
-"""WeaviateVectorStore -- async Weaviate v4 client implementation."""
+"""Weaviate v4 async vector store."""
 
 from __future__ import annotations
 
@@ -18,10 +18,14 @@ _DISTANCE_MAP = {
 
 
 class WeaviateVectorStore:
-    """VectorStoreProtocol implementation using Weaviate v4 async client.
+    """`VectorStoreProtocol` backed by the Weaviate v4 async client.
 
-    Uses self-provided vectors (``skip`` vectorizer) so embedding is
-    handled externally by Soothe's embedding model.
+    Uses self-provided vectors (`none` vectorizer) so embeddings are handled
+    externally by Soothe's embedding model.
+
+    Example:
+        >>> store = WeaviateVectorStore(collection="Docs", url="http://localhost:8080")
+        >>> await store.create_collection(vector_size=1536)
 
     Args:
         collection: Weaviate collection (class) name.
@@ -84,7 +88,7 @@ class WeaviateVectorStore:
         return client.collections.get(self._collection_name)
 
     async def create_collection(self, vector_size: int, distance: str = "cosine") -> None:  # noqa: ARG002
-        """Create the Weaviate collection with ``none`` vectorizer."""
+        """Create the Weaviate collection with the `none` vectorizer."""
         import weaviate.classes.config as wc
 
         client = await self._ensure_client()
@@ -112,7 +116,13 @@ class WeaviateVectorStore:
         payloads: list[dict[str, Any]] | None = None,
         ids: list[str] | None = None,
     ) -> None:
-        """Insert vectors into Weaviate with self-provided embeddings."""
+        """Insert vectors into Weaviate with self-provided embeddings.
+
+        Args:
+            vectors: Embedding vectors to insert.
+            payloads: Optional metadata per vector.
+            ids: Optional IDs. If None, UUIDs are generated.
+        """
         import json
 
         client = await self._ensure_client()
@@ -138,7 +148,17 @@ class WeaviateVectorStore:
         limit: int = 5,
         filters: dict[str, Any] | None = None,
     ) -> list[VectorRecord]:
-        """Search Weaviate using near_vector."""
+        """Search Weaviate using `near_vector`.
+
+        Args:
+            query: Unused text query (reserved for future hybrid search).
+            vector: Query embedding vector.
+            limit: Maximum number of results.
+            filters: Optional payload filters (only single-condition filters are applied).
+
+        Returns:
+            Matching records ordered by similarity.
+        """
         import json
 
         import weaviate.classes.query as wq
@@ -174,7 +194,11 @@ class WeaviateVectorStore:
         return records
 
     async def delete(self, record_id: str) -> None:
-        """Delete a record by its record_id."""
+        """Delete a record by its record_id.
+
+        Args:
+            record_id: The record's unique ID.
+        """
         client = await self._ensure_client()
         collection = self._get_collection(client)
         try:
@@ -188,7 +212,13 @@ class WeaviateVectorStore:
         vector: list[float] | None = None,
         payload: dict[str, Any] | None = None,
     ) -> None:
-        """Update a record's vector and/or payload."""
+        """Update a record's vector and/or payload.
+
+        Args:
+            record_id: The record's unique ID.
+            vector: New embedding vector (None to leave unchanged).
+            payload: New payload (None to leave unchanged).
+        """
         import json
 
         client = await self._ensure_client()
@@ -206,7 +236,14 @@ class WeaviateVectorStore:
         )
 
     async def get(self, record_id: str) -> VectorRecord | None:
-        """Retrieve a record by ID."""
+        """Retrieve a record by ID.
+
+        Args:
+            record_id: The record's unique ID.
+
+        Returns:
+            The record, or None if not found.
+        """
         import json
 
         client = await self._ensure_client()
@@ -228,7 +265,15 @@ class WeaviateVectorStore:
         filters: dict[str, Any] | None = None,
         limit: int | None = None,
     ) -> list[VectorRecord]:
-        """List all records from the collection."""
+        """List all records from the collection.
+
+        Args:
+            filters: Optional payload equality filters (all must match).
+            limit: Maximum number of records to return.
+
+        Returns:
+            Matching records.
+        """
         import json
 
         client = await self._ensure_client()

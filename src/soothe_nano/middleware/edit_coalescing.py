@@ -129,8 +129,8 @@ class EditCoalescingConfig:
             entries the staging buffer can hold per file before eviction
             kicks in.
         staging_buffer_eviction_policy: Policy when the staging buffer
-            exceeds max entries. ``reject_newest`` rejects the incoming
-            entry (default); ``evict_oldest`` drops the oldest entry.
+            exceeds max entries. `reject_newest` rejects the incoming
+            entry (default); `evict_oldest` drops the oldest entry.
     """
 
     detection_window_ms: int = DEFAULT_DETECTION_WINDOW_MS
@@ -275,8 +275,8 @@ class EditCoalescingMiddleware(AgentMiddleware):
 
         Args:
             config: Configuration object. If None, a default
-                ``EditCoalescingConfig`` is used.
-            lock_registry: External ``FileEditLockRegistry`` for serializing
+                `EditCoalescingConfig` is used.
+            lock_registry: External `FileEditLockRegistry` for serializing
                 per-file batch dispatch. If None, a new registry is created.
         """
         self._config = config or EditCoalescingConfig()
@@ -504,7 +504,7 @@ class EditCoalescingMiddleware(AgentMiddleware):
         Reads the file once, applies all string replacements sequentially in
         memory, and writes the result via a single atomic write. The entire
         read-modify-write cycle is protected by the per-file lock from
-        ``FileEditLockRegistry``.
+        `FileEditLockRegistry`.
 
         Args:
             file_path: Target file path.
@@ -649,8 +649,8 @@ class EditCoalescingMiddleware(AgentMiddleware):
     async def _atomic_write(self, file_path: str, content: str) -> None:
         """Write content atomically via the backend's write path.
 
-        Uses workspace backend's ``awrite`` when context is available; otherwise
-        falls back to direct temp-file + ``os.replace``.
+        Uses workspace backend's `awrite` when context is available; otherwise
+        falls back to direct temp-file + `os.replace`.
 
         Args:
             file_path: Path to the file to write.
@@ -691,7 +691,7 @@ class EditCoalescingMiddleware(AgentMiddleware):
     ) -> tuple[set[str], list[tuple[int, int]]] | None:
         """Detect overlapping string-replacement ranges.
 
-        For each replacement, the character range of ``old_string`` in the
+        For each replacement, the character range of `old_string` in the
         content is computed. If two replacements' ranges overlap (one edit's
         old_string spans text that another edit also modifies), the batch is
         considered conflicting.

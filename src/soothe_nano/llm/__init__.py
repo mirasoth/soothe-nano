@@ -1,28 +1,10 @@
-"""Unified multi-provider LLM module.
+"""Unified multi-provider LLM module backed by litellm.
 
-A single litellm-backed module covering both the agent-graph path and the
-direct-call path. litellm is the universal provider engine; the
-``BaseLLMClient`` pattern forms the high-level direct-call surface, while
-``LLMFactory`` + ``ProviderRegistry`` resolve config to litellm model strings.
-
-Architecture:
-- :class:`ChatLitellmModel` — langchain ``BaseChatModel`` adapter over litellm
-  (the agent-graph path; fixes the tool-calling regression by construction).
-- :class:`LLMFactory` / :class:`ProviderRegistry` — resolve ``provider:model``
-  specs from :class:`SootheConfig` to litellm model strings + capabilities.
-- :class:`BaseLLMClient` / :class:`LLMClient` — direct-call surface for cron,
-  embeddings, rerank, image understanding.
-- :mod:`structured` / :mod:`observability` — re-export the proven nano helpers
-  (method fallback chain, Langfuse token tracking).
-- :mod:`tools` — tool binding + tool-call extraction + text-embedded recovery.
-
-Usage:
-    from soothe_nano.llm import LLMFactory, ChatLitellmModel
-
-    factory = LLMFactory(config)
-    model = factory.create_chat_model("default")  # ChatLitellmModel
-    bound = model.bind_tools([get_weather, search])
-    # bound._generate passes tools= directly to litellm → native tool_calls
+Covers both the agent-graph path (`ChatLitellmModel` langchain adapter) and
+the direct-call path (`LLMFactory` / `ProviderRegistry` resolve config to
+litellm model strings; `BaseLLMClient` / `LLMClient` for cron, embeddings,
+rerank, image understanding). Also provides structured output helpers, tool
+binding/extraction, token observability, and thinking-stream filtering.
 """
 
 from __future__ import annotations

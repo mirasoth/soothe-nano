@@ -14,7 +14,7 @@ def set_thread_id(thread_id: str | None) -> None:
 
     Args:
         thread_id: The conversation thread ID to include in log messages,
-            or ``None`` to clear the current value.
+            or `None` to clear the current value.
     """
     _current_thread_id.set(thread_id)
 
@@ -23,6 +23,6 @@ def get_thread_id() -> str | None:
     """Get the current thread ID for structured log records.
 
     Returns:
-        The current thread ID, or ``None`` if not set.
+        The current thread ID, or `None` if not set.
     """
     return _current_thread_id.get()

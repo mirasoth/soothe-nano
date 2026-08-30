@@ -1,28 +1,11 @@
-"""``ChatLitellmModel`` — a langchain ``BaseChatModel`` backed by litellm.
+"""`ChatLitellmModel` — a langchain `BaseChatModel` backed by litellm.
 
-This is the core of the unified LLM module. litellm is the universal provider
-engine: it routes to OpenAI, Anthropic, DashScope, oMLX, vLLM, Ollama, and
-OpenRouter via the model-string prefix (``openai/qwen3.6-flash``,
-``anthropic/claude-...``, ``ollama/llama3``, ...).
-
-The tool-calling regression fixed here, by construction:
-
-- The old path: ``OpenAICompatModelWrapper`` wrapped ``ChatOpenAI``; its
-  ``bind_tools`` produced a ``RunnableBinding`` but ``_agenerate`` called
-  ``self._model._agenerate(...)`` *directly*, bypassing the kwargs merge that
-  delivers ``tools=`` to the provider. The model never received tools and
-  emitted tool-call intent as JSON-as-text → ``AIMessage.tool_calls == []``.
-
-- This adapter: ``bind_tools`` stores tool schemas on the instance
-  (``self._bound_tools``) and ``_generate``/``_agenerate`` pass them directly
-  to ``litellm.completion(tools=...)``. litellm returns native structured
-  ``tool_calls`` (verified for DashScope qwen3.6-flash, both streaming and
-  non-streaming), which :func:`~soothe_nano.llm.tools.extract_tool_calls_from_litellm`
-  maps to the langchain ``AIMessage.tool_calls`` shape.
-
-The provider quirks the old wrapper stack handled (thinking-token stripping,
-broken-streaming self-heal, structured-output fallback) are folded directly
-into this adapter, read from :class:`~soothe_nano.llm.registry.ProviderCapabilities`.
+litellm routes to OpenAI, Anthropic, DashScope, oMLX, vLLM, Ollama, and
+OpenRouter via the model-string prefix. `bind_tools` stores tool schemas on
+the instance so `_generate`/`_agenerate` pass them directly to
+`litellm.completion(tools=...)`, producing native structured `tool_calls`.
+Provider quirks (thinking-token stripping, streaming self-heal, structured
+output fallback) are folded in via `ProviderCapabilities`.
 """
 
 from __future__ import annotations
@@ -57,23 +40,17 @@ logger = logging.getLogger(__name__)
 
 
 class ChatLitellmModel(BaseChatModel):
-    """langchain ``BaseChatModel`` adapter over litellm.
+    """langchain `BaseChatModel` adapter over litellm.
 
-    Construct via :class:`~soothe_nano.llm.factory.LLMFactory` (which resolves
-    the provider config and credentials). ``bind_tools`` returns a new
-    ``ChatLitellmModel`` with the bound tools stored on the instance, so
-    ``_generate``/``_agenerate``/``_astream`` pass them directly to litellm —
-    no ``RunnableBinding`` indirection that could drop the ``tools=`` kwarg.
+    Construct via `LLMFactory` (which resolves provider config and credentials).
+    `bind_tools` returns a new instance with bound tools stored on it, so
+    `_generate`/`_agenerate`/`_astream` pass them directly to litellm — no
+    `RunnableBinding` indirection that could drop the `tools=` kwarg.
 
-    Attributes (pydantic fields so langchain serialization works):
-        model: litellm model string, e.g. ``openai/qwen3.6-flash``.
-        api_base: Optional provider endpoint override.
-        api_key: Optional provider credential override.
-        capabilities: Per-provider capability flags.
-        temperature: Sampling temperature.
-        streaming: Whether to stream by default (``_astream`` path).
-        bound_tools: Tools bound via ``bind_tools`` (OpenAI wire format).
-        bound_tool_choice: ``tool_choice`` from ``bind_tools``.
+    Example:
+        factory = LLMFactory(config)
+        model = factory.create_chat_model("default")
+        bound = model.bind_tools([get_weather])
     """
 
     model: str = "openai/gpt-4o-mini"
@@ -111,11 +88,11 @@ class ChatLitellmModel(BaseChatModel):
     def bind_tools(self, tools: list[Any], **kwargs: Any) -> ChatLitellmModel:
         """Bind tools so subsequent calls pass them to litellm directly.
 
-        Returns a NEW ``ChatLitellmModel`` (not a ``RunnableBinding``) with
-        ``bound_tools`` set. This is the fix: the bound tools live on the
-        adapter instance and are merged into the litellm ``tools=`` argument
-        inside ``_generate``/``_agenerate``/``_astream`` — there is no
-        ``RunnableBinding._agenerate`` dispatch that could bypass the merge.
+        Returns a NEW `ChatLitellmModel` (not a `RunnableBinding`) with
+        `bound_tools` set. This is the fix: the bound tools live on the
+        adapter instance and are merged into the litellm `tools=` argument
+        inside `_generate`/`_agenerate`/`_astream` — there is no
+        `RunnableBinding._agenerate` dispatch that could bypass the merge.
         """
         tool_choice = kwargs.pop("tool_choice", None)
         # Sanitize tool_choice for provider compatibility (port of the old
@@ -141,7 +118,7 @@ class ChatLitellmModel(BaseChatModel):
     # ------------------------------------------------------------------
 
     def _litellm_kwargs(self, **call_kwargs: Any) -> dict[str, Any]:
-        """Build the kwargs dict passed to ``litellm.completion``."""
+        """Build the kwargs dict passed to `litellm.completion`."""
         kw: dict[str, Any] = {
             "model": self.model,
             "temperature": self.temperature,
@@ -193,7 +170,7 @@ class ChatLitellmModel(BaseChatModel):
         run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> ChatResult:
-        """Non-streaming generation via ``litellm.completion``."""
+        """Non-streaming generation via `litellm.completion`."""
         llm_messages = lc_to_litellm_messages(messages)
         call_kwargs = self._litellm_kwargs(**kwargs)
         if stop:
@@ -223,7 +200,7 @@ class ChatLitellmModel(BaseChatModel):
         run_manager: AsyncCallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> ChatResult:
-        """Async non-streaming generation via ``litellm.acompletion``."""
+        """Async non-streaming generation via `litellm.acompletion`."""
         llm_messages = lc_to_litellm_messages(messages)
         call_kwargs = self._litellm_kwargs(**kwargs)
         if stop:
@@ -256,13 +233,13 @@ class ChatLitellmModel(BaseChatModel):
         run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
-        """Streaming generation via ``litellm.completion(stream=True)``.
+        """Streaming generation via `litellm.completion(stream=True)`.
 
         With a runtime auto-fallback: if the streaming path raises "No
-        generations found in stream" (a server that ignores ``stream: true``
+        generations found in stream" (a server that ignores `stream: true`
         and returns non-SSE JSON), retry non-streaming and emit the result as
         a single chunk. This self-heals providers like vLLM-Metal without
-        requiring ``streaming: false`` in config.
+        requiring `streaming: false` in config.
         """
         if not self.streaming or not self.capabilities.streaming:
             result = self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
@@ -313,7 +290,7 @@ class ChatLitellmModel(BaseChatModel):
         run_manager: AsyncCallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        """Async streaming via ``litellm.acompletion(stream=True)``."""
+        """Async streaming via `litellm.acompletion(stream=True)`."""
         if not self.streaming or not self.capabilities.streaming:
             result = await self._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
             for gen in result.generations:
@@ -363,11 +340,11 @@ class ChatLitellmModel(BaseChatModel):
     # ------------------------------------------------------------------
 
     def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
-        """Structured output via litellm ``response_format`` or instructor.
+        """Structured output via litellm `response_format` or instructor.
 
-        For providers that honor ``json_schema`` natively, build the
-        ``response_format`` payload. For providers that reject it (DashScope
-        GLM/Kimi — ``capabilities.supports_json_schema=False``), fall back to
+        For providers that honor `json_schema` natively, build the
+        `response_format` payload. For providers that reject it (DashScope
+        GLM/Kimi — `capabilities.supports_json_schema=False`), fall back to
         the instructor pattern (litellm + instructor function-calling).
         """
         from soothe_nano.llm.schema_wire import (
@@ -395,15 +372,15 @@ class ChatLitellmModel(BaseChatModel):
 
 
 class _StructuredOutputRunnable:
-    """Runnable that enforces structured output on top of a ``ChatLitellmModel``.
+    """Runnable that enforces structured output on top of a `ChatLitellmModel`.
 
-    For ``json_schema``-capable providers, attaches ``response_format`` to
+    For `json_schema`-capable providers, attaches `response_format` to
     the litellm call. For others, parses the JSON text response into the
     pydantic schema (instructor-style fallback).
 
-    Invokes the public ``ChatLitellmModel.invoke`` / ``ainvoke`` path so
-    LangChain callbacks (Langfuse generations, token usage) fire. ``config``
-    is never forwarded into ``_generate``/``litellm.completion`` — those
+    Invokes the public `ChatLitellmModel.invoke` / `ainvoke` path so
+    LangChain callbacks (Langfuse generations, token usage) fire. `config`
+    is never forwarded into `_generate`/`litellm.completion` — those
     kwargs are JSON-serialized and cannot hold live callback handlers.
     """
 
@@ -423,11 +400,11 @@ class _StructuredOutputRunnable:
     def _split_call_kwargs(
         cls, config: Any | None, kwargs: dict[str, Any]
     ) -> tuple[Any | None, dict[str, Any]]:
-        """Keep LangChain ``config`` off the litellm HTTP kwargs.
+        """Keep LangChain `config` off the litellm HTTP kwargs.
 
-        ``invoke_structured_chat`` / ``ainvoke_structured_traced`` pass a
-        RunnableConfig (callbacks, tags, metadata). ``_generate`` forwards
-        every remaining kwarg into ``litellm.completion``, which JSON-serializes
+        `invoke_structured_chat` / `ainvoke_structured_traced` pass a
+        RunnableConfig (callbacks, tags, metadata). `_generate` forwards
+        every remaining kwarg into `litellm.completion`, which JSON-serializes
         the body — live callback handlers are not serializable.
         """
         call_kwargs = dict(kwargs)
@@ -447,13 +424,13 @@ class _StructuredOutputRunnable:
 
     @staticmethod
     def _flatten_callback_handlers(callbacks: Any) -> list[Any]:
-        """Flatten LangChain ``callbacks`` (list or ``CallbackManager``) to handlers.
+        """Flatten LangChain `callbacks` (list or `CallbackManager`) to handlers.
 
-        ``callbacks`` in a RunnableConfig may be a list of handlers, ``None``,
-        or a LangChain ``CallbackManager`` object (e.g. an
-        ``AsyncCallbackManager`` injected by a LangGraph node). A ``CallbackManager``
-        is not iterable, so ``list(callbacks)`` raises ``TypeError``; its handlers
-        live under ``.handlers`` and ``.inheritable_handlers``. Flatten every shape
+        `callbacks` in a RunnableConfig may be a list of handlers, `None`,
+        or a LangChain `CallbackManager` object (e.g. an
+        `AsyncCallbackManager` injected by a LangGraph node). A `CallbackManager`
+        is not iterable, so `list(callbacks)` raises `TypeError`; its handlers
+        live under `.handlers` and `.inheritable_handlers`. Flatten every shape
         to a plain handler list for membership checks.
         """
         if callbacks is None:
@@ -481,8 +458,8 @@ class _StructuredOutputRunnable:
     def _config_for_model(config: Any) -> Any:
         """Attach the shared token-usage handler when the caller omitted it.
 
-        ``invoke_structured_chat`` already merges the handler; re-merging
-        would double-count tokens. Bare ``with_structured_output().ainvoke``
+        `invoke_structured_chat` already merges the handler; re-merging
+        would double-count tokens. Bare `with_structured_output().ainvoke`
         still needs the handler so loop accumulation works.
         """
         from soothe_nano.llm.observability import (
@@ -541,12 +518,12 @@ class _StructuredOutputRunnable:
 
 
 def _normalize_tool_call_chunks(deltas: Any) -> list[dict[str, Any]]:
-    """Normalize litellm streaming ``tool_calls`` deltas to langchain format.
+    """Normalize litellm streaming `tool_calls` deltas to langchain format.
 
-    Streaming tool-call deltas arrive as ``[{index, id, function: {name,
-    arguments}, type}]`` fragments. langchain's ``AIMessageChunk.tool_call_chunks``
-    expects ``[{index, id, name, args, type}]`` (args is the partial JSON
-    string). This flattens the nested ``function`` dict.
+    Streaming tool-call deltas arrive as `[{index, id, function: {name,
+    arguments}, type}]` fragments. langchain's `AIMessageChunk.tool_call_chunks`
+    expects `[{index, id, name, args, type}]` (args is the partial JSON
+    string). This flattens the nested `function` dict.
     """
     if not deltas:
         return []

@@ -1,4 +1,4 @@
-"""Durability protocol backends."""
+"""Durability backends for thread lifecycle management."""
 
 from soothe_nano.backends.durability.base import BasePersistStoreDurability
 from soothe_nano.backends.durability.postgresql import PostgreSQLDurability

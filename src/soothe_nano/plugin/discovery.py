@@ -63,14 +63,12 @@ def discover_entry_points() -> list[str]:
         List of module paths (e.g., ["my_package:MyPlugin", "other:Plugin"]).
 
     Example:
-        ```python
         # In pyproject.toml:
         [project.entry-points."soothe.plugins"]
         my_plugin = "my_package:MyPlugin"
 
         # Discovery result:
         ["my_package:MyPlugin"]
-        ```
     """
     plugins = []
     try:
@@ -95,7 +93,6 @@ def discover_config_declared(config: "SootheConfig") -> list[tuple[str, dict]]:
         List of (module_path, config_dict) tuples for enabled plugins.
 
     Example:
-        ```yaml
         # In config.yml:
         plugins:
           - name: my-plugin
@@ -106,7 +103,6 @@ def discover_config_declared(config: "SootheConfig") -> list[tuple[str, dict]]:
 
         # Discovery result:
         [("my_package:MyPlugin", {"api_key": "..."})]
-        ```
     """
     plugins = []
 

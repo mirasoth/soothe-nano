@@ -1,3 +1,5 @@
+"""Overlay label/entry bounding boxes onto a page image for visual QA."""
+
 import json
 import sys
 

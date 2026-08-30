@@ -1,8 +1,4 @@
-"""Filesystem factory and configuration for creating filesystem instances.
-
-This module provides factory methods and configuration classes for creating
-filesystem instances with proper security settings and validation.
-"""
+"""Factory methods and configuration for creating filesystem instances with security settings and validation."""
 
 from __future__ import annotations
 

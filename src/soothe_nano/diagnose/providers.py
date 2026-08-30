@@ -20,7 +20,7 @@ def _unresolved_env_ref(value: str | None) -> bool:
 
 
 def _provider_from_spec(spec: str | None) -> str | None:
-    """Extract provider name from a ``provider:model`` router/embedding spec."""
+    """Extract provider name from a `provider:model` router/embedding spec."""
     if not spec or not isinstance(spec, str):
         return None
     provider, _, model = spec.partition(":")
@@ -33,7 +33,7 @@ def _provider_from_spec(spec: str | None) -> str | None:
 def active_provider_names(config: Any) -> set[str]:
     """Providers referenced by the active router profile and embedding config.
 
-    Unused ``providers[]`` entries (e.g. alternate profile backends) must not
+    Unused `providers[]` entries (e.g. alternate profile backends) must not
     fail the providers category when the active profile is healthy.
     """
     names: set[str] = set()

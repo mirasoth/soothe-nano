@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 
 
 def default_router_profiles() -> list[RouterProfile]:
-    """Built-in profile used when YAML omits ``router_profiles``."""
+    """Built-in profile used when YAML omits `router_profiles`."""
     return [
         RouterProfile(
             name="default",
@@ -63,7 +63,7 @@ def default_router_profiles() -> list[RouterProfile]:
 
 
 def default_embedding_profile() -> list[EmbeddingProfile]:
-    """Built-in embedding profile used when YAML omits ``embedding_profile``."""
+    """Built-in embedding profile used when YAML omits `embedding_profile`."""
     return [
         EmbeddingProfile(
             model_role="openai:text-embedding-3-small",
@@ -73,7 +73,7 @@ def default_embedding_profile() -> list[EmbeddingProfile]:
 
 
 def default_vector_stores() -> list[VectorStoreProviderConfig]:
-    """Built-in sqlite_vec provider used when YAML omits ``vector_stores``."""
+    """Built-in sqlite_vec provider used when YAML omits `vector_stores`."""
     return [
         VectorStoreProviderConfig(
             name="sqlite_vec_default",
@@ -83,7 +83,7 @@ def default_vector_stores() -> list[VectorStoreProviderConfig]:
 
 
 def default_vector_store_router() -> VectorStoreRouter:
-    """Built-in vector store routing used when YAML omits ``vector_store_router``."""
+    """Built-in vector store routing used when YAML omits `vector_store_router`."""
     return VectorStoreRouter(default="sqlite_vec_default:soothe_default")
 
 
@@ -91,7 +91,7 @@ _logger = logging.getLogger(__name__)
 
 
 class _SootheConfigLoggingFileView:
-    """Maps flat ``observability.log_file_*`` fields to the nested ``file`` view shape."""
+    """Maps flat `observability.log_file_*` fields to the nested `file` view shape."""
 
     __slots__ = ("_cfg",)
 
@@ -116,7 +116,7 @@ class _SootheConfigLoggingFileView:
 
 
 class SootheConfigLoggingView:
-    """Read-through facade for ``config.logging.*``-style access (CLI and flat YAML)."""
+    """Read-through facade for `config.logging.*`-style access (CLI and flat YAML)."""
 
     __slots__ = ("_cfg",)
 
@@ -152,7 +152,7 @@ class SootheConfigLoggingView:
 class SootheConfig(BaseSettings):
     """Top-level configuration for a Soothe agent.
 
-    Can be driven by environment variables (prefix ``SOOTHE_``) or passed directly.
+    Can be driven by environment variables (prefix `SOOTHE_`) or passed directly.
     """
 
     model_config = SettingsConfigDict(env_prefix="SOOTHE_", extra="ignore")
@@ -180,13 +180,13 @@ class SootheConfig(BaseSettings):
     def from_yaml_file(cls, path: str) -> SootheConfig:
         """Load configuration from a YAML file.
 
-        Environment variable placeholders (``${ENV_VAR}``) are recursively
+        Environment variable placeholders (`${ENV_VAR}`) are recursively
         expanded throughout the entire config tree before Pydantic validation.
         This allows env vars in any string field, including nested paths:
 
-        - ``workspace_mount.host_root: ${SOOTHE_WORKSPACE_HOST_ROOT}/subdir``
-        - ``providers[].api_key: ${OPENAI_API_KEY}``
-        - ``mcp_servers[].auth.headers.Authorization: Bearer ${TOKEN}``
+        - `workspace_mount.host_root: ${SOOTHE_WORKSPACE_HOST_ROOT}/subdir`
+        - `providers[].api_key: ${OPENAI_API_KEY}`
+        - `mcp_servers[].auth.headers.Authorization: Bearer ${TOKEN}`
 
         Unresolved env vars (not found in environment) are left as-is and
         typically fail Pydantic validation or produce warnings at runtime.
@@ -217,10 +217,10 @@ class SootheConfig(BaseSettings):
     """Embedding model + vector dimensions (independent from router profile switching)."""
 
     active_router_profile: str = "default"
-    """Name of the router profile to apply. Overridable via ``SOOTHE_ACTIVE_ROUTER_PROFILE``."""
+    """Name of the router profile to apply. Overridable via `SOOTHE_ACTIVE_ROUTER_PROFILE`."""
 
     router: ModelRouter = Field(default_factory=ModelRouter, init=False)
-    """Resolved role → ``provider:model`` map from the active router profile."""
+    """Resolved role → `provider:model` map from the active router profile."""
 
     embedding_dims: int = Field(default=1536, init=False)
     """Resolved embedding width from the active embedding profile."""
@@ -234,7 +234,7 @@ class SootheConfig(BaseSettings):
     """Unified agent configuration: identity, protocols, CoreAgent middleware tuning."""
 
     subagents: dict[str, SubagentConfig] = Field(default_factory=dict)
-    """Subagent name to config mapping. Set ``enabled: false`` to disable.
+    """Subagent name to config mapping. Set `enabled: false` to disable.
 
     Builtin subagents (planner, deep_research, academic_research, browser_use) are added
     automatically. browser_use is included in base dependencies and is enabled by default.
@@ -289,10 +289,10 @@ class SootheConfig(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def _reject_legacy_flat_router(cls, data: Any) -> Any:
-        """Reject removed top-level ``router`` / ``embedding_dims`` YAML keys.
+        """Reject removed top-level `router` / `embedding_dims` YAML keys.
 
-        When ``router_profiles`` is present (including ``model_dump`` round-trips),
-        drop resolved ``router`` / ``embedding_dims`` copies so profile application
+        When `router_profiles` is present (including `model_dump` round-trips),
+        drop resolved `router` / `embedding_dims` copies so profile application
         remains the single source of truth.
         """
         if not isinstance(data, dict):
@@ -314,7 +314,7 @@ class SootheConfig(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def _merge_top_level_logging_yaml(cls, data: Any) -> Any:
-        """Fold top-level ``logging:`` YAML into ``observability`` and ``agent.middleware.report_output``."""
+        """Fold top-level `logging:` YAML into `observability` and `agent.middleware.report_output`."""
         if not isinstance(data, dict):
             return data
         logging_block = data.pop("logging", None)
@@ -365,9 +365,9 @@ class SootheConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _apply_active_router_profile(self) -> SootheConfig:
-        """Apply the selected router profile to ``router``.
+        """Apply the selected router profile to `router`.
 
-        ``SOOTHE_ACTIVE_ROUTER_PROFILE`` overrides the YAML ``active_router_profile`` value
+        `SOOTHE_ACTIVE_ROUTER_PROFILE` overrides the YAML `active_router_profile` value
         when set, so deployments can switch presets without editing config files.
         """
         if not self.router_profiles:
@@ -397,7 +397,7 @@ class SootheConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _apply_embedding_profile(self) -> SootheConfig:
-        """Apply the active embedding profile to ``embedding_model`` + ``embedding_dims``."""
+        """Apply the active embedding profile to `embedding_model` + `embedding_dims`."""
         if not self.embedding_profile:
             msg = "embedding_profile must contain at least one profile."
             raise ValueError(msg)
@@ -408,7 +408,7 @@ class SootheConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _register_builtin_skill_roots(self) -> SootheConfig:
-        """Register config ``builtin_skill_roots`` into the process skill catalog."""
+        """Register config `builtin_skill_roots` into the process skill catalog."""
         if not self.builtin_skill_roots:
             return self
 
@@ -420,7 +420,7 @@ class SootheConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _resolve_mcp_builtins(self) -> SootheConfig:
-        """Merge opt-in ``mcp_builtins`` names into ``mcp_servers``."""
+        """Merge opt-in `mcp_builtins` names into `mcp_servers`."""
         if not self.mcp_builtins:
             return self
 
@@ -489,9 +489,9 @@ class SootheConfig(BaseSettings):
     mcp_builtins: list[str] = Field(default_factory=list)
     """Opt-in builtin MCP server names (playwright, github, slack, postgres, gdrive).
 
-    Resolved into ``mcp_servers`` at config load. Empty by default — no MCP servers
-    connect until you list names here or add explicit ``mcp_servers`` entries.
-    All builtins use ``defer: true`` (progressive tool loading).
+    Resolved into `mcp_servers` at config load. Empty by default — no MCP servers
+    connect until you list names here or add explicit `mcp_servers` entries.
+    All builtins use `defer: true` (progressive tool loading).
     """
 
     progressive_mcp: ProgressiveMCPConfig = Field(default_factory=ProgressiveMCPConfig)
@@ -504,7 +504,7 @@ class SootheConfig(BaseSettings):
     """SKILL.md source paths passed to SkillsMiddleware."""
 
     builtin_skill_roots: list[str] = Field(default_factory=list)
-    """Extra package skill roots (dirs of ``<name>/SKILL.md`` folders).
+    """Extra package skill roots (dirs of `<name>/SKILL.md` folders).
 
     Registered as builtin via :func:`soothe_nano.skills.register_builtin_skill_root`
     at config load. Host packages may also call that API directly.
@@ -531,14 +531,14 @@ class SootheConfig(BaseSettings):
     """Emit structured TUI trace logs when enabled."""
 
     hide_thinking_tokens: bool = True
-    """Strip inline ``<think>``/``<thinking>``/``<reasoning>`` reasoning blocks
+    """Strip inline `<think>`/`<thinking>`/`<reasoning>` reasoning blocks
     from local-model LLM output before it surfaces to the agent/UI.
 
-    When ``True`` (default), reasoning tokens emitted inline by local thinking
+    When `True` (default), reasoning tokens emitted inline by local thinking
     models (DeepSeek-R1, QwQ, GLM with thinking enabled, etc.) are removed by
-    :mod:`soothe_nano.utils.llm.thinking_filter` and recorded at ``DEBUG`` level
-    first ("record before strip" rule). Set ``False`` to pass raw model output
-    through unchanged. The env var override is ``SOOTHE_HIDE_THINKING_TOKENS``.
+    :mod:`soothe_nano.utils.llm.thinking_filter` and recorded at `DEBUG` level
+    first ("record before strip" rule). Set `False` to pass raw model output
+    through unchanged. The env var override is `SOOTHE_HIDE_THINKING_TOKENS`.
     """
 
     ui: UIConfig = Field(default_factory=UIConfig)
@@ -582,7 +582,7 @@ class SootheConfig(BaseSettings):
 
     @property
     def logging(self) -> SootheConfigLoggingView:
-        """Maps CLI-style logging fields to ``observability`` and ``agent.middleware.report_output``."""
+        """Maps CLI-style logging fields to `observability` and `agent.middleware.report_output`."""
         return SootheConfigLoggingView(self)
 
     # --- Persistence helpers ---
@@ -622,9 +622,9 @@ class SootheConfig(BaseSettings):
     def resolve_persistence_postgres_dsn(self) -> str:
         """Resolve the effective PostgreSQL DSN for persistence components.
 
-        Uses multi-database architecture when ``postgres_base_dsn`` is set and
-        resolved; otherwise uses ``soothe_postgres_dsn``. Both fields accept a
-        plain DSN or ``${ENV_VAR}``.
+        Uses multi-database architecture when `postgres_base_dsn` is set and
+        resolved; otherwise uses `soothe_postgres_dsn`. Both fields accept a
+        plain DSN or `${ENV_VAR}`.
 
         Returns:
             The configured DSN for context/memory/durability/checkpointer.
@@ -813,19 +813,19 @@ class SootheConfig(BaseSettings):
     def resolve_model(self, role: ModelRole = "default") -> str:
         """Resolve a model string for a given role.
 
-        Looks up the role in the router. Falls back to ``default`` if the
+        Looks up the role in the router. Falls back to `default` if the
         role has no explicit mapping.
 
         When a stream router-profile overlay is active (loop-scoped
-        ``/model-router``), chat roles resolve against that profile's
-        ``ModelRouter``. The ``embedding`` role always uses the process
+        `/model-router`), chat roles resolve against that profile's
+        `ModelRouter`. The `embedding` role always uses the process
         active profile so vector indexes stay consistent.
 
         Args:
             role: Purpose role — one of the :data:`~soothe_nano.config.models.ModelRole` values.
 
         Returns:
-            A ``provider_name:model_name`` string.
+            A `provider_name:model_name` string.
         """
         if role == "embedding":
             return self.embedding_model
@@ -897,20 +897,20 @@ class SootheConfig(BaseSettings):
         *,
         fallback_role: ModelRole | None = None,
     ) -> BaseChatModel:
-        """Create a ``BaseChatModel`` for a given role with caching.
+        """Create a `BaseChatModel` for a given role with caching.
 
-        Delegates to ``llm_factory.create_chat_model``. When ``fallback_role`` is
-        omitted and ``role`` is not ``default``, instantiation failure for the
-        primary role retries the ``default`` router role if it resolves to a
-        different ``provider:model`` spec.
+        Delegates to `llm_factory.create_chat_model`. When `fallback_role` is
+        omitted and `role` is not `default`, instantiation failure for the
+        primary role retries the `default` router role if it resolves to a
+        different `provider:model` spec.
 
         Args:
             role: Purpose role — one of the :data:`~soothe_nano.config.models.ModelRole` values.
-            fallback_role: Optional explicit fallback role. ``None`` enables automatic
-                ``default`` fallback for non-``default`` primary roles.
+            fallback_role: Optional explicit fallback role. `None` enables automatic
+                `default` fallback for non-`default` primary roles.
 
         Returns:
-            A configured ``BaseChatModel`` instance, possibly wrapped for provider compatibility.
+            A configured `BaseChatModel` instance, possibly wrapped for provider compatibility.
         """
         return self.llm_factory.create_chat_model(role, fallback_role=fallback_role)
 
@@ -920,39 +920,39 @@ class SootheConfig(BaseSettings):
         *,
         model_params: dict[str, Any] | None = None,
     ) -> BaseChatModel:
-        """Create a chat model from an explicit ``provider:model`` string (per-turn overrides).
+        """Create a chat model from an explicit `provider:model` string (per-turn overrides).
 
-        Delegates to ``llm_factory.create_chat_model_for_spec``. All model creation logic
+        Delegates to `llm_factory.create_chat_model_for_spec`. All model creation logic
         is handled by LLMFactory.
 
         Args:
-            model_spec: Resolved model string, e.g. ``anthropic:claude-sonnet-4-5``.
-            model_params: Optional extra kwargs for ``init_chat_model`` (caller-validated).
+            model_spec: Resolved model string, e.g. `anthropic:claude-sonnet-4-5`.
+            model_params: Optional extra kwargs for `init_chat_model` (caller-validated).
 
         Returns:
-            A configured ``BaseChatModel`` instance.
+            A configured `BaseChatModel` instance.
 
         Raises:
-            ValueError: If ``model_spec`` is empty after stripping.
+            ValueError: If `model_spec` is empty after stripping.
         """
         return self.llm_factory.create_chat_model_for_spec(model_spec, model_params)
 
     def create_embedding_model(self, role: ModelRole = "embedding") -> Embeddings:
-        """Create an ``Embeddings`` instance for the requested role with caching.
+        """Create an `Embeddings` instance for the requested role with caching.
 
-        Delegates to ``llm_factory.create_embedding_model``. All embedding creation logic
+        Delegates to `llm_factory.create_embedding_model`. All embedding creation logic
         (DashScope special handling, caching) is handled by LLMFactory.
 
         Returns:
-            A configured langchain ``Embeddings`` instance.
+            A configured langchain `Embeddings` instance.
         """
         return self.llm_factory.create_embedding_model(role)
 
     def resolve_system_prompt(self) -> str:
         """Return the effective system prompt with current date context.
 
-        Uses ``system_prompt`` if set, otherwise generates a default prompt
-        using ``assistant_name``. Automatically injects the current date
+        Uses `system_prompt` if set, otherwise generates a default prompt
+        using `assistant_name`. Automatically injects the current date
         to help the agent understand time-sensitive queries like "latest"
         or "recent".
 
@@ -979,7 +979,7 @@ class SootheConfig(BaseSettings):
         """Set provider-specific env vars for downstream libraries.
 
         Examines providers and sets conventional env vars
-        (``OPENAI_API_KEY``, ``OLLAMA_HOST``, etc.) if not already present.
+        (`OPENAI_API_KEY`, `OLLAMA_HOST`, etc.) if not already present.
 
         NOTE: Only sets env vars for providers using the standard OpenAI endpoint.
         Custom OpenAI-compatible providers (DashScope, Coding-Plan, etc.) should

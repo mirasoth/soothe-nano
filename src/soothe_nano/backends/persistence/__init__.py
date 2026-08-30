@@ -1,4 +1,4 @@
-"""Pluggable persistence backends for context and memory stores."""
+"""Persistence backend factory for `AsyncPersistStore` (postgresql or sqlite)."""
 
 from __future__ import annotations
 
@@ -22,16 +22,16 @@ def create_persist_store(
 
     Args:
         persist_dir: Root directory for file-based backends. None disables file persistence.
-        backend: Backend type (``postgresql`` or ``sqlite``).
+        backend: Backend type (`postgresql` or `sqlite`).
         dsn: PostgreSQL DSN (required for backend="postgresql").
         namespace: Namespace for key isolation (PostgreSQL and SQLite).
         db_path: SQLite database file path (SQLite only).
         reader_pool_size: SQLite reader connection pool size for concurrent reads.
-        config: Optional ``SootheConfig`` for PostgreSQL pool sizing.
-        shared_pool: Optional shared ``AsyncConnectionPool`` for metadata (long-running process).
+        config: Optional `SootheConfig` for PostgreSQL pool sizing.
+        shared_pool: Optional shared `AsyncConnectionPool` for metadata (long-running process).
 
     Returns:
-        An AsyncPersistStore instance, or None if persistence is disabled.
+        An `AsyncPersistStore` instance, or None if persistence is disabled.
     """
     if backend == "postgresql":
         if not dsn:

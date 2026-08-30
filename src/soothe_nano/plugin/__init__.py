@@ -11,7 +11,6 @@ Key Components:
 - Discovery: Entry points, config, and filesystem discovery
 
 Example:
-    ```python
     from soothe_nano.plugin import PluginRegistry, PluginLifecycleManager
     from soothe_nano.config.settings import SootheConfig
 
@@ -25,7 +24,6 @@ Example:
     # Get tools and subagents
     tools = registry.get_all_tools()
     subagents = registry.get_all_subagents()
-    ```
 """
 
 from soothe_sdk.plugin import PluginManifest

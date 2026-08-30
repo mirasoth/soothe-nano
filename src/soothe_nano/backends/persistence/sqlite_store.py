@@ -1,6 +1,6 @@
-"""SQLite-backed key-value store implementing PersistStore protocol.
+"""SQLite-backed key-value store implementing the `AsyncPersistStore` protocol.
 
-Uses process-scoped ``SqliteStoreRuntime``.
+Uses the process-scoped `SqliteStoreRuntime` for serialized writes and pooled reads.
 """
 
 from __future__ import annotations
@@ -16,9 +16,15 @@ logger = logging.getLogger(__name__)
 
 
 class SQLitePersistStore:
-    """SQLite-backed key-value persistence via ``SqliteStoreRuntime``.
+    """SQLite key-value store with namespace isolation.
 
-    Provides namespace isolation like PostgreSQLPersistStore.
+    Delegates connection management to `SqliteStoreRuntime` (one writer +
+    pooled readers per database file). Provides the same namespace isolation
+    semantics as `PostgreSQLPersistStore`.
+
+    Example:
+        >>> store = SQLitePersistStore(namespace="durability")
+        >>> await store.save("thread:abc", {"status": "active"})
     """
 
     def __init__(
@@ -31,7 +37,7 @@ class SQLitePersistStore:
 
         Args:
             db_path: Path to SQLite database file. Defaults to
-                ``$SOOTHE_DATA_DIR/databases/persist.db``.
+                `$SOOTHE_DATA_DIR/databases/persist.db`.
             namespace: Namespace for key isolation.
             reader_pool_size: Reader pool size for the Runtime.
         """
@@ -68,7 +74,12 @@ class SQLitePersistStore:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_soothe_kv_namespace ON soothe_kv(namespace)")
 
     async def save(self, key: str, data: Any) -> None:
-        """Persist data under the given key (async)."""
+        """Persist data under the given key (upsert).
+
+        Args:
+            key: Storage key.
+            data: JSON-serializable data.
+        """
         serialized = json.dumps(data, ensure_ascii=False)
         namespace = self._namespace
         await self._runtime.run_write(
@@ -89,7 +100,14 @@ class SQLitePersistStore:
         )
 
     async def load(self, key: str) -> Any | None:
-        """Load data for the given key (async)."""
+        """Load data for the given key.
+
+        Args:
+            key: Storage key.
+
+        Returns:
+            The stored data, or None if not found.
+        """
         namespace = self._namespace
 
         def _read(conn: sqlite3.Connection) -> str | None:
@@ -110,7 +128,11 @@ class SQLitePersistStore:
         return row["data"]
 
     async def delete(self, key: str) -> None:
-        """Delete data for the given key (async)."""
+        """Delete data for the given key.
+
+        Args:
+            key: Storage key.
+        """
         namespace = self._namespace
         await self._runtime.run_write(lambda conn: self._delete_sync(conn, namespace, key))
 
@@ -121,7 +143,14 @@ class SQLitePersistStore:
         )
 
     async def list_keys(self, namespace: str | None = None) -> list[str]:
-        """List all keys in the given namespace (async)."""
+        """List all keys in the given namespace.
+
+        Args:
+            namespace: Optional namespace. If None, uses the store's default namespace.
+
+        Returns:
+            Keys in the namespace.
+        """
         ns = namespace or self._namespace
 
         def _read(conn: sqlite3.Connection) -> list[str]:
@@ -136,7 +165,7 @@ class SQLitePersistStore:
         return [row["key"] for row in rows]
 
     async def close(self) -> None:
-        """Release the process Runtime reference."""
+        """Release the process Runtime reference for this database file."""
         from soothe_nano.persistence.sqlite_runtime import SqliteRuntimeRegistry
 
         await SqliteRuntimeRegistry.release(self._db_path)

@@ -1,8 +1,4 @@
-"""Infrastructure resolution: durability and checkpointer backends.
-
-Extracted from ``resolver.py`` to isolate persistence infrastructure
-from protocol and tool/subagent resolution.
-"""
+"""Infrastructure resolution: durability and checkpointer backends."""
 
 from __future__ import annotations
 
@@ -39,7 +35,7 @@ def resolve_durability(
     Args:
         config: Soothe configuration.
         metadata_pool_cls: Optional metadata pool class (host injects its
-            registry-bound subclass). Defaults to nano ``SharedMetadataPool``.
+            registry-bound subclass). Defaults to nano `SharedMetadataPool`.
     """
     backend = config.resolve_durability_backend()  # Resolve inheritance
     if backend == "postgresql":
@@ -115,7 +111,7 @@ def resolve_checkpointer(
         config: Soothe configuration.
         checkpointer_pool_cls: Optional checkpointer pool class (host injects
             its registry-bound subclass). Defaults to nano
-            ``SharedCheckpointerPool``.
+            `SharedCheckpointerPool`.
 
     Returns:
         A tuple of (checkpointer, connection_resource) for PostgreSQL, or just the checkpointer for SQLite.
@@ -159,7 +155,7 @@ def _resolve_sqlite_checkpointer(config: SootheConfig) -> tuple[Checkpointer | N
     """Resolve SQLite checkpointer database path.
 
     Defers AsyncSqliteSaver creation to async context (same pattern as PostgreSQL).
-    Callers that construct the saver need ``langgraph-checkpoint-sqlite`` installed.
+    Callers that construct the saver need `langgraph-checkpoint-sqlite` installed.
 
     Returns:
         A tuple of (None, db_path) if successful, None otherwise.
@@ -185,8 +181,8 @@ def _resolve_postgres_checkpointer(
 
     Args:
         dsn: PostgreSQL connection string for the checkpoints database.
-        min_pool_size: ``AsyncConnectionPool`` min_size (warm connections).
-        max_pool_size: ``AsyncConnectionPool`` max_size.
+        min_pool_size: `AsyncConnectionPool` min_size (warm connections).
+        max_pool_size: `AsyncConnectionPool` max_size.
 
     Returns:
         A tuple of (None, AsyncConnectionPool) if successful, None otherwise.

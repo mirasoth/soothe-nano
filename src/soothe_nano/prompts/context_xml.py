@@ -30,7 +30,7 @@ def build_soothe_environment_section(*, model: str) -> str:
     Optimized for prompt caching - removed version attribute.
 
     Args:
-        model: Resolved default model id (e.g. from ``config.resolve_model`` for the default role).
+        model: Resolved default model id (e.g. from `config.resolve_model` for the default role).
 
     Returns:
         Single XML section string.
@@ -95,7 +95,7 @@ def build_soothe_workspace_section(
 ) -> str:
     """Build nested WORKSPACE XML block (no SOOTHE_ prefix).
 
-    Optimized for prompt caching - omits ``recent_commits`` in this section.
+    Optimized for prompt caching - omits `recent_commits` in this section.
 
     Args:
         workspace: Project root; when None, the process current working directory is used.

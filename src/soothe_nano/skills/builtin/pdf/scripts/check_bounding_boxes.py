@@ -1,3 +1,5 @@
+"""Detect overlapping or undersized bounding boxes in a form-fields JSON."""
+
 import json
 import sys
 from dataclasses import dataclass

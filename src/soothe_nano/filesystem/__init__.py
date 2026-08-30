@@ -1,10 +1,8 @@
 """Unified filesystem interface for Soothe.
 
-Product composition over soothe-deepagents backends: LocalFilesystem,
-WorkspaceFilesystem, factory helpers, and LangChain adapter.
-
-Protocol result types (`ReadResult`, `GrepResult`, etc.) come from
-`soothe_deepagents.backends.protocol` — import them there, not here.
+Composes `LocalFilesystem`, `WorkspaceFilesystem`, factory helpers, and the
+LangChain adapter over soothe-deepagents backends. Protocol result types
+(`ReadResult`, `GrepResult`, etc.) come from `soothe_deepagents.backends.protocol`.
 """
 
 from __future__ import annotations

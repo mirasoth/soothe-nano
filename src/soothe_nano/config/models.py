@@ -44,31 +44,16 @@ class ModelProviderConfig(BaseModel):
     """Configuration for a single model provider.
 
     Args:
-        name: Provider name (e.g., ``openai``, ``openrouter``, ``ollama``).
+        name: Provider name (e.g., `openai`, `openrouter`, `ollama`).
         api_base_url: Base URL for the provider's API endpoint.
-        api_key: API key. Plain string or ``${ENV_VAR}`` (same dual rule as other secrets).
-        provider_type: langchain provider type for ``init_chat_model`` /
-            ``init_embeddings``. Supported values:
-            - ``openai``: OpenAI API (official or compatible). Custom ``api_base_url``
-              endpoints (oMLX, LMStudio, vLLM) auto-receive compatibility wrappers.
-            - ``anthropic``: Anthropic Claude API
-            - ``ollama``: Ollama local inference
-        models: Model names available from this provider (for documentation).
-        streaming: Whether LangChain should stream this provider's responses.
-            Defaults to ``True``. Set to ``False`` for OpenAI-compatible servers
-            whose streaming endpoint is broken or unsupported (e.g. vLLM-Metal
-            prototype, which ignores ``stream: true`` and returns a single
-            non-SSE JSON body). Non-streaming ``_agenerate`` then works.
-            When ``True`` (default), a runtime auto-fallback still catches
-            ``No generations found in stream`` and retries via ``_generate`` so
-            providers with intermittently broken streaming self-heal without
-            requiring this flag.
-        max_tokens: Default maximum generation tokens for this provider's
-            chat completions. Model-agnostic: any provider whose server
-            truncates output when ``max_tokens`` is omitted (e.g. vLLM-Metal
-            truncating mid-tool-call XML) can set this once at the provider
-            level rather than per-model. Passed through to ``init_chat_model``
-            as ``max_tokens``; caller-provided params still take precedence.
+        api_key: API key. Plain string or `${ENV_VAR}`.
+        provider_type: Provider type for capability detection (`openai`,
+            `anthropic`, `ollama`, `custom`).
+        models: Model names available from this provider (documentation only).
+        streaming: Whether to stream this provider's responses. Set to `False`
+            for OpenAI-compatible servers whose streaming endpoint is broken.
+        max_tokens: Default maximum generation tokens for this provider's chat
+            completions (model-agnostic).
     """
 
     name: str
@@ -88,10 +73,10 @@ class VectorStoreProviderConfig(BaseModel):
     Args:
         name: Provider identifier (used in router).
         provider_type: Backend type (pgvector, weaviate, in_memory).
-        dsn: PostgreSQL DSN (pgvector). Plain string or ``${ENV_VAR}``.
+        dsn: PostgreSQL DSN (pgvector). Plain string or `${ENV_VAR}`.
         index_type: Index type (pgvector): hnsw, ivfflat, none.
-        url: Weaviate server URL. Plain string or ``${ENV_VAR}``.
-        api_key: Weaviate Cloud API key. Plain string or ``${ENV_VAR}``.
+        url: Weaviate server URL. Plain string or `${ENV_VAR}`.
+        api_key: Weaviate Cloud API key. Plain string or `${ENV_VAR}`.
         grpc_port: Weaviate gRPC port.
     """
 
@@ -111,20 +96,20 @@ class VectorStoreProviderConfig(BaseModel):
 ModelRole = Literal["default", "fast", "think", "image", "ocr", "embedding"]
 """Valid purpose-based model roles.
 
-- ``default``: Main orchestrator reasoning (CoreAgent, failure analysis, system context).
-- ``fast``: Cheap/fast operations (intent classification, routing, scenario classification,
+- `default`: Main orchestrator reasoning (CoreAgent, failure analysis, system context).
+- `fast`: Cheap/fast operations (intent classification, routing, scenario classification,
   deep_research subagents, memory extraction, document tooling).
-- ``think``: Stronger reasoning (planning, consensus validation, backoff reasoning).
-- ``image``: Vision-capable model (image analysis, vision preflight).
-- ``ocr``: Dedicated OCR / document text extraction model.
-- ``embedding``: Embedding model (MemU vector search, semantic memory).
+- `think`: Stronger reasoning (planning, consensus validation, backoff reasoning).
+- `image`: Vision-capable model (image analysis, vision preflight).
+- `ocr`: Dedicated OCR / document text extraction model.
+- `embedding`: Embedding model (MemU vector search, semantic memory).
 """
 
 
 class ModelRouter(BaseModel):
-    """Maps :data:`ModelRole` values to ``provider_name:model_name`` strings.
+    """Maps :data:`ModelRole` values to `provider_name:model_name` strings.
 
-    Unset roles fall back to ``default``.
+    Unset roles fall back to `default`.
 
     Args:
         default: Default model for orchestrator reasoning.
@@ -143,7 +128,7 @@ class ModelRouter(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_legacy_embedding_role(cls, data: Any) -> Any:
-        """Reject removed ``router.embedding`` mappings."""
+        """Reject removed `router.embedding` mappings."""
         if isinstance(data, dict) and "embedding" in data:
             msg = (
                 "router.embedding has been removed. "
@@ -156,12 +141,12 @@ class ModelRouter(BaseModel):
 class RouterProfile(BaseModel):
     """Named preset combining a :class:`ModelRouter`.
 
-    Use with ``active_router_profile`` on :class:`SootheConfig`
+    Use with `active_router_profile` on :class:`SootheConfig`
     to switch between deployment targets (cloud vs local) without editing role mappings.
 
     Args:
-        name: Unique profile identifier (e.g. ``production``, ``local-deploy``).
-        router: Role → ``provider:model`` mapping for this preset.
+        name: Unique profile identifier (e.g. `production`, `local-deploy`).
+        router: Role → `provider:model` mapping for this preset.
     """
 
     name: str
@@ -170,7 +155,7 @@ class RouterProfile(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_legacy_embedding_dims(cls, data: Any) -> Any:
-        """Reject removed ``router_profiles[].embedding_dims`` values."""
+        """Reject removed `router_profiles[].embedding_dims` values."""
         if isinstance(data, dict) and "embedding_dims" in data:
             msg = (
                 "router_profiles[].embedding_dims has been removed. "
@@ -184,7 +169,7 @@ class EmbeddingProfile(BaseModel):
     """Embedding model + vector dimension configuration.
 
     Args:
-        model_role: Embedding model spec in ``provider:model`` form.
+        model_role: Embedding model spec in `provider:model` form.
         embedding_dims: Output vector dimension for the embedding model.
     """
 
@@ -220,7 +205,7 @@ class SubagentConfig(BaseModel):
 
     Args:
         enabled: Whether this subagent is enabled.
-        model: Optional explicit ``provider:model`` override.
+        model: Optional explicit `provider:model` override.
         model_role: Optional router role for model selection.
         transport: Subagent transport mode.
         endpoint: Remote endpoint URL when using remote transports.
@@ -253,7 +238,7 @@ class SubagentConfig(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_legacy_url_field(cls, data: Any) -> Any:
-        """Accept legacy ``url`` input and map it to ``endpoint``."""
+        """Accept legacy `url` input and map it to `endpoint`."""
         if isinstance(data, dict) and "endpoint" not in data and "url" in data:
             data = dict(data)
             data["endpoint"] = data.get("url")
@@ -362,9 +347,9 @@ class ExecutionToolsConfig(ToolConfig):
 
     Args:
         enabled: Whether execution tools are bound to the agent.
-        background_log_dir: Optional directory for ``run_background`` stdout/stderr logs.
-            When null, logs go under ``<workspace>/.soothe/background`` or soothe home.
-        background_log_retention_days: Prune ``bg-*.log`` older than this on spawn (0=off).
+        background_log_dir: Optional directory for `run_background` stdout/stderr logs.
+            When null, logs go under `<workspace>/.soothe/background` or soothe home.
+        background_log_retention_days: Prune `bg-*.log` older than this on spawn (0=off).
     """
 
     background_log_dir: str | None = Field(
@@ -403,8 +388,8 @@ class WebSearchConfig(ToolConfig):
         max_results_per_engine: Maximum results per search engine.
         timeout: Request timeout in seconds.
         proxy: Optional HTTP(S) proxy URL for tarzi search/crawl
-            (e.g. ``http://127.0.0.1:7890``). Applied for the duration of each
-            search/crawl call; process-wide ``HTTP(S)_PROXY`` still wins if set.
+            (e.g. `http://127.0.0.1:7890`). Applied for the duration of each
+            search/crawl call; process-wide `HTTP(S)_PROXY` still wins if set.
 
     Note: Default is tavily → google_serper → duckduckgo → bing → brave
     (API engines plus tarzi's built-in web defaults). Crawl uses tarzi
@@ -422,8 +407,8 @@ class DeepxivToolsConfig(ToolConfig):
 
     Args:
         enabled: Whether DeepXiv tools are enabled.
-        token: API token as a plain string, ``${DEEPXIV_API_KEY}`` / ``${DEEPXIV_TOKEN}``,
-            or null for env lookup (``DEEPXIV_API_KEY`` / ``DEEPXIV_TOKEN``).
+        token: API token as a plain string, `${DEEPXIV_API_KEY}` / `${DEEPXIV_TOKEN}`,
+            or null for env lookup (`DEEPXIV_API_KEY` / `DEEPXIV_TOKEN`).
         timeout: Request timeout in seconds.
         max_retries: Maximum retry attempts per request.
     """
@@ -434,14 +419,14 @@ class DeepxivToolsConfig(ToolConfig):
 
 
 class HttpRequestsToolsConfig(ToolConfig):
-    """LangChain Community ``RequestsToolkit`` (HTTP verbs).
+    """LangChain Community `RequestsToolkit` (HTTP verbs).
 
-    Requires ``allow_dangerous_requests=True`` to instantiate tools (upstream LangChain gate).
+    Requires `allow_dangerous_requests=True` to instantiate tools (upstream LangChain gate).
 
     Args:
         enabled: Whether to register HTTP request tools (default on).
         allow_dangerous_requests: Required for LangChain tool construction; default on with toolkit enabled.
-        headers: Optional default headers for ``TextRequestsWrapper`` (e.g. Bearer tokens via ``${ENV}``).
+        headers: Optional default headers for `TextRequestsWrapper` (e.g. Bearer tokens via `${ENV}`).
         verify_ssl: Whether to verify TLS certificates (passed through to the requests wrapper).
     """
 
@@ -468,9 +453,9 @@ class ToolsConfig(BaseModel):
         file_ops: File operation tools config.
         datetime: DateTime tool config.
         data: Data inspection tools config.
-        image: Image understanding tools config (``analyze_image``).
+        image: Image understanding tools config (`analyze_image`).
         wizsearch: Tarzi-backed multi-engine search/crawl tools config
-            (tool names ``wizsearch_*`` kept for wire/config compatibility).
+            (tool names `wizsearch_*` kept for wire/config compatibility).
         http_requests: LangChain Requests toolkit (HTTP GET/POST/PATCH/PUT/DELETE).
         deepxiv: DeepXiv academic paper search tools (disabled by default).
     """
@@ -486,9 +471,9 @@ class ToolsConfig(BaseModel):
 
 
 class SqliteRuntimeConfig(BaseModel):
-    """Optional tuning for ``SqliteStoreRuntime``.
+    """Optional tuning for `SqliteStoreRuntime`.
 
-    Paths are fixed under ``$SOOTHE_DATA_DIR/databases/`` — not configurable here.
+    Paths are fixed under `$SOOTHE_DATA_DIR/databases/` — not configurable here.
     """
 
     reader_pool_size: int = Field(default=3, ge=1, le=32)
@@ -497,10 +482,10 @@ class SqliteRuntimeConfig(BaseModel):
 
 
 class PostgresPoolConfig(BaseModel):
-    """Shared PostgreSQL ``AsyncConnectionPool`` tuning.
+    """Shared PostgreSQL `AsyncConnectionPool` tuning.
 
-    DSN / database-name identity stays on ``PersistenceConfig``
-    (``postgres_base_dsn``, ``postgres_databases``, ``soothe_postgres_dsn``).
+    DSN / database-name identity stays on `PersistenceConfig`
+    (`postgres_base_dsn`, `postgres_databases`, `soothe_postgres_dsn`).
     """
 
     pool_min_size: int = Field(
@@ -576,15 +561,15 @@ class PersistenceConfig(BaseModel):
 
     Args:
         postgres_base_dsn: Base PostgreSQL DSN without database name.
-            Plain string or ``${ENV_VAR}`` (e.g. ``postgresql://user:pass@host:port``).
+            Plain string or `${ENV_VAR}` (e.g. `postgresql://user:pass@host:port`).
             Used with postgres_databases to construct full DSNs for each component.
             Unresolved placeholders are treated as unset at resolve time.
         postgres_databases: Named database mapping for each component.
             Maps component names to database names.
             Default: {"checkpoints": "soothe_checkpoints", "metadata": "soothe_metadata",
                       "vectors": "soothe_vectors", "memory": "soothe_memory"}
-        soothe_postgres_dsn: Single-database PostgreSQL DSN when ``postgres_base_dsn`` is unset.
-            Plain string or ``${ENV_VAR}``.
+        soothe_postgres_dsn: Single-database PostgreSQL DSN when `postgres_base_dsn` is unset.
+            Plain string or `${ENV_VAR}`.
         default_backend: Default backend for new protocols (can be overridden).
         postgres: Shared PostgreSQL pool tuning.
         sqlite: Optional SqliteStoreRuntime tuning.
@@ -607,7 +592,7 @@ class PersistenceConfig(BaseModel):
     """
 
     soothe_postgres_dsn: str = "postgresql://postgres:postgres@localhost:5432/soothe"
-    """Single-database PostgreSQL DSN when ``postgres_base_dsn`` is not set."""
+    """Single-database PostgreSQL DSN when `postgres_base_dsn` is not set."""
 
     default_backend: Literal["postgresql", "sqlite"] = "sqlite"
 
@@ -804,8 +789,8 @@ class LLMRateLimitConfig(BaseModel):
         concurrent_limit: Max concurrent in-flight LLM calls per budget key
             (per asyncio event loop).
         global_concurrent_limit: Process-wide max concurrent in-flight LLM calls
-            across all budget keys and event loops. ``0`` means no global cap
-            (per-budget ``concurrent_limit`` still applies).
+            across all budget keys and event loops. `0` means no global cap
+            (per-budget `concurrent_limit` still applies).
         call_timeout_seconds: Per-LLM-call timeout.
         call_timeout_max_seconds: Upper bound for retry timeout escalation.
         retry_on_timeout: Enable retry with timeout escalation.
@@ -1002,26 +987,26 @@ class ThreadLoggingConfig(BaseModel):
 
 
 class LangfuseIntegrationConfig(BaseModel):
-    """Langfuse OpenTelemetry + LangChain callback integration (install ``langfuse`` package).
+    """Langfuse OpenTelemetry + LangChain callback integration (install `langfuse` package).
 
-    When ``enabled`` is true, Soothe attaches Langfuse's LangChain ``CallbackHandler`` to
-    LangGraph ``astream`` calls. Credentials may be set here as a plain string or
-    ``${ENV_VAR}``, or omitted/null to use standard Langfuse environment variables
-    (``LANGFUSE_PUBLIC_KEY``, ``LANGFUSE_SECRET_KEY``, ``LANGFUSE_HOST``).
+    When `enabled` is true, Soothe attaches Langfuse's LangChain `CallbackHandler` to
+    LangGraph `astream` calls. Credentials may be set here as a plain string or
+    `${ENV_VAR}`, or omitted/null to use standard Langfuse environment variables
+    (`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`).
 
     Args:
         enabled: Turn Langfuse tracing on for graph runs.
-        public_key: Langfuse public key (plain string, ``${ENV_VAR}``, or omit for env).
-        secret_key: Langfuse secret key (plain string, ``${ENV_VAR}``, or omit for env).
-        host: Langfuse API base URL (plain string, ``${ENV_VAR}``, or omit for env).
-        environment: Langfuse ``environment`` tag (e.g. ``production``, ``dev``).
-        release: Langfuse ``release`` tag for deployment correlation.
-        sample_rate: Client-side sampling rate ``0.0``–``1.0`` (passed to the Langfuse client).
-        trace_name: Optional LangGraph ``run_name`` for the root run when set.
-        tags: Optional list of trace tags (Langfuse ``langfuse_tags`` metadata) for
+        public_key: Langfuse public key (plain string, `${ENV_VAR}`, or omit for env).
+        secret_key: Langfuse secret key (plain string, `${ENV_VAR}`, or omit for env).
+        host: Langfuse API base URL (plain string, `${ENV_VAR}`, or omit for env).
+        environment: Langfuse `environment` tag (e.g. `production`, `dev`).
+        release: Langfuse `release` tag for deployment correlation.
+        sample_rate: Client-side sampling rate `0.0`–`1.0` (passed to the Langfuse client).
+        trace_name: Optional LangGraph `run_name` for the root run when set.
+        tags: Optional list of trace tags (Langfuse `langfuse_tags` metadata) for
             dashboard filters and cost breakdowns.
-        user_id: Optional Langfuse ``user_id`` (``langfuse_user_id`` metadata); supports
-            ``${ENV_VAR}``. Prefer non-PII stable tenant ids in production.
+        user_id: Optional Langfuse `user_id` (`langfuse_user_id` metadata); supports
+            `${ENV_VAR}`. Prefer non-PII stable tenant ids in production.
     """
 
     enabled: bool = Field(
@@ -1182,8 +1167,8 @@ class OptimizationConfig(BaseModel):
 class FilesystemMiddlewareConfig(BaseModel):
     """Configuration for SootheFilesystemMiddleware.
 
-    Path sandboxing (``virtual_mode``) is derived from
-    ``security.allow_paths_outside_workspace`` — set that flag, not a field here.
+    Path sandboxing (`virtual_mode`) is derived from
+    `security.allow_paths_outside_workspace` — set that flag, not a field here.
 
     Args:
         backup_enabled: Enable automatic backup before file deletion.
@@ -1427,7 +1412,7 @@ class RoleRoutingConfig(BaseModel):
     """Per-hop model role routing for CoreAgent ReAct loop.
 
     Args:
-        enabled: When true, ``RoleRoutingMiddleware`` swaps the chat model per hop.
+        enabled: When true, `RoleRoutingMiddleware` swaps the chat model per hop.
         orchestration_model_role: Router role for tool-orchestration hops.
         generation_model_role: Router role for synthesis and post-cap hops.
         max_orchestration_hops: Use orchestration role for the first N model hops
@@ -1458,14 +1443,14 @@ GeneralPurposeSubagentMode = Literal["off", "full", "readonly", "per_step"]
 """General-purpose subagent mode.
 
 Values:
-    off: GP subagent disabled (not registered on the ``task`` tool).
+    off: GP subagent disabled (not registered on the `task` tool).
     full: Single GP variant with full filesystem access (inherits parent tools/perms).
     readonly: Single GP variant restricted to read-only filesystem tools
         (ls, read_file, file_info, glob, grep) + write-deny permissions.
-    per_step: Two variants registered — ``general-purpose`` (full) for agent-mode
-        steps and ``general-purpose-readonly`` for plan/ask steps. A host middleware
-        redirects ``task`` calls to the readonly variant on plan/ask steps. Eval
-        steps ride agent mode. The model only sees ``general-purpose``.
+    per_step: Two variants registered — `general-purpose` (full) for agent-mode
+        steps and `general-purpose-readonly` for plan/ask steps. A host middleware
+        redirects `task` calls to the readonly variant on plan/ask steps. Eval
+        steps ride agent mode. The model only sees `general-purpose`.
 """
 
 
@@ -1473,11 +1458,11 @@ class AgentRuntimeConfig(BaseModel):
     """CoreAgent startup and materialization tuning.
 
     Args:
-        lazy_core_agent: Defer ``create_deep_agent`` until first Layer-1 execution.
+        lazy_core_agent: Defer `create_deep_agent` until first Layer-1 execution.
         general_purpose_subagent: GP subagent mode (off/full/readonly/per_step).
         recursion_limit: LangGraph recursion limit for CoreAgent graph execution.
         role_routing: Per-hop orchestration vs generation model roles.
-        interaction_mode: Default CoreAgent interaction mode (``agent`` or ``ask``).
+        interaction_mode: Default CoreAgent interaction mode (`agent` or `ask`).
     """
 
     lazy_core_agent: bool = Field(
@@ -1529,7 +1514,7 @@ def _default_agent_system_prompt_body() -> str:
 class CoreAgentMiddlewareConfig(BaseModel):
     """CoreAgent middleware tuning (context limits, tool caps, rate limits).
 
-    Replaces legacy ``agent.loop.*`` fields used by Coding CoreAgent middleware.
+    Replaces legacy `agent.loop.*` fields used by Coding CoreAgent middleware.
     """
 
     context_window_limit: int = Field(

@@ -1,9 +1,8 @@
 """Protocol, subagent, and tool resolution logic for create_nano_agent.
 
-Protocol resolution (memory, planner, policy) lives here.
-Tool/subagent resolution is in ``_resolver_tools.py`` and infrastructure
-(durability, checkpointer) in ``_resolver_infra.py``.  All public names
-are re-exported here for convenience.
+Protocol resolution (memory, planner, policy) lives here; tool/subagent
+resolution in `_resolver_tools.py`; infrastructure (durability, checkpointer)
+in `_resolver_infra.py`.
 """
 
 from __future__ import annotations
@@ -102,7 +101,7 @@ def resolve_planner(
 ) -> PlannerProtocol | None:
     """Resolve planner protocol for Coding CoreAgent.
 
-    ``LLMPlanner`` lives in full ``soothe``. Inject via ``AgentBuilder.build(planner=...)``.
+    `LLMPlanner` lives in full `soothe`. Inject via `AgentBuilder.build(planner=...)`.
     """
     del config, model
     return None

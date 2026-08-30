@@ -41,13 +41,11 @@ def create_plugin_context(
         Configured PluginContext instance.
 
     Example:
-        ```python
         context = create_plugin_context(
             plugin_name="datetime",
             config={},
             soothe_config=config,
         )
-        ```
     """
     # Create plugin-specific logger
     plugin_logger = logging.getLogger(f"soothe.plugins.{plugin_name}")

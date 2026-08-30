@@ -15,7 +15,7 @@ from soothe_nano.diagnose.models import (
 
 
 def _bin_version(bin_path: str) -> str | None:
-    """Return first line of ``--version`` output, or None on failure."""
+    """Return first line of `--version` output, or None on failure."""
     try:
         result = subprocess.run(  # noqa: S603
             [bin_path, "--version"],

@@ -1,9 +1,4 @@
-"""Workspace-aware filesystem implementation.
-
-This module provides a UnifiedFilesystem implementation that integrates with
-the Soothe workspace backend system, enabling per-thread workspace isolation
-and framework-wide filesystem operations.
-"""
+"""Workspace-aware `UnifiedFilesystem` implementation with per-thread workspace isolation and framework-wide filesystem operations."""
 
 from __future__ import annotations
 
@@ -114,7 +109,7 @@ class WorkspaceFilesystem(UnifiedFilesystem):
     # ========================================================================
 
     def _load_gitignore_lines(self) -> list[str]:
-        """Load raw pattern lines from workspace root ``.gitignore`` (cached)."""
+        """Load raw pattern lines from workspace root `.gitignore` (cached)."""
         if self._gitignore_lines_cache is not None:
             return self._gitignore_lines_cache
 
@@ -133,7 +128,7 @@ class WorkspaceFilesystem(UnifiedFilesystem):
         return lines
 
     def _ignore_spec(self) -> PathSpec:
-        """Build a gitwildmatch spec from essential excludes + root ``.gitignore``."""
+        """Build a gitwildmatch spec from essential excludes + root `.gitignore`."""
         if self._gitignore_spec is not None:
             return self._gitignore_spec
 
@@ -155,7 +150,7 @@ class WorkspaceFilesystem(UnifiedFilesystem):
         return False
 
     def _apply_glob_limits(self, results: list) -> tuple[list, bool]:
-        """Cap glob results to ``DEFAULT_GLOB_MAX_RESULTS``.
+        """Cap glob results to `DEFAULT_GLOB_MAX_RESULTS`.
 
         Returns:
             Tuple of (limited_results, was_truncated).
@@ -172,9 +167,9 @@ class WorkspaceFilesystem(UnifiedFilesystem):
         dirs_only: bool,
         include_ignored: bool,
     ) -> list[tuple[str, bool]]:
-        """Collect ``(workspace_rel_or_abs, is_dir)`` then normalize to workspace-rel.
+        """Collect `(workspace_rel_or_abs, is_dir)` then normalize to workspace-rel.
 
-        Prefers ``fd`` when available; falls back to ``os.scandir``.
+        Prefers `fd` when available; falls back to `os.scandir`.
         """
         depth = max_depth_for_pattern(match_pattern)
 
@@ -222,7 +217,7 @@ class WorkspaceFilesystem(UnifiedFilesystem):
 
         Args:
             path: Input path (may be absolute, relative, or virtual).
-            allow_host_absolute: When ``True``, host-root absolutes outside the
+            allow_host_absolute: When `True`, host-root absolutes outside the
                 workspace resolve to the real on-disk path (read-only ops).
 
         Returns:
@@ -578,8 +573,8 @@ class WorkspaceFilesystem(UnifiedFilesystem):
     ) -> GlobResult:
         """Glob pattern matching with gitignore support.
 
-        Trailing ``/`` on the pattern means directories only (e.g. ``packages/*/``).
-        Otherwise matching files and directories are returned with ``is_dir`` set.
+        Trailing `/` on the pattern means directories only (e.g. `packages/*/`).
+        Otherwise matching files and directories are returned with `is_dir` set.
 
         Args:
             pattern: Glob pattern (e.g., "**/*.py", "packages/*/").

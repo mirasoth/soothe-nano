@@ -1,6 +1,6 @@
-"""SQLite vector store using sqlite-vec extension.
+"""SQLite vector store using the sqlite-vec extension.
 
-Uses process-scoped ``SqliteStoreRuntime``.
+Uses the process-scoped `SqliteStoreRuntime` for connection management.
 """
 
 from __future__ import annotations
@@ -45,17 +45,20 @@ def _ip_similarity(a: list[float], b: list[float]) -> float:
 
 
 class SQLiteVecStore:
-    """VectorStoreProtocol implementation using SQLite with sqlite-vec.
+    """`VectorStoreProtocol` backed by SQLite with the sqlite-vec extension.
 
-    Uses the sqlite-vec extension for vector similarity search.
-    Falls back to Python-side similarity computation if sqlite-vec
-    virtual tables are unavailable.
+    Uses sqlite-vec virtual tables for vector similarity search, falling back
+    to Python-side brute-force similarity when the extension is unavailable.
+
+    Example:
+        >>> store = SQLiteVecStore(collection="docs")
+        >>> await store.insert([vec], payloads=[{"text": "hi"}])
 
     Args:
         collection: Collection name (becomes table name prefix).
-        db_path: Path to SQLite database. Defaults to ``$SOOTHE_DATA_DIR/databases/vectors.db``.
+        db_path: Path to SQLite database. Defaults to `$SOOTHE_DATA_DIR/databases/vectors.db`.
         vector_size: Dimension of vectors (default: 1536).
-        distance: Distance metric (cosine, l2, ip).
+        distance: Distance metric (`cosine`, `l2`, `ip`).
         reader_pool_size: Number of reader connections for concurrent reads.
     """
 
@@ -137,7 +140,12 @@ class SQLiteVecStore:
         conn.execute(self._create_table_sql())
 
     async def create_collection(self, vector_size: int, distance: str = "cosine") -> None:
-        """Create or ensure a collection exists."""
+        """Create or ensure the collection table exists.
+
+        Args:
+            vector_size: Dimension of vectors.
+            distance: Distance metric (`cosine`, `l2`, `ip`).
+        """
         self._vector_size = vector_size
         self._distance = distance
         await self._runtime.run_write(lambda conn: conn.execute(self._create_table_sql()))
@@ -148,7 +156,13 @@ class SQLiteVecStore:
         payloads: list[dict[str, Any]] | None = None,
         ids: list[str] | None = None,
     ) -> None:
-        """Insert vectors with optional payloads and IDs."""
+        """Insert vectors with optional payloads and IDs.
+
+        Args:
+            vectors: Embedding vectors to insert.
+            payloads: Optional metadata per vector. Defaults to empty dicts.
+            ids: Optional IDs. If None, UUIDs are generated.
+        """
         payloads = payloads or [{}] * len(vectors)
         ids = ids or [str(uuid.uuid4()) for _ in vectors]
         table = self._table_name()
@@ -173,7 +187,17 @@ class SQLiteVecStore:
         limit: int = 5,
         filters: dict[str, Any] | None = None,
     ) -> list[VectorRecord]:
-        """Search for nearest neighbours."""
+        """Search for nearest neighbours by vector similarity.
+
+        Args:
+            query: Unused text query (reserved for future hybrid search).
+            vector: Query embedding vector.
+            limit: Maximum number of results.
+            filters: Optional payload equality filters (all must match).
+
+        Returns:
+            Matching records ordered by similarity.
+        """
         table = self._table_name()
         packed = _pack_vector(vector)
 
@@ -203,7 +227,11 @@ class SQLiteVecStore:
         return await self._runtime.run_read(_search)
 
     async def delete(self, record_id: str) -> None:
-        """Delete a record by ID."""
+        """Delete a record by ID.
+
+        Args:
+            record_id: The record's unique ID.
+        """
         table = self._table_name()
 
         def _delete(conn: sqlite3.Connection) -> None:
@@ -217,7 +245,13 @@ class SQLiteVecStore:
         vector: list[float] | None = None,
         payload: dict[str, Any] | None = None,
     ) -> None:
-        """Update a record's vector and/or payload."""
+        """Update a record's vector and/or payload.
+
+        Args:
+            record_id: The record's unique ID.
+            vector: New embedding vector (None to leave unchanged).
+            payload: New payload (None to leave unchanged).
+        """
         if vector is not None:
             payloads = [payload] if payload is not None else [{}]
             await self.insert([vector], payloads, [record_id])
@@ -234,7 +268,14 @@ class SQLiteVecStore:
             await self._runtime.run_write(_update)
 
     async def get(self, record_id: str) -> VectorRecord | None:
-        """Retrieve a single record by ID."""
+        """Retrieve a single record by ID.
+
+        Args:
+            record_id: The record's unique ID.
+
+        Returns:
+            The record, or None if not found.
+        """
         table = self._table_name()
 
         def _get(conn: sqlite3.Connection) -> VectorRecord | None:
@@ -254,7 +295,15 @@ class SQLiteVecStore:
         filters: dict[str, Any] | None = None,
         limit: int | None = None,
     ) -> list[VectorRecord]:
-        """List records matching optional filters."""
+        """List records matching optional filters.
+
+        Args:
+            filters: Optional payload equality filters (all must match).
+            limit: Maximum number of records to return.
+
+        Returns:
+            Matching records.
+        """
         table = self._table_name()
         limit_clause = f" LIMIT {limit}" if limit else ""
 
@@ -277,7 +326,7 @@ class SQLiteVecStore:
         return await self._runtime.run_read(_list)
 
     async def delete_collection(self) -> None:
-        """Delete the entire collection and its data."""
+        """Drop the collection table and all its data."""
         table = self._table_name()
 
         def _drop(conn: sqlite3.Connection) -> None:
@@ -286,7 +335,7 @@ class SQLiteVecStore:
         await self._runtime.run_write(_drop)
 
     async def reset(self) -> None:
-        """Clear all records from the collection without deleting it."""
+        """Clear all records from the collection without dropping the table."""
         table = self._table_name()
 
         def _reset(conn: sqlite3.Connection) -> None:
@@ -295,7 +344,7 @@ class SQLiteVecStore:
         await self._runtime.run_write(_reset)
 
     async def close(self) -> None:
-        """Release the process Runtime reference."""
+        """Release the process Runtime reference for this database file."""
         from soothe_nano.persistence.sqlite_runtime import SqliteRuntimeRegistry
 
         await SqliteRuntimeRegistry.release(self._db_path)
@@ -309,7 +358,11 @@ class SQLiteVecStore:
         limit: int,
         filters: dict[str, Any] | None,
     ) -> list[VectorRecord]:
-        """Brute-force vector search with Python-side similarity computation."""
+        """Brute-force vector search with Python-side similarity computation.
+
+        Used when sqlite-vec virtual tables are unavailable. Scans up to 1000 rows
+        and scores them with the configured distance metric.
+        """
         rows = conn.execute(
             f"SELECT id, embedding, vector_size, payload FROM {table} LIMIT 1000",
         ).fetchall()
@@ -336,5 +389,5 @@ class SQLiteVecStore:
 
     @staticmethod
     def _match_filters(payload: dict[str, Any], filters: dict[str, Any]) -> bool:
-        """Check if payload matches all filter conditions."""
+        """Return whether *payload* satisfies all filter equality conditions."""
         return all(payload.get(key) == value for key, value in filters.items())

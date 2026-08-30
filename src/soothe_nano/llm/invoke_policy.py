@@ -1,9 +1,7 @@
-"""Bounded async LLM invocation with timeout and retry (planner / structured paths).
+"""Bounded async LLM invocation with timeout and retry for planner / structured-output paths.
 
-Ported from the former ``soothe_nano.utils.llm.invoke_policy``. CoreAgent model
-calls use ``LLMRateLimitMiddleware`` on the middleware stack; planner and other
-direct ``ainvoke`` / structured-output paths use the same shared RPM budget and
-retry runner via ``run_llm_call_with_policy``.
+Shares the same RPM budget and retry runner as `LLMRateLimitMiddleware` so
+direct `ainvoke` calls and the middleware-stack path stay rate-limited together.
 """
 
 from __future__ import annotations
@@ -27,9 +25,9 @@ T = TypeVar("T")
 
 
 def llm_rate_limit_config_from(soothe_config: Any | None) -> LLMRateLimitConfig:
-    """Resolve direct-call timeout/retry policy from ``SootheConfig``.
+    """Resolve direct-call timeout/retry policy from `SootheConfig`.
 
-    Reads ``agent.middleware.llm_rate_limit`` (nano). Legacy ``agent.loop``
+    Reads `agent.middleware.llm_rate_limit` (nano). Legacy `agent.loop`
     rate-limit keys are rejected by host config validation and are not used.
     """
     if soothe_config is not None:
@@ -49,7 +47,7 @@ def run_with_llm_call_policy_sync(
     config: LLMRateLimitConfig,
     thread_id: str | None = None,
 ) -> T:
-    """Run ``await_with_llm_call_policy`` from a sync caller without a running loop."""
+    """Run `await_with_llm_call_policy` from a sync caller without a running loop."""
 
     async def _run() -> T:
         return await await_with_llm_call_policy(
@@ -73,7 +71,7 @@ async def await_with_llm_call_policy(
     config: LLMRateLimitConfig,
     thread_id: str | None = None,
 ) -> T:
-    """Run ``coro_factory`` with shared RPM limits, timeouts, and retry policy.
+    """Run `coro_factory` with shared RPM limits, timeouts, and retry policy.
 
     Args:
         coro_factory: Zero-arg callable returning the awaitable LLM operation.
@@ -81,7 +79,7 @@ async def await_with_llm_call_policy(
         thread_id: Optional thread id for retry telemetry and budget allocation.
 
     Returns:
-        Result of ``coro_factory``.
+        Result of `coro_factory`.
 
     Raises:
         EnhancedTimeoutError: When timeout retries are exhausted.

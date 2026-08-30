@@ -1,4 +1,4 @@
-"""Resolved paths for CoreAgent runtime SQLite stores under ``SOOTHE_DATA_DIR/databases``."""
+"""Resolved paths for CoreAgent runtime SQLite stores under `SOOTHE_DATA_DIR/databases`."""
 
 from __future__ import annotations
 

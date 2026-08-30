@@ -1,4 +1,4 @@
-"""PGVectorStore -- async PostgreSQL + pgvector implementation."""
+"""PostgreSQL + pgvector async vector store."""
 
 from __future__ import annotations
 
@@ -13,23 +13,27 @@ logger = logging.getLogger(__name__)
 
 
 def _row_get(row: Any, *, name: str, index: int) -> Any:
-    """Read a column from psycopg rows (tuple or dict_row)."""
+    """Read a column from psycopg rows (tuple or `dict_row`)."""
     if isinstance(row, Mapping):
         return row[name]
     return row[index]
 
 
 class PGVectorStore:
-    """VectorStoreProtocol implementation using PostgreSQL with pgvector.
+    """`VectorStoreProtocol` backed by PostgreSQL with the pgvector extension.
 
-    Uses ``psycopg`` (v3) with async connection pooling. Supports HNSW
-    and IVFFlat index types.
+    Uses psycopg (v3) with async connection pooling. Supports HNSW and IVFFlat
+    index types. Embeddings are self-provided (no server-side vectorizer).
+
+    Example:
+        >>> store = PGVectorStore(collection="docs", dsn=dsn)
+        >>> await store.create_collection(vector_size=1536)
 
     Args:
         collection: Table name for storing vectors.
         dsn: PostgreSQL connection string.
         pool_size: Connection pool size.
-        index_type: Index type (``hnsw``, ``ivfflat``, or ``none``).
+        index_type: Index type (`hnsw`, `ivfflat`, or `none`).
         vector_size: Dimension of vectors (default: 1536).
     """
 
@@ -49,10 +53,10 @@ class PGVectorStore:
         Args:
             collection: Table name for storing vectors.
             dsn: PostgreSQL connection string.
-            pool_size: Connection pool size (ignored when ``shared_pool`` is set).
-            index_type: Index type (``hnsw``, ``ivfflat``, or ``none``).
+            pool_size: Connection pool size (ignored when `shared_pool` is set).
+            index_type: Index type (`hnsw`, `ivfflat`, or `none`).
             vector_size: Dimension of vectors (default: 1536).
-            shared_pool: Externally managed registry pool (``pool_size=0`` mode).
+            shared_pool: Externally managed registry pool (`pool_size=0` mode).
             pool_timing: Optional psycopg pool timing kwargs.
         """
         self._collection = collection
@@ -116,9 +120,12 @@ class PGVectorStore:
     ) -> None:
         """Create the vector table and index if they don't exist.
 
+        If an existing table has a mismatched dimension, it is dropped and
+        recreated. Distance ops are selected from the `distance` metric.
+
         Args:
-            vector_size: Vector dimension. If None, uses instance's vector_size.
-            distance: Distance metric (cosine, l2, ip).
+            vector_size: Vector dimension. If None, uses the instance's vector_size.
+            distance: Distance metric (`cosine`, `l2`, `ip`).
         """
         actual_vector_size = vector_size if vector_size is not None else self._vector_size
         self._vector_size = actual_vector_size
@@ -175,7 +182,16 @@ class PGVectorStore:
         payloads: list[dict[str, Any]] | None = None,
         ids: list[str] | None = None,
     ) -> None:
-        """Insert vectors into the table."""
+        """Insert vectors into the table.
+
+        Args:
+            vectors: Embedding vectors to insert.
+            payloads: Optional metadata per vector.
+            ids: Optional IDs. If None, UUIDs are generated.
+
+        Raises:
+            ValueError: If vectors have inconsistent dimensions.
+        """
         import json
 
         if not vectors:
@@ -213,7 +229,17 @@ class PGVectorStore:
         limit: int = 5,
         filters: dict[str, Any] | None = None,
     ) -> list[VectorRecord]:
-        """Search for nearest neighbours using cosine distance."""
+        """Search for nearest neighbours using the configured distance metric.
+
+        Args:
+            query: Unused text query (reserved for future hybrid search).
+            vector: Query embedding vector.
+            limit: Maximum number of results.
+            filters: Optional payload equality filters (all must match).
+
+        Returns:
+            Matching records ordered by similarity.
+        """
         pool = await self._ensure_pool()
 
         where_clause = ""
@@ -250,7 +276,11 @@ class PGVectorStore:
             ]
 
     async def delete(self, record_id: str) -> None:
-        """Delete a record by ID."""
+        """Delete a record by ID.
+
+        Args:
+            record_id: The record's unique ID.
+        """
         pool = await self._ensure_pool()
         async with pool.connection() as conn:
             # Collection name is controlled internally, not from user input
@@ -265,7 +295,13 @@ class PGVectorStore:
         vector: list[float] | None = None,
         payload: dict[str, Any] | None = None,
     ) -> None:
-        """Update a record's vector and/or payload."""
+        """Update a record's vector and/or payload.
+
+        Args:
+            record_id: The record's unique ID.
+            vector: New embedding vector (None to leave unchanged).
+            payload: New payload (None to leave unchanged).
+        """
         import json
 
         pool = await self._ensure_pool()
@@ -288,7 +324,14 @@ class PGVectorStore:
             )
 
     async def get(self, record_id: str) -> VectorRecord | None:
-        """Retrieve a single record by ID."""
+        """Retrieve a single record by ID.
+
+        Args:
+            record_id: The record's unique ID.
+
+        Returns:
+            The record, or None if not found.
+        """
         pool = await self._ensure_pool()
         async with pool.connection() as conn:
             # Collection name is controlled internally, not from user input
@@ -309,7 +352,15 @@ class PGVectorStore:
         filters: dict[str, Any] | None = None,
         limit: int | None = None,
     ) -> list[VectorRecord]:
-        """List records with optional filters."""
+        """List records with optional filters.
+
+        Args:
+            filters: Optional payload equality filters (all must match).
+            limit: Maximum number of records to return.
+
+        Returns:
+            Matching records.
+        """
         pool = await self._ensure_pool()
 
         where_clause = ""
@@ -346,13 +397,13 @@ class PGVectorStore:
             await conn.execute(f"DROP TABLE IF EXISTS {self._collection}")
 
     async def reset(self) -> None:
-        """Truncate all records from the table."""
+        """Remove all records from the table without dropping it."""
         pool = await self._ensure_pool()
         async with pool.connection() as conn:
             await conn.execute(f"TRUNCATE TABLE {self._collection}")
 
     async def close(self) -> None:
-        """Close the connection pool and release resources."""
+        """Close the owned connection pool (shared pools are left alone)."""
         if not self._owns_pool:
             self._pool = None
             return

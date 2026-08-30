@@ -453,8 +453,8 @@ class NormalizedPathBackend:
     ) -> Any:
         """Search files; positional order matches BackendProtocol.grep.
 
-        ``output_mode`` is a nano extension and must stay keyword-only so it cannot
-        steal ``glob``. Default is ``content`` because deepagents middleware formats
+        `output_mode` is a nano extension and must stay keyword-only so it cannot
+        steal `glob`. Default is `content` because deepagents middleware formats
         tool output itself and expects line matches with text.
         """
         from soothe_deepagents.backends.protocol import GrepResult
@@ -603,8 +603,8 @@ class WorkspaceAwareBackend(BackendProtocol):
     def bind_workspace(self, workspace: Path | str) -> None:
         """Bind the active workspace for subsequent filesystem tool calls.
 
-        Called by deepagents ``FilesystemMiddleware`` from tool runtime so nested
-        ``task`` children resolve the parent project root without host config objects.
+        Called by deepagents `FilesystemMiddleware` from tool runtime so nested
+        `task` children resolve the parent project root without host config objects.
         """
         from soothe_nano.workspace.workspace_runtime import set_workspace_context
 

@@ -1,9 +1,4 @@
-"""Tool caching utilities for resolved tool groups.
-
-Provides an in-process LRU-style cache so that tool groups resolved once
-(whether sequentially or via parallel ``ThreadPoolExecutor``) are reused
-on subsequent lookups without re-importing or re-constructing.
-"""
+"""In-process LRU-style cache for resolved tool groups, so groups resolved once (sequentially or via parallel `ThreadPoolExecutor`) are reused on subsequent lookups."""
 
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+"""Fill AcroForm fields in a PDF from a field-values JSON."""
+
 import json
 import sys
 

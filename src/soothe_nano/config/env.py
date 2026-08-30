@@ -16,16 +16,16 @@ _logger = logging.getLogger(__name__)
 
 
 def _resolve_env(value: str) -> str:
-    """Resolve ``${ENV_VAR}`` references in config values.
+    """Resolve `${ENV_VAR}` references in config values.
 
     Supports env vars anywhere in the string, including:
-    - Exact match: ``${HOME}`` → ``/Users/alice``
-    - Embedded: ``${HOME}/workspaces`` → ``/Users/alice/workspaces``
-    - Multiple: ``${VAR1}/${VAR2}`` → ``value1/value2``
-    - Unresolved vars are left as-is (e.g., ``${MISSING_VAR}`` stays unchanged).
+    - Exact match: `${HOME}` → `/Users/alice`
+    - Embedded: `${HOME}/workspaces` → `/Users/alice/workspaces`
+    - Multiple: `${VAR1}/${VAR2}` → `value1/value2`
+    - Unresolved vars are left as-is (e.g., `${MISSING_VAR}` stays unchanged).
 
     Args:
-        value: String potentially containing ``${ENV_VAR}`` placeholders.
+        value: String potentially containing `${ENV_VAR}` placeholders.
 
     Returns:
         String with all resolvable env vars substituted.
@@ -45,9 +45,9 @@ def _resolve_env(value: str) -> str:
 def _expand_env_in_config(
     config: dict[str, Any] | list[Any] | str | Any,
 ) -> dict[str, Any] | list[Any] | str | Any:
-    """Recursively expand ``${ENV_VAR}`` placeholders throughout config tree.
+    """Recursively expand `${ENV_VAR}` placeholders throughout config tree.
 
-    Walks through dicts, lists, and strings, applying ``_resolve_env`` to all
+    Walks through dicts, lists, and strings, applying `_resolve_env` to all
     string values. Non-string values (ints, booleans, None) are left unchanged.
 
     Args:

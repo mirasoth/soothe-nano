@@ -35,7 +35,7 @@ _UNIX_HOST_ROOT_TOP_NAMES: frozenset[str] = frozenset(
 
 
 def config_workspace_root(config: Any | None) -> str | None:
-    """Return configured ``filesystem_middleware.workspace_root`` when set."""
+    """Return configured `filesystem_middleware.workspace_root` when set."""
     if config is None:
         return None
     fs = getattr(config, "filesystem_middleware", None)
@@ -91,7 +91,7 @@ def _posix_first_segment_name(expanded: Path) -> str | None:
 
 
 def should_use_virtual_path_resolution(file_path: str, workspace_root: Path) -> bool:
-    """True when a leading-``/`` path should use virtual sandbox resolution."""
+    """True when a leading-`/` path should use virtual sandbox resolution."""
     if not file_path.strip().startswith("/"):
         return False
     expanded = Path(file_path.strip()).expanduser()
@@ -134,7 +134,7 @@ def join_workspace_normalized_path(workspace: Path, normalized: str) -> Path:
 
 
 def filesystem_virtual_mode_from_soothe_config(config: SootheConfig) -> bool:
-    """Return ``FilesystemBackend.virtual_mode`` from security settings."""
+    """Return `FilesystemBackend.virtual_mode` from security settings."""
     return not config.security.allow_paths_outside_workspace
 
 
@@ -156,7 +156,7 @@ def resolve_workspace_backup_dir(
 ) -> str:
     """Resolve product backup directory for tool/backend use.
 
-    Defaults to workspace ``.soothe/backups``. Returns a virtual absolute path
+    Defaults to workspace `.soothe/backups`. Returns a virtual absolute path
     when the backend is in virtual mode; otherwise a host path under the
     workspace root.
     """

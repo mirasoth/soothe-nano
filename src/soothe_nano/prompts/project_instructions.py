@@ -1,9 +1,9 @@
 """Load workspace AGENTS.md (preferred) or CLAUDE.md for system-message AGENT_INSTRUCTIONS.
 
 Progressive disclosure: small files inline verbatim; larger files emit a
-paragraph-clean headline plus a ``<NOTE>`` hint that points the LLM at
-``read_file`` for the full body. Read+format results are cached per
-``(path, mtime)`` so repeated prompt builds within a session don't re-hit disk.
+paragraph-clean headline plus a `<NOTE>` hint that points the LLM at
+`read_file` for the full body. Read+format results are cached per
+`(path, mtime)` so repeated prompt builds within a session don't re-hit disk.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ PROJECT_INSTRUCTION_HEADLINE_PARAGRAPH_BOUNDARY = "\n\n"
 
 
 def _read_file_head_lines(path: Path, *, max_lines: int) -> tuple[str, bool]:
-    """Read up to ``max_lines`` from a text file.
+    """Read up to `max_lines` from a text file.
 
     Args:
         path: File to read.
@@ -54,10 +54,10 @@ def _read_file_head_lines(path: Path, *, max_lines: int) -> tuple[str, bool]:
 
 
 def _headline_excerpt(body: str, max_chars: int) -> tuple[str, bool]:
-    """Return ``(headline, was_truncated)``.
+    """Return `(headline, was_truncated)`.
 
-    When ``body`` exceeds ``max_chars``, cut on the last paragraph boundary
-    within budget. If no paragraph boundary fits, hard-cut at ``max_chars`` —
+    When `body` exceeds `max_chars`, cut on the last paragraph boundary
+    within budget. If no paragraph boundary fits, hard-cut at `max_chars` —
     bounded token cost beats a clean cut.
     """
     if len(body) <= max_chars:
@@ -89,9 +89,9 @@ def load_agent_instructions(
     2. .soothe/AGENTS.md
     3. CLAUDE.md in workspace root (fallback when no AGENTS.md found)
 
-    Only ONE file is loaded. Files under ``headline_max_chars`` inline
-    verbatim; larger files emit a partial headline plus a ``<NOTE>`` directing
-    the LLM to ``read_file`` for the full body (progressive disclosure).
+    Only ONE file is loaded. Files under `headline_max_chars` inline
+    verbatim; larger files emit a partial headline plus a `<NOTE>` directing
+    the LLM to `read_file` for the full body (progressive disclosure).
 
     Args:
         workspace: Thread workspace directory.
@@ -100,8 +100,8 @@ def load_agent_instructions(
             full body is suppressed in favor of a read_file hint.
 
     Returns:
-        XML fragment ``<AGENT_INSTRUCTIONS>`` for execute-type system messages,
-        or ``None`` when no files were found or ``workspace`` is unset.
+        XML fragment `<AGENT_INSTRUCTIONS>` for execute-type system messages,
+        or `None` when no files were found or `workspace` is unset.
     """
     if not workspace:
         return None
@@ -146,7 +146,7 @@ def _build_block_cached(
     max_lines: int,
     headline_max_chars: int,
 ) -> str | None:
-    """Read + format one instruction file. Cached on ``(path, mtime, caps)``."""
+    """Read + format one instruction file. Cached on `(path, mtime, caps)`."""
     path = Path(path_str)
     body, truncated_lines = read_file_head_lines(path, max_lines=max_lines)
     if not body.strip():

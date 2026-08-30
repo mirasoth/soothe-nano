@@ -1,4 +1,4 @@
-"""Vector store implementations for VectorStoreProtocol."""
+"""Vector store backend factory for `VectorStoreProtocol`."""
 
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ def create_vector_store(
     """Factory for vector store backends.
 
     Args:
-        provider: Backend name (``pgvector``, ``weaviate``, ``sqlite_vec``).
+        provider: Backend name (`pgvector`, `weaviate`, `sqlite_vec`).
         collection: Collection / table name.
         config: Provider-specific configuration.
 
     Returns:
-        A VectorStoreProtocol implementation.
+        A `VectorStoreProtocol` implementation.
 
     Raises:
         ValueError: If the provider is unknown.

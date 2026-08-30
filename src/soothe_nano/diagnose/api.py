@@ -35,12 +35,12 @@ async def diagnose(
     Args:
         config: Duck-typed agent config (providers, mcp_servers, …). Do not
             pass host-only types that create reverse imports.
-        deep: Include deep categories when ``categories`` is None.
-        live_llm: Perform a live invoke against ``router.default``.
+        deep: Include deep categories when `categories` is None.
+        live_llm: Perform a live invoke against `router.default`.
         categories: Explicit category filter (subset of nano categories).
 
     Returns:
-        List of category dicts matching ``CategoryResult.to_dict()``.
+        List of category dicts matching `CategoryResult.to_dict()`.
     """
     from soothe_nano.diagnose.mcp import check_mcp_servers
     from soothe_nano.diagnose.models_check import check_models

@@ -31,7 +31,7 @@ DEFAULT_TASK_TIMEOUT_SECONDS = 18000  # 5 hours
 
 
 def clamp_execute_timeout(seconds: int | float) -> int:
-    """Clamp run_command timeout to ``MAX_EXECUTE_TIMEOUT``."""
+    """Clamp run_command timeout to `MAX_EXECUTE_TIMEOUT`."""
     return min(int(seconds), MAX_EXECUTE_TIMEOUT)
 
 

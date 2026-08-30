@@ -50,12 +50,12 @@ class MCPActivationState(AgentState[Any]):
 
 
 def stash_mcp_activation_update(activation: dict[str, Any]) -> None:
-    """Record a pending ``mcp_activation`` write for ``aafter_model``."""
+    """Record a pending `mcp_activation` write for `aafter_model`."""
     _mcp_activation_update.set(snapshot_mcp_activation(activation))
 
 
 def pop_mcp_activation_update() -> dict[str, set[str]] | None:
-    """Return and clear a pending ``mcp_activation`` write, if any."""
+    """Return and clear a pending `mcp_activation` write, if any."""
     pending = _mcp_activation_update.get()
     _mcp_activation_update.set(None)
     return pending

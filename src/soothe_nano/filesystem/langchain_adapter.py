@@ -1,20 +1,4 @@
-"""LangChain adapter for UnifiedFilesystem interface.
-
-This module provides an adapter that wraps LangChain's file system tools
-to implement the UnifiedFilesystem interface, enabling seamless integration
-with LangChain-based applications.
-
-Example:
-    >>> from soothe_nano.filesystem import create_filesystem
-    >>> from soothe_nano.filesystem.langchain_adapter import LangChainAdapter
-    >>> # Create underlying filesystem
-    >>> fs = create_filesystem("/workspace")
-    >>> # Wrap with LangChain adapter
-    >>> langchain_fs = LangChainAdapter(fs)
-    >>> # Use with LangChain tools
-    >>> from langchain_community.tools.file_management import ReadFileTool
-    >>> tool = ReadFileTool(fs=langchain_fs)
-"""
+"""Adapter wrapping a `UnifiedFilesystem` to expose the LangChain file-system interface for LangChain file-management tools."""
 
 from __future__ import annotations
 
@@ -553,7 +537,7 @@ class LangChainAdapter(UnifiedFilesystem):
     ) -> BatchedEditResult:
         """Async apply multiple edit operations to a file in one read/modify/write cycle.
 
-        See ``UnifiedFilesystem.aedit_batched`` for operation semantics.
+        See `UnifiedFilesystem.aedit_batched` for operation semantics.
         """
         return await self._underlying.aedit_batched(path, operations, backup=backup)
 

@@ -2,7 +2,7 @@
 
 Lightweight middleware that captures tool-call kwargs for display purposes.
 Optimization logic (reuse/dedup/search policy) is owned by
-``ToolOptimizationMiddleware``.
+`ToolOptimizationMiddleware`.
 """
 
 from __future__ import annotations

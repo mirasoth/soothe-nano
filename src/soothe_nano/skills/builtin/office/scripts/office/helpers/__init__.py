@@ -1,3 +1,5 @@
+"""OOXML package helpers: part resolution, safe extraction, and rezip."""
+
 import os
 import posixpath
 import re

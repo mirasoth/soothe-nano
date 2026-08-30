@@ -20,7 +20,7 @@ class PerTurnModelMiddleware(AgentMiddleware):
     name = "PerTurnModelMiddleware"
 
     def __init__(self, config: Any) -> None:
-        """Keep ``SootheConfig`` for `create_chat_model_for_spec`.
+        """Keep `SootheConfig` for `create_chat_model_for_spec`.
 
         Args:
             config: `SootheConfig` instance from the running daemon / runner.

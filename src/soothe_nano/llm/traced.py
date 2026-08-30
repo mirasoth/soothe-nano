@@ -1,22 +1,10 @@
 """Unified LLM invocation with Langfuse tracing and rate-limit policy.
 
-Every direct LLM ``ainvoke`` in the Soothe runtime should go through
-:func:`ainvoke_traced` so that:
-
-* Langfuse callbacks are always attached (when observability is enabled),
-* :func:`soothe_nano.llm.invoke_policy.await_with_llm_call_policy` wraps the call
-  for rate-limiting, timeout, and retry, and
-* structured-output calls (:func:`soothe_nano.llm.structured.invoke_structured_chat`)
-  are traced the same way as plain ``ainvoke``.
-
-This replaces the ad-hoc patterns that were duplicated across host packages:
-
-* bare ``model.ainvoke(...)`` with no config (context-window summariser, cron extraction)
-* ``{"metadata": create_llm_call_metadata(...)}`` without Langfuse callbacks (autopilot reasoners)
-* ``SootheLangfuse(cfg).traced_llm(...)`` + manual ``await_with_llm_call_policy`` wrapper
-
-The helpers are safe to call without a config (unit tests, headless runs): the call
-still works, just without Langfuse tracing.
+Every direct LLM `ainvoke` should go through `ainvoke_traced` so Langfuse
+callbacks are attached, `await_with_llm_call_policy` wraps the call for
+rate-limiting/timeout/retry, and structured-output calls are traced the same
+way as plain `ainvoke`. Safe to call without a config (unit tests, headless
+runs): the call works without Langfuse tracing.
 """
 
 from __future__ import annotations
@@ -51,10 +39,10 @@ def build_traced_invoke_config(
 
     Priority:
 
-    1. ``goal_trace`` pinned config (shares the goal-loop trace). The host
-       ``GoalLoopTrace`` exposes ``pinned_llm_invoke_config``; any object with
+    1. `goal_trace` pinned config (shares the goal-loop trace). The host
+       `GoalLoopTrace` exposes `pinned_llm_invoke_config`; any object with
        that method is supported (duck-typed, no host import here).
-    2. ``SootheLangfuse(soothe_config).traced_llm(...)`` (standalone trace).
+    2. `SootheLangfuse(soothe_config).traced_llm(...)` (standalone trace).
     3. Bare metadata dict (no Langfuse — e.g. unit tests without config).
     """
     # ── 1. Goal-loop trace pinning ────────────────────────────────────────────
@@ -95,7 +83,7 @@ def _resolve_rate_limit_config(
     soothe_config: Any | None,
     rate_limit_overrides: dict[str, Any] | None,
 ) -> Any:
-    """Build an ``LLMRateLimitConfig`` from the soothe config, applying overrides."""
+    """Build an `LLMRateLimitConfig` from the soothe config, applying overrides."""
     from soothe_nano.llm.invoke_policy import llm_rate_limit_config_from
 
     if soothe_config is None:
@@ -125,7 +113,7 @@ async def ainvoke_traced(
 ) -> Any:
     """Invoke a chat model with Langfuse tracing and rate-limit policy.
 
-    This is the **unified entry point** for all plain LLM ``ainvoke`` calls.
+    This is the **unified entry point** for all plain LLM `ainvoke` calls.
     It builds a Langfuse-traced RunnableConfig, wraps the call in
     :func:`await_with_llm_call_policy` (rate-limit, timeout, retry), and returns
     the raw model response.
@@ -134,10 +122,10 @@ async def ainvoke_traced(
         model: The LangChain chat model to invoke.
         messages: Message list to send to the model.
         soothe_config: Soothe config for Langfuse/rate-limit resolution.
-            When ``None``, the call still works but without tracing.
-        purpose: Short label for the call purpose (e.g. ``"scenario_classify"``).
-        component: Owning component path (e.g. ``"synthesis.scenario_classifier"``).
-        phase: Pipeline phase (e.g. ``"post-loop"``, ``"pre-stream"``).
+            When `None`, the call still works but without tracing.
+        purpose: Short label for the call purpose (e.g. `"scenario_classify"`).
+        component: Owning component path (e.g. `"synthesis.scenario_classifier"`).
+        phase: Pipeline phase (e.g. `"post-loop"`, `"pre-stream"`).
         session_id: Thread /var/lib/soothe/workspaces/Workspace/soothe session ID for Langfuse session grouping.
         loop_id: Goal-loop ID for trace correlation.
         run_name: Langfuse observation display name. Falls back to a
@@ -145,16 +133,16 @@ async def ainvoke_traced(
         extra_metadata: Additional metadata merged into the RunnableConfig.
         goal_trace: When provided, pin the call to this goal-loop trace
             (shares the root trace with intake + graph). Duck-typed: any object
-            with ``pinned_llm_invoke_config`` is supported.
-        independent_trace: When ``True``, use a fresh Langfuse handler
+            with `pinned_llm_invoke_config` is supported.
+        independent_trace: When `True`, use a fresh Langfuse handler
             instead of the cached one (separate root trace).
-        rate_limit_overrides: Override fields on the ``LLMRateLimitConfig``
-            (e.g. ``{"call_timeout_seconds": 30}``).
+        rate_limit_overrides: Override fields on the `LLMRateLimitConfig`
+            (e.g. `{"call_timeout_seconds": 30}`).
         extra_invoke_config: Additional RunnableConfig fields merged on top
             of the Langfuse config (rarely needed).
 
     Returns:
-        The raw model response (e.g. ``AIMessage``).
+        The raw model response (e.g. `AIMessage`).
     """
     from soothe_nano.llm.invoke_policy import await_with_llm_call_policy
 
@@ -228,12 +216,12 @@ async def ainvoke_structured_traced(
         extra_metadata: Additional metadata merged into the RunnableConfig.
         goal_trace: Pin the call to this goal-loop trace (duck-typed).
         independent_trace: Use a fresh Langfuse handler (separate root trace).
-        rate_limit_overrides: Override fields on ``LLMRateLimitConfig``.
+        rate_limit_overrides: Override fields on `LLMRateLimitConfig`.
         normalize: Optional normalisation callable applied to the structured
             result dict.
         methods: Optional ordered structured-output methods to try (forwarded
-            to :func:`invoke_structured_chat`).  When ``None``, the default
-            order (``function_calling → None → json_schema → json_mode``)
+            to :func:`invoke_structured_chat`).  When `None`, the default
+            order (`function_calling → None → json_schema → json_mode`)
             is used.
 
     Returns:

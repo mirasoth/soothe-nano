@@ -31,7 +31,7 @@ def tool_error_handler(tool_name: str, return_type: str = "dict") -> Callable[[C
     Catches all exceptions and returns an error response instead of raising.
 
     Also filters unexpected keyword arguments (common when LLMs invent
-    parameters such as ``limit``) before invoking the tool, logging a
+    parameters such as `limit`) before invoking the tool, logging a
     warning and continuing with accepted args instead of failing hard.
     """
 
@@ -99,10 +99,10 @@ def _filter_kwargs(
     func: Callable[..., Any],
     kwargs: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Split kwargs into accepted vs dropped for ``func``'s signature.
+    """Split kwargs into accepted vs dropped for `func`'s signature.
 
     Returns:
-        ``(kept, dropped)``. If ``func`` accepts ``**kwargs``, nothing is
+        `(kept, dropped)`. If `func` accepts `**kwargs`, nothing is
         dropped.
     """
     accepted = _accepted_param_names(func)
@@ -114,7 +114,7 @@ def _filter_kwargs(
 
 
 def _accepted_param_names(func: Callable[..., Any]) -> set[str] | None:
-    """Return accepted keyword parameter names, or None if ``**kwargs`` is ok."""
+    """Return accepted keyword parameter names, or None if `**kwargs` is ok."""
     try:
         signature = inspect.signature(func)
     except (TypeError, ValueError):

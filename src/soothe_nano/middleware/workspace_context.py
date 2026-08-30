@@ -35,7 +35,7 @@ class WorkspaceContextMiddleware(AgentMiddleware):
     """Set workspace context for tool execution.
 
     Reads workspace from config.configurable / state and sets ContextVar for
-    FrameworkFilesystem. Does **not** depend on injecting ``soothe_config``.
+    FrameworkFilesystem. Does **not** depend on injecting `soothe_config`.
 
     Thread Safety:
         Python's contextvars.ContextVar provides async-safe context isolation.

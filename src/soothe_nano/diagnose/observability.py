@@ -89,7 +89,7 @@ def _probe_langfuse_health(host: str, timeout: float = 3.0) -> CheckResult:
 
 
 def _check_langfuse_from_config(config: Any | None) -> list[CheckResult]:
-    """Check Langfuse integration when enabled in ``observability.langfuse``."""
+    """Check Langfuse integration when enabled in `observability.langfuse`."""
     if config is None:
         return [
             CheckResult(

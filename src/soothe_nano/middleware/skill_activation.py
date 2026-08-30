@@ -72,7 +72,7 @@ class SkillActivationMiddleware(AgentMiddleware):
         self._locks_guard = asyncio.Lock()
 
     async def abefore_agent(self, state, runtime) -> dict | None:
-        """Lazy-init ``skill_activation`` and run turn-0 intent prefetch when enabled."""
+        """Lazy-init `skill_activation` and run turn-0 intent prefetch when enabled."""
         if not isinstance(state, dict):
             return None
 
@@ -260,7 +260,7 @@ class SkillActivationMiddleware(AgentMiddleware):
         *,
         workspace: str | None,
     ) -> list[str]:
-        """Load matched core skill bodies into ``skill_activation`` on turn 0."""
+        """Load matched core skill bodies into `skill_activation` on turn 0."""
         loaded: list[str] = []
         for entry in entries:
             resolved = self._invoke_skill_into_activation(

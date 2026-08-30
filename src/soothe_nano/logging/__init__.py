@@ -1,9 +1,4 @@
-"""Soothe-nano logging — thread context and setup.
-
-``ThreadLogger`` is host-owned (defined by the host application); nano does not
-define it. Hosts attach their logger trees via ``setup_logging(...,
-extra_logger_names=...)``.
-"""
+"""Soothe-nano logging — thread context and setup."""
 
 from soothe_nano.logging.context import get_thread_id, set_thread_id
 from soothe_nano.logging.setup import (

@@ -12,10 +12,10 @@ def normalize_assistant_name(assistant_name: str) -> str:
 
 
 def build_assistant_identity_block(assistant_name: str) -> str:
-    """Build the cache-stable ``<ASSISTANT_IDENTITY>`` XML block.
+    """Build the cache-stable `<ASSISTANT_IDENTITY>` XML block.
 
     Args:
-        assistant_name: Configured assistant display name (e.g. ``Soothe``).
+        assistant_name: Configured assistant display name (e.g. `Soothe`).
 
     Returns:
         Formatted identity block (single source of truth for prompt injection).
@@ -27,7 +27,7 @@ def build_assistant_identity_block(assistant_name: str) -> str:
 def prepend_assistant_identity(system_body: str, assistant_name: str) -> str:
     """Prepend the canonical identity block to a system prompt body.
 
-    Use for CoreAgent system prompts (``resolve_system_prompt``, middleware).
+    Use for CoreAgent system prompts (`resolve_system_prompt`, middleware).
 
     Args:
         system_body: Phase-specific instructions without identity.

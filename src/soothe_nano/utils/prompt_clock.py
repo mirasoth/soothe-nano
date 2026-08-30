@@ -43,6 +43,6 @@ def prompt_datetime_context() -> dict[str, str]:
 
 
 def format_friendly_local_date() -> str:
-    """Return a user-facing local date (e.g. ``July 8, 2026``)."""
+    """Return a user-facing local date (e.g. `July 8, 2026`)."""
     now = now_local()
     return f"{now.strftime('%B')} {now.day}, {now.year}"

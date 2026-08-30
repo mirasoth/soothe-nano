@@ -60,7 +60,7 @@ def reset_stream_model_override(token: _StreamModelToken) -> None:
 
 
 def get_stream_model_override() -> tuple[str, dict[str, Any]] | None:
-    """Return ``(spec, params)`` when a stream model override is active."""
+    """Return `(spec, params)` when a stream model override is active."""
     return _stream_model_override.get()
 
 
@@ -142,9 +142,9 @@ def get_subagent_runtime_dir(subagent_name: str) -> Path:
 
 
 def get_workspace_subagent_output_dir(subagent_name: str) -> Path:
-    """Get subagent output directory, preferring ``<workspace>/.soothe/agents/<name>/``.
+    """Get subagent output directory, preferring `<workspace>/.soothe/agents/<name>/`.
 
-    Falls back to ``SOOTHE_HOME/agents/<name>/`` when no workspace is active.
+    Falls back to `SOOTHE_HOME/agents/<name>/` when no workspace is active.
     """
     from soothe_nano.workspace.workspace_runtime import get_workspace_context
 

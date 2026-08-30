@@ -22,7 +22,7 @@ def _strip_leading_bom(text: str) -> str:
 
 
 def _strip_markdown_json_fence(response: str) -> str:
-    """Extract JSON from ```json ... ``` or generic ``` ... ``` blocks."""
+    """Extract JSON from ``json ... `` or generic `` ... `` blocks."""
     json_str = response.strip()
 
     if "```json" in json_str:
@@ -43,9 +43,9 @@ def _strip_markdown_json_fence(response: str) -> str:
 
 
 def _extract_balanced_json_object(text: str, start: int | None = None) -> str | None:
-    """Return the substring from first ``{`` through its matching ``}``, string-aware.
+    """Return the substring from first `{` through its matching `}`, string-aware.
 
-    Avoids greedy ``{.*}`` mistakes when strings contain ``}`` or when prose follows JSON.
+    Avoids greedy `{.*}` mistakes when strings contain `}` or when prose follows JSON.
     """
     if start is None:
         start = text.find("{")
@@ -124,7 +124,7 @@ def _strip_trailing_commas_json(text: str) -> str:
 
 
 def _try_parse_json_dict(raw: str) -> dict[str, Any] | None:
-    """Parse ``raw`` as a JSON object; try trailing-comma repair on failure."""
+    """Parse `raw` as a JSON object; try trailing-comma repair on failure."""
     relaxed = _strip_trailing_commas_json(raw)
     variants = [raw] if raw == relaxed else [raw, relaxed]
     for candidate in variants:

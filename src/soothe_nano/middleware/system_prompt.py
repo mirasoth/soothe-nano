@@ -43,25 +43,25 @@ class _SystemPromptState(TypedDict):
 
     LangGraph merges all middleware state schemas to build the final graph state.
     Keys that no middleware declares are silently dropped on every state-update
-    merge, so consumer-side reads (``modify_request``) see ``None`` even when
+    merge, so consumer-side reads (`modify_request`) see `None` even when
     upstream code wrote a value. Declaring keys here is the only way to make
     them survive across nodes.
 
     Declares:
       - the injected task classification so task complexity reaches the prompt builder.
-      - ``workspace`` so the executor's ``_execute_graph_input``
-        and ``WorkspaceContextMiddleware.abefore_agent`` writes propagate to
-        ``modify_request``. Without this declaration, ``state.get("workspace")``
-        returns ``None`` and WORKSPACE_RULES / AGENT_INSTRUCTIONS / the
+      - `workspace` so the executor's `_execute_graph_input`
+        and `WorkspaceContextMiddleware.abefore_agent` writes propagate to
+        `modify_request`. Without this declaration, `state.get("workspace")`
+        returns `None` and WORKSPACE_RULES / AGENT_INSTRUCTIONS / the
         <WORKSPACE> block all disappear from the execute-step system prompt.
       - Four MCP keys for cross-call MCP state.
-      - ``skill_activation`` so turn-0 prefetch and invoke_skill bodies survive
-        LangGraph state merges and reach ``modify_request`` / tool middleware.
+      - `skill_activation` so turn-0 prefetch and invoke_skill bodies survive
+        LangGraph state merges and reach `modify_request` / tool middleware.
 
-    The ``messages`` key MUST use ``Annotated[..., add_messages]`` to preserve
-    the reducer from the base ``AgentState``.  A plain ``list`` annotation
-    silently downgrades the channel to ``LastValue``, which raises
-    ``InvalidUpdateError`` when parallel tool calls return in the same step.
+    The `messages` key MUST use `Annotated[..., add_messages]` to preserve
+    the reducer from the base `AgentState`.  A plain `list` annotation
+    silently downgrades the channel to `LastValue`, which raises
+    `InvalidUpdateError` when parallel tool calls return in the same step.
     """
 
     messages: Annotated[list[AnyMessage], add_messages]
@@ -166,11 +166,11 @@ class SystemPromptMiddleware(AgentMiddleware):
     ) -> list[str]:
         """Extract unique tool names from recent tool activity.
 
-        Inspects both ``ToolMessage.name`` (the result) AND
-        ``AIMessage.tool_calls[*].name`` (the invocation). The invocation side
+        Inspects both `ToolMessage.name` (the result) AND
+        `AIMessage.tool_calls[*].name` (the invocation). The invocation side
         matters for loop-continuation bootstrap: the predecessor-branch
         replay preserves Human/AI envelopes but strips ToolMessage rows, so
-        the AIMessage's structured ``tool_calls`` is the only surviving
+        the AIMessage's structured `tool_calls` is the only surviving
         signal of prior tool use.
 
         Args:
@@ -179,7 +179,7 @@ class SystemPromptMiddleware(AgentMiddleware):
 
         Returns:
             Unique tool names, most recent first, capped at
-            ``RECENT_TOOL_NAME_CAP``.
+            `RECENT_TOOL_NAME_CAP`.
         """
         if not messages:
             return []
@@ -209,8 +209,8 @@ class SystemPromptMiddleware(AgentMiddleware):
     ) -> list[AnyMessage]:
         """Merge graph state messages with the in-flight ModelRequest message list.
 
-        On the first model hop of an execute step, ``LoopHumanMessage.workspace``
-        often appears only on ``request.messages`` before LangGraph merges state.
+        On the first model hop of an execute step, `LoopHumanMessage.workspace`
+        often appears only on `request.messages` before LangGraph merges state.
         """
         state_messages: list[AnyMessage] = []
         if hasattr(request.state, "get"):
@@ -225,9 +225,9 @@ class SystemPromptMiddleware(AgentMiddleware):
     def _resolve_workspace_for_prompt(self, state: dict[str, Any] | None) -> str | None:
         """Resolve workspace for system-prompt assembly (config, state, messages).
 
-        Execute-step graph input often carries workspace on ``configurable`` or on
-        the latest ``LoopHumanMessage`` rather than ``state['workspace']`` after
-        LangGraph merges. ``modify_request`` merges ``request.messages`` into the
+        Execute-step graph input often carries workspace on `configurable` or on
+        the latest `LoopHumanMessage` rather than `state['workspace']` after
+        LangGraph merges. `modify_request` merges `request.messages` into the
         resolution state so first-hop execute steps still receive workspace blocks.
         """
         if not state:
@@ -287,7 +287,7 @@ class SystemPromptMiddleware(AgentMiddleware):
             state: Request state.
 
         Returns:
-            True when ``state["workspace"]`` is set.
+            True when `state["workspace"]` is set.
         """
         return bool(self._resolve_workspace_for_prompt(state))
 
@@ -353,7 +353,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         - Current goal context → ledger / plan turns (not repeated on execute-step message)
         - Per-turn recalled memories → <RETRIEVED_KNOWLEDGE><MEMORY>
 
-        Volatile clock → ``<TIMESTAMP>`` XML footer on the system prompt (not user/ledger).
+        Volatile clock → `<TIMESTAMP>` XML footer on the system prompt (not user/ledger).
 
         Args:
             complexity: One of "minimal", "simple", "medium", "complex". All
@@ -597,7 +597,7 @@ class SystemPromptMiddleware(AgentMiddleware):
 
         Builds the system prompt using static + semi-static tiers only.
         Execution hints are extracted from state and stored in
-        ``request.state["_soothe_execution_hints"]`` for the executor to
+        `request.state["_soothe_execution_hints"]` for the executor to
         include in the user message envelope.
 
         Args:

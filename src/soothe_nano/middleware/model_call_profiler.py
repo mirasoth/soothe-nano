@@ -1,6 +1,6 @@
 """Profiling for model-call latency analysis across soothe_deepagents and Soothe middleware.
 
-Use when debugging unexplained gaps between Langfuse ``model`` spans and LLM
+Use when debugging unexplained gaps between Langfuse `model` spans and LLM
 generation spans.
 
 Enable via config:
@@ -8,10 +8,10 @@ Enable via config:
       profile_model_calls: true
 
 Log prefixes:
-- ``[DeepAgentsProfiler]`` — outer soothe_deepagents stack (TodoList, Filesystem,
+- `[DeepAgentsProfiler]` — outer soothe_deepagents stack (TodoList, Filesystem,
   SubAgent, Summarization, PatchToolCalls) patched at CoreAgent build time
-- ``[ModelProfiler]`` / ``[InnerProfiler]`` / ``[LLMProfiler]`` — Soothe
-  middleware stack inserted via ``build_soothe_middleware_stack``
+- `[ModelProfiler]` / `[InnerProfiler]` / `[LLMProfiler]` — Soothe
+  middleware stack inserted via `build_soothe_middleware_stack`
 """
 
 from __future__ import annotations
@@ -378,7 +378,7 @@ class LLMCallProfilerMiddleware(AgentMiddleware):
     This captures timing after Soothe middleware (PerTurnModel, caching).
 
     SummarizationMiddleware runs in the soothe_deepagents stack before the Soothe
-    middleware slice; see ``[DeepAgentsProfiler]`` logs when profiling is enabled.
+    middleware slice; see `[DeepAgentsProfiler]` logs when profiling is enabled.
     """
 
     name = "LLMCallProfilerMiddleware"
@@ -469,7 +469,7 @@ def is_profiler_enabled(config: SootheConfig) -> bool:
 
 
 def _implements_model_call_hook(cls: type) -> bool:
-    """Return True when ``cls`` overrides sync or async model-call middleware."""
+    """Return True when `cls` overrides sync or async model-call middleware."""
     return (
         cls.wrap_model_call is not AgentMiddleware.wrap_model_call
         or cls.awrap_model_call is not AgentMiddleware.awrap_model_call
@@ -479,11 +479,11 @@ def _implements_model_call_hook(cls: type) -> bool:
 def install_model_call_profiler(*, enabled: bool) -> None:
     """Install soothe_deepagents outer-middleware timing patches when profiling is on.
 
-    Soothe profiler middleware is added separately by ``build_soothe_middleware_stack``.
-    Both layers honor ``observability.profile_model_calls``. Idempotent per process.
+    Soothe profiler middleware is added separately by `build_soothe_middleware_stack`.
+    Both layers honor `observability.profile_model_calls`. Idempotent per process.
 
     Args:
-        enabled: When False, does nothing. When True, wraps ``awrap_model_call`` on
+        enabled: When False, does nothing. When True, wraps `awrap_model_call` on
             outer soothe_deepagents middleware classes once per process.
     """
     if not enabled:
@@ -510,7 +510,7 @@ def install_model_call_profiler(*, enabled: bool) -> None:
 
 
 def _patch_deepagents_awrap_model_call(cls: type, label: str) -> None:
-    """Wrap ``awrap_model_call`` on a soothe_deepagents middleware class with timing logs."""
+    """Wrap `awrap_model_call` on a soothe_deepagents middleware class with timing logs."""
     if getattr(cls, _DEEPAGENTS_PATCHED_ATTR, False):
         return
 

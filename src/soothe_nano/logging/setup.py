@@ -1,7 +1,7 @@
 """Logging configuration for soothe-nano (host-agnostic).
 
-Hosts attach their own logger trees via ``extra_logger_names`` (e.g. soothe
-passes ``("soothe",)``). Nano never hardcodes unknown downstream package names.
+Hosts attach their own logger trees via `extra_logger_names` (e.g. soothe
+passes `("soothe",)`). Nano never hardcodes unknown downstream package names.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def resolve_package_logger_names(
     """Merge nano package logger names with host-supplied extras (order-preserving).
 
     Args:
-        extra_logger_names: Additional logger tree roots (e.g. ``("soothe",)``).
+        extra_logger_names: Additional logger tree roots (e.g. `("soothe",)`).
 
     Returns:
         Deduplicated logger names: nano defaults first, then extras.
@@ -92,7 +92,7 @@ def _package_loggers(
 
 
 def _rotating_handler_path(handler: RotatingFileHandler) -> Path | None:
-    """Resolve a rotating handler target path, or ``None`` if unavailable."""
+    """Resolve a rotating handler target path, or `None` if unavailable."""
     base = getattr(handler, "baseFilename", None)
     if base is None:
         return None
@@ -103,7 +103,7 @@ def _rotating_handler_path(handler: RotatingFileHandler) -> Path | None:
 
 
 def _has_rotating_file_handler_at(logger: logging.Logger, log_path: Path) -> bool:
-    """Return whether ``logger`` already has a rotating handler for ``log_path``."""
+    """Return whether `logger` already has a rotating handler for `log_path`."""
     resolved = log_path.resolve()
     return any(
         isinstance(handler, RotatingFileHandler) and _rotating_handler_path(handler) == resolved
@@ -119,7 +119,7 @@ def _add_rotating_file_handler(
     max_bytes: int,
     backup_count: int,
 ) -> None:
-    """Attach a rotating file handler to each logger that lacks one for ``log_file``."""
+    """Attach a rotating file handler to each logger that lacks one for `log_file`."""
     log_path = Path(log_file).resolve()
     formatter = ThreadFormatter(
         "%(asctime)s %(level_short)s %(thread_id)s %(name)s:%(lineno)d %(message)s"
@@ -145,7 +145,7 @@ def _add_console_handler_if_missing(
     console_level: int,
     console_format: str,
 ) -> None:
-    """Attach a console stream handler to each logger that lacks one for ``stream``."""
+    """Attach a console stream handler to each logger that lacks one for `stream`."""
     for logger in loggers:
         if any(
             isinstance(handler, logging.StreamHandler)
@@ -169,15 +169,15 @@ def setup_logging(
 ) -> None:
     """Configure nano (and optional host) package loggers with file/console handlers.
 
-    Writes to ``SOOTHE_HOME/logs/soothe.log`` (rotating) for ``soothe_nano.*`` and
-    ``soothe_plugins.*`` unless ``log_file`` overrides the path. Downstream hosts
-    pass their logger roots via ``extra_logger_names`` (e.g. ``("soothe",)``).
+    Writes to `SOOTHE_HOME/logs/soothe.log` (rotating) for `soothe_nano.*` and
+    `soothe_plugins.*` unless `log_file` overrides the path. Downstream hosts
+    pass their logger roots via `extra_logger_names` (e.g. `("soothe",)`).
 
     Args:
         config: Optional config to read logging configuration from.
-        foreground: When ``True``, forces console logging to stdout at INFO level
+        foreground: When `True`, forces console logging to stdout at INFO level
             regardless of config settings. Useful for foreground process mode.
-        log_file: Optional log file path override (default ``SOOTHE_HOME/logs/soothe.log``).
+        log_file: Optional log file path override (default `SOOTHE_HOME/logs/soothe.log`).
         extra_logger_names: Additional logger tree roots to attach the same
             handlers to. Unknown downstream packages register here; nano does
             not hardcode host names.

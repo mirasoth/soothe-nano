@@ -1,22 +1,11 @@
 """Tool binding and tool-call extraction for the litellm adapter.
 
-This is where the tool-calling regression is fixed by construction. The old
-``OpenAICompatModelWrapper`` called ``self._model._agenerate(...)`` directly on
-a langchain ``RunnableBinding``, bypassing the kwargs merge that delivers the
-bound ``tools=`` to the provider — so the model never received tools and
-emitted tool-call intent as JSON-as-text.
-
-The litellm adapter avoids this entirely: :func:`bind_tools_litellm` stores the
-tool schemas on the adapter instance, and :meth:`ChatLitellmModel._generate`
-passes them directly to ``litellm.completion(tools=...)``. litellm returns
-native structured ``tool_calls`` (verified for DashScope), which
-:func:`extract_tool_calls_from_litellm` maps to the langchain
-``AIMessage.tool_calls`` shape the agent graph reads.
-
-A safety-net text recovery (:func:`recover_text_tool_calls`) catches the
-provider regression mode where a model emits tool calls as text (````` json
-fences, ``NAME(args)`` syntax, ``<function=X>{}</function>`` tags) and lifts
-them into structured ``tool_calls`` so the pipeline still functions.
+`bind_tools_litellm` stores tool schemas on the adapter instance so
+`ChatLitellmModel._generate` passes them directly to
+`litellm.completion(tools=...)`. `extract_tool_calls_from_litellm` maps the
+native structured `tool_calls` to the langchain `AIMessage.tool_calls` shape.
+`recover_text_tool_calls` lifts tool calls emitted as text (json fences,
+`NAME(args)` syntax, `<function=X>` tags) into structured `tool_calls`.
 """
 
 from __future__ import annotations
@@ -32,12 +21,12 @@ from soothe_nano.llm.message import lc_from_litellm_message
 
 
 def _tool_to_litellm_schema(tool: Any) -> dict[str, Any]:
-    """Convert a langchain tool (BaseTool or @tool function) to litellm ``tools`` wire format.
+    """Convert a langchain tool (BaseTool or @tool function) to litellm `tools` wire format.
 
-    litellm accepts the OpenAI tool schema: ``{"type": "function", "function":
-    {"name", "description", "parameters"}}``. langchain tools expose
-    ``.name``, ``.description``, and ``.args_schema`` (a pydantic model whose
-    ``model_json_schema()`` is the parameters schema).
+    litellm accepts the OpenAI tool schema: `{"type": "function", "function":
+    {"name", "description", "parameters"}}`. langchain tools expose
+    `.name`, `.description`, and `.args_schema` (a pydantic model whose
+    `model_json_schema()` is the parameters schema).
     """
     # Already in wire dict form.
     if isinstance(tool, dict) and "type" in tool:
@@ -87,11 +76,11 @@ def _tool_to_litellm_schema(tool: Any) -> dict[str, Any]:
 
 
 def _parameters_from_signature(func: Any) -> dict[str, Any]:
-    """Build a JSON-Schema ``parameters`` object from a callable's signature.
+    """Build a JSON-Schema `parameters` object from a callable's signature.
 
-    Used when a tool is a plain function (no ``args_schema``). Each parameter
-    becomes a ``string`` property (the most permissive type — litellm/OpenAI
-    tool schemas require a ``parameters`` object but are lenient on types;
+    Used when a tool is a plain function (no `args_schema`). Each parameter
+    becomes a `string` property (the most permissive type — litellm/OpenAI
+    tool schemas require a `parameters` object but are lenient on types;
     the model fills the actual values).
     """
     import inspect
@@ -115,23 +104,23 @@ def _parameters_from_signature(func: Any) -> dict[str, Any]:
 
 
 def bind_tools_litellm(tools: list[Any]) -> list[dict[str, Any]]:
-    """Build the litellm ``tools=`` argument from a list of langchain tools.
+    """Build the litellm `tools=` argument from a list of langchain tools.
 
     Args:
-        tools: langchain ``BaseTool`` instances, ``@tool`` functions, pydantic
+        tools: langchain `BaseTool` instances, `@tool` functions, pydantic
             schema classes, or pre-formed wire dicts.
 
     Returns:
-        OpenAI-compatible ``tools`` list for ``litellm.completion``.
+        OpenAI-compatible `tools` list for `litellm.completion`.
     """
     return [_tool_to_litellm_schema(t) for t in tools]
 
 
 def extract_tool_calls_from_litellm(message: Any) -> AIMessage:
-    """Map a litellm chat-completion message to a langchain ``AIMessage``.
+    """Map a litellm chat-completion message to a langchain `AIMessage`.
 
-    litellm returns native ``tool_calls`` (``Function(name, arguments)``) which
-    this maps to the langchain ``tool_calls`` list-of-dicts shape. When the
+    litellm returns native `tool_calls` (`Function(name, arguments)`) which
+    this maps to the langchain `tool_calls` list-of-dicts shape. When the
     model emitted tool calls **as text** instead (the provider regression mode),
     :func:`recover_text_tool_calls` lifts them back into structured form.
     """
@@ -173,7 +162,7 @@ _CALL_SYNTAX_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)", re.DOTAL
 
 
 def _parse_args_dict(raw: str) -> dict[str, Any]:
-    """Parse a JSON object or ``k="v"`` arg list into a dict."""
+    """Parse a JSON object or `k="v"` arg list into a dict."""
     raw = raw.strip()
     if not raw:
         return {}
@@ -209,7 +198,7 @@ def recover_text_tool_calls(text: str) -> list[dict[str, Any]]:
     """Best-effort recovery of tool calls emitted as text.
 
     Returns a list of langchain-shaped tool-call dicts
-    (``{"name","args","id","type":"tool_call"}``) when a recognized format is
+    (`{"name","args","id","type":"tool_call"}`) when a recognized format is
     found; empty list otherwise.
     """
     calls: list[dict[str, Any]] = []

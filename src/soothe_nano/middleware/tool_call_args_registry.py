@@ -1,8 +1,8 @@
-"""Capture tool-call kwargs at invocation time (provider ``tool_call_id``).
+"""Capture tool-call kwargs at invocation time (provider `tool_call_id`).
 
-LangGraph may stream only ``ToolMessage`` results without preceding ``AIMessage`` tool
+LangGraph may stream only `ToolMessage` results without preceding `AIMessage` tool
 metadata (e.g. some fast-model paths). The registry records args from
-``ToolCallRequest`` in middleware before tools run so downstream stream code can
+`ToolCallRequest` in middleware before tools run so downstream stream code can
 attach them to unified wire ids.
 """
 
@@ -21,7 +21,7 @@ _registry: ContextVar[dict[str, dict[str, Any]] | None] = ContextVar(
 
 
 def coerce_tool_call_args(raw: Any) -> dict[str, Any]:
-    """Normalize tool-call ``args`` from a request or wire payload."""
+    """Normalize tool-call `args` from a request or wire payload."""
     if isinstance(raw, dict):
         inp = raw.get("input")
         if isinstance(inp, dict) and inp:
@@ -47,7 +47,7 @@ def clear_tool_call_args_registry() -> None:
 
 
 def record_tool_call_args_from_request(request: ToolCallRequest) -> None:
-    """Store kwargs from an in-flight tool invocation keyed by provider ``tool_call_id``."""
+    """Store kwargs from an in-flight tool invocation keyed by provider `tool_call_id`."""
     store = _registry.get()
     if store is None:
         return
@@ -61,7 +61,7 @@ def record_tool_call_args_from_request(request: ToolCallRequest) -> None:
 
 
 def get_recorded_tool_call_args(tool_call_id: str) -> dict[str, Any]:
-    """Return kwargs recorded at invocation for a provider ``tool_call_id``."""
+    """Return kwargs recorded at invocation for a provider `tool_call_id`."""
     store = _registry.get()
     if store is None:
         return {}

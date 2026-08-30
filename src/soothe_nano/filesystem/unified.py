@@ -1,8 +1,4 @@
-"""Unified filesystem interface for Soothe.
-
-This module defines the abstract base class for all filesystem operations,
-providing a consistent API across different backends and implementations.
-"""
+"""Abstract base class defining the unified filesystem interface for all backends."""
 
 from __future__ import annotations
 
@@ -30,8 +26,8 @@ from .exceptions import (
 class UnifiedFilesystem(ABC):
     """Product-shaped filesystem façade over deepagents backends.
 
-    Implementations (notably ``LocalFilesystem``) compose
-    ``soothe_deepagents.backends.FilesystemBackend`` for disk safety
+    Implementations (notably `LocalFilesystem`) compose
+    `soothe_deepagents.backends.FilesystemBackend` for disk safety
     (atomic write, backup, locks, batch edit, grep) while preserving nano
     path resolution, workspace isolation, and typed exception APIs.
 

@@ -1,21 +1,10 @@
-"""``LLMFactory`` — model creation with litellm-backed caching.
-
-Rewired from the nano ``utils/llm/factory.py``: instead of
-``init_chat_model`` + a wrapper chain (``OpenAICompatModelWrapper`` →
-``SootheTokenUsageChatModel``), it resolves the provider config to a litellm
-model string and builds a single :class:`~soothe_nano.llm.provider.ChatLitellmModel`.
-
-The compat quirks the old wrapper stack handled (thinking-token stripping,
-broken-streaming self-heal, structured-output fallback) are folded into
-``ChatLitellmModel`` directly via :class:`~soothe_nano.llm.registry.ProviderCapabilities`,
-so there is no wrapper that could bypass tool binding.
-"""
+"""`LLMFactory` — create and cache `ChatLitellmModel` instances by router role or explicit spec."""
 
 from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.language_models import BaseChatModel
 
@@ -23,7 +12,7 @@ from soothe_nano.llm.provider import ChatLitellmModel
 from soothe_nano.llm.registry import ProviderRegistry
 from soothe_nano.llm.types import ModelRole
 
-if False:  # TYPE_CHECKING
+if TYPE_CHECKING:
     from soothe_nano.config.settings import SootheConfig
 
 logger = logging.getLogger(__name__)
@@ -35,14 +24,14 @@ class LLMFactory:
     """Create and cache :class:`ChatLitellmModel` instances by role or spec.
 
     Args:
-        config: ``SootheConfig`` carrying ``providers`` and ``router_profiles``.
+        config: `SootheConfig` carrying `providers` and `router_profiles`.
     """
 
     def __init__(self, config: SootheConfig) -> None:
         """Initialize the factory with a resolved config.
 
         Args:
-            config: ``SootheConfig`` with ``providers`` and ``router_profiles``.
+            config: `SootheConfig` with `providers` and `router_profiles`.
         """
         self._config = config
         self._registry = ProviderRegistry(config.providers)
@@ -59,11 +48,11 @@ class LLMFactory:
         *,
         fallback_role: ModelRole | None = None,
     ) -> BaseChatModel:
-        """Create a ``ChatLitellmModel`` for a router role with caching.
+        """Create a `ChatLitellmModel` for a router role with caching.
 
-        When ``fallback_role`` is omitted and ``role`` is not ``default``,
-        instantiation failure for the primary role retries the ``default``
-        router role if it resolves to a different ``provider:model`` spec.
+        When `fallback_role` is omitted and `role` is not `default`,
+        instantiation failure for the primary role retries the `default`
+        router role if it resolves to a different `provider:model` spec.
         """
         spec = self._config.resolve_model(role)
         if spec is None:
@@ -97,7 +86,7 @@ class LLMFactory:
         model_spec: str,
         model_params: dict[str, Any] | None = None,
     ) -> BaseChatModel:
-        """Create a model from an explicit ``provider:model`` string."""
+        """Create a model from an explicit `provider:model` string."""
         spec_str = (model_spec or "").strip()
         if not spec_str:
             msg = "model_spec is required for create_chat_model_for_spec"
@@ -105,7 +94,7 @@ class LLMFactory:
         return self._create_from_spec(spec_str, model_params or {})
 
     def _parse_spec(self, spec: str) -> tuple[str, str]:
-        """Split a ``provider:model`` spec into ``(provider_name, model_name)``."""
+        """Split a `provider:model` spec into `(provider_name, model_name)`."""
         if ":" not in spec:
             msg = f"model spec '{spec}' must be 'provider:model'"
             raise ValueError(msg)
@@ -122,14 +111,14 @@ class LLMFactory:
         spec: str,
         params: dict[str, Any],
     ) -> BaseChatModel:
-        """Parse spec, resolve provider, build (and cache) a ``ChatLitellmModel``.
+        """Parse spec, resolve provider, build (and cache) a `ChatLitellmModel`.
 
         Args:
-            spec: ``provider:model`` string.
+            spec: `provider:model` string.
             params: Extra kwargs (temperature, etc.).
 
         Returns:
-            A configured ``ChatLitellmModel``.
+            A configured `ChatLitellmModel`.
 
         Raises:
             ValueError: If spec is empty.

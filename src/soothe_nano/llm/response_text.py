@@ -1,8 +1,4 @@
-"""Extract parseable text and JSON objects from provider AIMessage responses.
-
-Ported from the former ``soothe_nano.utils.llm.response_text``. Depends on
-:mod:`soothe_nano.llm.thinking` (the ported thinking filter).
-"""
+"""Extract parseable text and JSON objects from provider AIMessage responses."""
 
 from __future__ import annotations
 
@@ -16,7 +12,7 @@ _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL | re.IGN
 
 
 def text_from_message_content(content: Any) -> str:
-    """Flatten AIMessage ``content`` (str or block list) to plain text."""
+    """Flatten AIMessage `content` (str or block list) to plain text."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -35,9 +31,9 @@ def text_from_message_content(content: Any) -> str:
 def llm_response_text(response: Any) -> str:
     """Return parseable text from an AIMessage-like response.
 
-    Thinking models may put JSON in ``additional_kwargs["reasoning_content"]``
-    or list-style ``content`` blocks while leaving primary ``content`` empty.
-    ``strip_thinking`` is applied so inline thinking blocks never surface.
+    Thinking models may put JSON in `additional_kwargs["reasoning_content"]`
+    or list-style `content` blocks while leaving primary `content` empty.
+    `strip_thinking` is applied so inline thinking blocks never surface.
     """
     if hasattr(response, "content") and response.content:
         return strip_thinking(text_from_message_content(response.content))
@@ -103,12 +99,11 @@ _extract_json_str_from_response = llm_response_text
 def _strip_json_text(raw: str) -> str:
     """Normalize model output to a JSON-parseable string.
 
-    Ported from the former ``soothe_nano.utils.llm.wrappers._strip_json_text``.
-    Local OpenAI-compatible providers (oMLX/GLM/gemma) sometimes wrap
-    ``json_schema`` output in a markdown fence (````` ```json ... ``` `````)
-    or prefix it with prose even though ``response_format`` requested strict
-    JSON. Strip the fence and, if prose remains, slice to the first ``{`` so
-    ``json.loads`` succeeds. Returns a string (the caller parses it).
+    Local OpenAI-compatible providers sometimes wrap `json_schema` output in
+    a markdown fence or prefix it with prose even though `response_format`
+    requested strict JSON. Strip the fence and, if prose remains, slice to
+    the first `{` so downstream `json.loads` succeeds. Returns a string
+    (the caller parses it).
     """
     text = (raw or "").strip()
     if not text:

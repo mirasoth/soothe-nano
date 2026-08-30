@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def model_hop_index_since_user(messages: list[AnyMessage]) -> int:
     """Count completed model hops since the last user message.
 
-    Each ``AIMessage`` after the last ``HumanMessage`` is one completed hop.
+    Each `AIMessage` after the last `HumanMessage` is one completed hop.
     The current (in-flight) call uses this count as its hop index.
 
     Args:
@@ -55,7 +55,7 @@ def resolve_model_role_for_request(
         max_orchestration_hops: Orchestration role while hop index is below this.
 
     Returns:
-        Resolved ``ModelRole`` for this hop.
+        Resolved `ModelRole` for this hop.
     """
     tools = request.tools or []
     if not tools:
@@ -73,7 +73,7 @@ def resolve_model_role_for_request(
 
 
 class RoleRoutingMiddleware(AgentMiddleware):
-    """Swap ``request.model`` per hop using ``ModelRouter`` roles."""
+    """Swap `request.model` per hop using `ModelRouter` roles."""
 
     name = "RoleRoutingMiddleware"
 
@@ -81,7 +81,7 @@ class RoleRoutingMiddleware(AgentMiddleware):
         """Cache role-specific chat models on the middleware instance.
 
         Args:
-            config: ``SootheConfig`` with ``agent.runtime.role_routing``.
+            config: `SootheConfig` with `agent.runtime.role_routing`.
         """
         super().__init__()
         self._config = config

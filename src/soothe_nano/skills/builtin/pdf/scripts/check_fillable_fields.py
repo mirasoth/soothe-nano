@@ -1,3 +1,5 @@
+"""Report whether a PDF exposes fillable AcroForm fields."""
+
 import sys
 
 from pypdf import PdfReader

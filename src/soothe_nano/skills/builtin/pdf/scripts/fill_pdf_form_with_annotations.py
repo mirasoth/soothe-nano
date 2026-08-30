@@ -1,3 +1,5 @@
+"""Fill a non-fillable PDF by stamping FreeText annotations over entry boxes."""
+
 import json
 import sys
 
