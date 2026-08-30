@@ -5,6 +5,14 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.16] - 2026-08-30
+
+### Fixed
+- **`kill_process` now coerces string PIDs via `args_schema`.** `KillProcessTool` was the only tool in `toolkits/execution.py` without a Pydantic `args_schema`; an LLM-supplied string `pid` (`"14449"` — common when numeric args arrive as JSON strings during streaming) reached `if pid <= 0` and raised `TypeError: '<=' not supported between instances of 'str' and 'int'`, aborting the entire execute step (loop 33c1). Added `KillProcessInput` (`pid: int`) so LangChain coerces before `_run`, plus a defensive `isinstance` guard for direct callers.
+- **New `ToolErrorGuardMiddleware` isolates single-tool failures.** Any exception escaping the inner tool-call chain — including the ones the network-error recovery middleware re-raises and everything the graph's default tool-error handler re-raises — is now converted into an `error` `ToolMessage` so the agent self-recovers via the existing `has_tool_error` / deliverable-gate retry loop instead of the whole step dying. Sits outer to `NetworkToolErrorsMiddleware`; `CancelledError` propagates for cooperative shutdown.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.15...v1.2.16
+
 ## [1.2.15] - 2026-08-29
 
 ### Fixed
