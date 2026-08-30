@@ -8,32 +8,19 @@ from pydantic import BaseModel, Field
 
 
 class ComputerUseSubagentConfig(BaseModel):
-    """Configuration for the computer_use subagent runtime.
+    """Typed YAML config for the computer_use subagent runtime.
 
-    Args:
-        runtime_dir: Base directory for desktop runtime files (screenshots, logs).
-        screenshots_dir: Directory for captured screenshots.
-        cleanup_on_exit: Remove temporary screenshots when session ends.
-        max_steps: Maximum desktop automation steps per delegated task.
-        screenshot_interval_s: Seconds between automatic screenshot captures.
-            ``0`` disables periodic capture (only action-driven screenshots).
-        screenshot_quality: JPEG quality (1-100) when saving screenshots.
-        screenshot_format: Image format for screenshot persistence.
-        screenshot_source: Capture source for screenshots. ``auto`` uses
-            the macOS-native ``screencapture(1)`` CLI on Darwin (falling back
-            to pyautogui on failure), ``screencapture`` forces the macOS
-            ``screencapture`` CLI (Darwin only), ``pyautogui`` forces the
-            cross-platform pyautogui backend.
-        input_mode: Desktop input backend. ``auto`` selects the best available
-            platform backend (pyautogui on macOS/Linux, Win32 on Windows).
-            ``pyautogui`` forces the pyautogui backend. ``osascript`` forces
-            AppleScript-based input on macOS.
-        coordinate_scale: Coordinate space scale. ``1`` assumes pixel-accurate
-            coordinates. ``2`` assumes Retina/HiDPI 2x scaling.
-        action_delay_s: Delay in seconds after each input action (click, key)
-            to allow UI to settle before the next screenshot.
-        synthesis_role: Router role used for post-run result synthesis/quality gate.
-        synthesis_timeout_sec: Timeout budget for synthesis LLM call.
+    Coordinate conventions: ``x``/``y`` are pixels from the top-left corner
+    (0, 0); set ``coordinate_scale`` to ``2`` for Retina/HiDPI 2x scaling.
+    ``screenshot_source``: ``auto`` uses the macOS-native ``screencapture(1)``
+    CLI on Darwin (falls back to pyautogui); ``screencapture`` forces the
+    macOS CLI (Darwin only); ``pyautogui`` forces the cross-platform backend.
+    ``input_mode`` selects the input backend (``auto`` picks the best platform
+    backend). ``synthesis_role`` drives the post-run result quality gate.
+
+    Example::
+
+        config = ComputerUseSubagentConfig(max_steps=50, coordinate_scale=2)
     """
 
     max_steps: int = Field(

@@ -49,13 +49,32 @@ _PATH_KEYS: tuple[str, ...] = ("file_path", "path", "filepath", "file")
 
 
 class SkillActivationState(AgentState[Any]):
-    """Graph state channel for progressive skill disclosure."""
+    """Graph state channel carrying progressive skill activation state."""
 
     skill_activation: NotRequired[Annotated[dict[str, Any], merge_skill_activation]]
 
 
 class SkillActivationMiddleware(AgentMiddleware):
-    """Path activation, search_skills discovery, and invoke_skill body load."""
+    """Path activation, search_skills discovery, and invoke_skill body load.
+
+    On file-operation tools it matches workspace paths against deferred
+    skill patterns and activates matching skills; on ``search_skills`` it
+    runs deferred-skill retrieval; on ``invoke_skill`` it loads the skill
+    body. Turn-0 intent prefetch is run from ``abefore_agent`` when enabled.
+
+    Args:
+        registry: Progressive skill registry for activation/discovery.
+        catalog_provider: Callable returning the current skill index entries.
+        config: SootheConfig driving prefetch and core-skill resolution.
+
+    Example:
+        index = SkillIndex()
+        mw = SkillActivationMiddleware(
+            ProgressiveSkillRegistry(),
+            lambda: index.rebuild_if_stale(),
+            config,
+        )
+    """
 
     state_schema = SkillActivationState
 
@@ -72,7 +91,7 @@ class SkillActivationMiddleware(AgentMiddleware):
         self._locks_guard = asyncio.Lock()
 
     async def abefore_agent(self, state, runtime) -> dict | None:
-        """Lazy-init `skill_activation` and run turn-0 intent prefetch when enabled."""
+        """Lazy-init ``skill_activation`` and run turn-0 intent prefetch when enabled."""
         if not isinstance(state, dict):
             return None
 
@@ -92,7 +111,7 @@ class SkillActivationMiddleware(AgentMiddleware):
         return None
 
     async def awrap_tool_call(self, request, handler):
-        """Handle skill discovery tools, path activation, or pass through."""
+        """Dispatch skill discovery tools, path activation, or pass through."""
         metadata = getattr(request, "metadata", None) or {}
         if not isinstance(metadata, dict):
             metadata = {}

@@ -15,15 +15,27 @@ logger = logging.getLogger(__name__)
 
 
 class PerTurnModelMiddleware(AgentMiddleware):
-    """When `attach_stream_model_override` is set, replace `request.model` for that call."""
+    """Replace the chat model for a single stream when a per-stream override is active.
+
+    Reads the override set via ``attach_stream_model_override`` and, when
+    present, builds a model from the spec/params and swaps it onto the
+    request before delegating to the handler. Failures fall back to the
+    default model.
+
+    Args:
+        config: SootheConfig providing ``create_chat_model_for_spec``.
+
+    Example:
+        mw = PerTurnModelMiddleware(config)
+    """
 
     name = "PerTurnModelMiddleware"
 
     def __init__(self, config: Any) -> None:
-        """Keep `SootheConfig` for `create_chat_model_for_spec`.
+        """Store the SootheConfig used to build per-stream override models.
 
         Args:
-            config: `SootheConfig` instance from the running daemon / runner.
+            config: SootheConfig instance from the running daemon / runner.
         """
         super().__init__()
         self._config = config

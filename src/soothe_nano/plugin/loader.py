@@ -1,8 +1,4 @@
-"""Plugin loader with dependency resolution.
-
-This module provides the PluginLoader class that handles dynamic plugin
-loading, dependency checking, and instantiation.
-"""
+"""Plugin loader: dynamic import, dependency checking, and instantiation."""
 
 import importlib
 import importlib.metadata
@@ -22,24 +18,22 @@ logger = logging.getLogger(__name__)
 
 
 class PluginLoader:
-    """Plugin loader with dependency resolution and instantiation.
+    """Dynamically imports plugin classes, checks dependencies, and instantiates them.
 
-    This class handles:
-    - Dynamic module import and plugin class instantiation
-    - Library dependency checking (pip packages)
-    - Configuration dependency checking
-    - Graceful error handling
+    Responsibilities: dynamic module import, library (pip) dependency checking,
+    configuration dependency checking, trust-level validation, and graceful
+    error handling.
 
     Attributes:
-        registry: Plugin registry to register loaded plugins.
+        registry: Plugin registry where loaded plugins are registered.
+
+    Example:
+        loader = PluginLoader(registry)
+        instance = loader.load_plugin("my_pkg:MyPlugin", config, plugin_config={})
     """
 
     def __init__(self, registry: "PluginRegistry") -> None:
-        """Initialize plugin loader.
-
-        Args:
-            registry: Plugin registry for registering loaded plugins.
-        """
+        """Initialize the loader bound to `registry`."""
         self.registry = registry
 
     def load_plugin(
@@ -48,16 +42,13 @@ class PluginLoader:
         config: "SootheConfig",
         plugin_config: dict[str, Any],  # noqa: ARG002
     ) -> Any:
-        """Load a plugin from a module path.
+        """Import and instantiate a plugin from a `module:Class` path.
 
-        This method:
-        1. Imports the module dynamically
-        2. Extracts the plugin class
-        3. Instantiates the plugin
-        4. Returns the plugin instance
+        Validates the trust level and resolves dependencies before
+        instantiating the plugin class.
 
         Args:
-            module_path: Python import path (e.g., "my_package:MyPlugin").
+            module_path: Python import path (e.g., `my_package:MyPlugin`).
             config: Soothe configuration.
             plugin_config: Plugin-specific configuration dictionary.
 
@@ -65,8 +56,9 @@ class PluginLoader:
             Loaded plugin instance.
 
         Raises:
-            DiscoveryError: If module cannot be imported.
-            DependencyError: If dependencies are not satisfied.
+            DiscoveryError: If the module cannot be imported or the class
+                is not a plugin.
+            DependencyError: If declared dependencies are not satisfied.
             InitializationError: If plugin instantiation fails.
         """
         try:
@@ -128,18 +120,17 @@ class PluginLoader:
         manifest: PluginManifest,
         config: "SootheConfig",
     ) -> None:
-        """Check if plugin dependencies are satisfied.
+        """Verify that a plugin's library, config, and version dependencies are satisfied.
 
-        Checks library dependencies (pip packages), configuration
-        dependencies, and version constraints. If any required
-        dependency is missing, raises an error.
+        Checks library (pip) dependencies, configuration dependencies, the
+        Python version constraint, and the Soothe version constraint.
 
         Args:
             manifest: Plugin manifest with dependency declarations.
             config: Soothe configuration.
 
         Raises:
-            DependencyError: If required dependencies are not satisfied.
+            DependencyError: If any required dependency is not satisfied.
         """
         # Check library dependencies
         missing_libs = [
@@ -188,13 +179,10 @@ class PluginLoader:
         logger.debug("All dependencies satisfied for plugin '%s'", manifest.name)
 
     def _check_config_dependency(self, key: str, config: "SootheConfig") -> bool:
-        """Check if a configuration dependency is satisfied.
-
-        Supports dot-notation keys (e.g., "providers.openai.api_key")
-        that traverse the SootheConfig object.
+        """Return `True` if a dot-notation config key exists with a non-empty value.
 
         Args:
-            key: Dot-notation config key (e.g., "providers.openai.api_key").
+            key: Dot-notation config key (e.g., `providers.openai.api_key`).
             config: Soothe configuration instance.
 
         Returns:
@@ -213,16 +201,16 @@ class PluginLoader:
         return result
 
     def validate_trust_level(self, manifest: PluginManifest) -> None:
-        """Validate plugin trust level.
+        """Reject untrusted plugins unless explicitly allowed.
 
-        Untrusted plugins are rejected by default unless explicitly
-        allowed via environment variable SOOTHE_ALLOW_UNTRUSTED_PLUGINS.
+        `built-in`, `trusted`, and `standard` plugins always pass. `untrusted`
+        plugins require `SOOTHE_ALLOW_UNTRUSTED_PLUGINS=true` (or `1`/`yes`).
 
         Args:
             manifest: Plugin manifest to validate.
 
         Raises:
-            ValidationError: If trust level is not permitted.
+            ValidationError: If the trust level is not permitted.
         """
         trust_level = manifest.trust_level
 
@@ -248,13 +236,14 @@ class PluginLoader:
                 raise ValidationError(msg, plugin_name=manifest.name)
 
     def _check_library_dependency(self, dep_string: str) -> bool:
-        """Check if a library dependency is satisfied.
+        """Return `True` if a PEP 440 library dependency is installed and satisfied.
 
         Args:
-            dep_string: PEP 440 dependency string (e.g., "langchain>=0.1.0").
+            dep_string: PEP 440 dependency string (e.g., `langchain>=0.1.0`).
 
         Returns:
-            True if library is installed and version constraint is satisfied.
+            `True` if the library is installed and its version satisfies the
+            constraint.
         """
         try:
             req = Requirement(dep_string)
@@ -275,13 +264,14 @@ class PluginLoader:
             return False
 
     def _check_python_version(self, constraint: str) -> bool:
-        """Check if Python version constraint is satisfied.
+        """Return `True` if the running Python satisfies `constraint`.
 
         Args:
-            constraint: PEP 440 version constraint (e.g., ">=3.11").
+            constraint: PEP 440 version constraint (e.g., `>=3.11`).
 
         Returns:
-            True if constraint is satisfied.
+            `True` if the constraint is satisfied (assumed `True` on parse
+            errors).
         """
         import sys
 
@@ -299,13 +289,14 @@ class PluginLoader:
             return python_version in specifier
 
     def _check_soothe_version(self, constraint: str) -> bool:
-        """Check if Soothe version constraint is satisfied.
+        """Return `True` if the installed Soothe version satisfies `constraint`.
 
         Args:
-            constraint: PEP 440 version constraint (e.g., ">=0.1.0").
+            constraint: PEP 440 version constraint (e.g., `>=0.1.0`).
 
         Returns:
-            True if constraint is satisfied.
+            `True` if the constraint is satisfied (assumed `True` when Soothe
+            is not installed as a package or on parse errors).
         """
         try:
             from packaging.specifiers import SpecifierSet

@@ -1,8 +1,4 @@
-"""Plugin lifecycle management.
-
-This module provides the PluginLifecycleManager that orchestrates the complete
-plugin lifecycle from discovery through initialization to shutdown.
-"""
+"""Plugin lifecycle manager: discovery through initialization to shutdown."""
 
 import asyncio
 import logging
@@ -29,27 +25,25 @@ logger = logging.getLogger(__name__)
 
 
 class PluginLifecycleManager:
-    """Manage the complete plugin lifecycle.
+    """Orchestrate the complete plugin lifecycle.
 
-    This class orchestrates all phases of plugin management:
-    1. Discovery - Find plugins from all sources
-    2. Loading - Import and instantiate plugins
-    3. Initialization - Call on_load() hooks
-    4. Registration - Register tools and subagents
-    5. Shutdown - Call on_unload() hooks
+    Phases: discovery, loading, `on_load()` initialization, tool/subagent
+    registration, and `on_unload()` shutdown.
 
     Attributes:
-        registry: Plugin registry for storing loaded plugins.
+        registry: Plugin registry storing loaded plugins.
         loader: Plugin loader for dependency resolution and instantiation.
         loaded_plugins: Dict of successfully loaded plugin instances.
+
+    Example:
+        registry = PluginRegistry()
+        manager = PluginLifecycleManager(registry)
+        await manager.load_all(config)
+        await manager.shutdown_all()
     """
 
     def __init__(self, registry: "PluginRegistry") -> None:
-        """Initialize lifecycle manager.
-
-        Args:
-            registry: Plugin registry to register loaded plugins.
-        """
+        """Initialize the manager bound to `registry`."""
         self.registry = registry
         self.loader = PluginLoader(registry)
         self.loaded_plugins: dict[str, Any] = {}
@@ -59,14 +53,11 @@ class PluginLifecycleManager:
         config: "SootheConfig",
         lazy_plugins: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Load all discovered plugins with parallel loading.
+        """Discover, load, and initialize all plugins with parallel loading.
 
-        This is the main entry point for plugin loading. It:
-        1. Discovers plugins from all sources
-        2. Loads and validates each plugin in parallel
-        3. Calls on_load() hooks
-        4. Registers tools and subagents
-        5. Emits lifecycle events
+        Runs discovery, builds a dependency graph, loads plugins in parallel
+        respecting dependencies, calls `on_load()` hooks, registers tools and
+        subagents, and emits lifecycle events.
 
         Args:
             config: Soothe configuration.
@@ -96,11 +87,7 @@ class PluginLifecycleManager:
         return self.loaded_plugins
 
     async def shutdown_all(self) -> None:
-        """Shutdown all loaded plugins.
-
-        Calls on_unload() hooks for all loaded plugins and emits
-        unloading events.
-        """
+        """Call `on_unload()` on all loaded plugins and emit unloading events."""
         logger.info("Shutting down plugins...")
 
         for name, plugin_instance in self.loaded_plugins.items():
@@ -122,10 +109,7 @@ class PluginLifecycleManager:
         self.loaded_plugins.clear()
 
     async def health_check_all(self) -> dict[str, dict]:
-        """Run health checks on all loaded plugins.
-
-        Calls the health_check() hook on each loaded plugin and
-        emits health check events.
+        """Run `health_check()` on each loaded plugin and emit health events.
 
         Returns:
             Dict mapping plugin names to their health status dicts.
@@ -177,13 +161,14 @@ class PluginLifecycleManager:
         self,
         discovered: dict[str, tuple[str, dict, PluginDiscoverySource]],
     ) -> dict[str, set[str]]:
-        """Build plugin dependency graph from manifests.
+        """Build a plugin dependency graph from manifests.
 
         Args:
-            discovered: Discovered plugins dict mapping name to (module_path, config).
+            discovered: Dict mapping plugin name to
+                `(module_path, config_dict, source)`.
 
         Returns:
-            Dict mapping plugin name to set of dependency names.
+            Dict mapping plugin name to the set of dependency names.
         """
         graph: dict[str, set[str]] = {}
 
@@ -209,13 +194,16 @@ class PluginLifecycleManager:
         config: "SootheConfig",
         lazy_plugins: list[str] | None = None,
     ) -> None:
-        """Load plugins in parallel respecting dependencies.
+        """Load plugins in parallel, respecting dependencies.
+
+        Plugins in `lazy_plugins` are wrapped in `LazyPlugin` proxies instead
+        of being loaded eagerly.
 
         Args:
-            graph: Dependency graph mapping plugin name to dependencies.
+            graph: Dependency graph mapping plugin name to dependency names.
             discovered: Discovered plugins dict.
             config: Soothe configuration.
-            lazy_plugins: Plugins to load lazily.
+            lazy_plugins: Plugin names to load lazily.
         """
         loaded: set[str] = set()
         lazy_plugins_set = set(lazy_plugins or [])
@@ -278,13 +266,13 @@ class PluginLifecycleManager:
         plugin_config: dict[str, Any],
         source: PluginDiscoverySource,
     ) -> None:
-        """Load a single plugin from module path with caching.
+        """Load a single plugin, using the cache when available.
 
         Args:
             module_path: Python import path.
             config: Soothe configuration.
             plugin_config: Plugin-specific configuration.
-            source: Discovery source (used for registry priority when registering).
+            source: Discovery source (used for registry priority).
         """
         # Extract plugin name from module_path for caching
         plugin_name_guess = (
@@ -391,30 +379,26 @@ class PluginLifecycleManager:
             logger.exception("Failed to load plugin from %s", module_path)
 
     def _extract_tools(self, plugin_instance: Any) -> list[Any]:
-        """Extract tools from a plugin instance.
-
-        Uses the get_tools() method added by the @plugin decorator.
+        """Return a plugin's tools via its `get_tools()` method, or `[]` if absent.
 
         Args:
             plugin_instance: Loaded plugin instance.
 
         Returns:
-            List of tool functions with _is_tool metadata.
+            List of tool callables with `_is_tool` metadata.
         """
         if hasattr(plugin_instance, "get_tools"):
             return plugin_instance.get_tools()
         return []
 
     def _extract_subagents(self, plugin_instance: Any) -> list[Any]:
-        """Extract subagent factories from a plugin instance.
-
-        Uses the get_subagents() method added by the @plugin decorator.
+        """Return a plugin's subagent factories via `get_subagents()`, or `[]` if absent.
 
         Args:
             plugin_instance: Loaded plugin instance.
 
         Returns:
-            List of subagent factory functions with _is_subagent metadata.
+            List of subagent factory callables with `_is_subagent` metadata.
         """
         if hasattr(plugin_instance, "get_subagents"):
             return plugin_instance.get_subagents()

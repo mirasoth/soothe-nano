@@ -1,12 +1,10 @@
-"""Plan subagent: grounded recon → solution report → emit for review.
+"""Plan subagent: readonly recon → solution report for human review.
 
-Readonly filesystem tools only (no write/edit/delete/execute). Recon evidence
-stays internal; the final message is a **solution report** for the user goal
-(what to change and why), for human Approve / Reject / More comments
-(RFC-633 / IG-659). Not an investigation roadmap of further reads.
-
-Recon runs middleware tools via ``ToolNode`` so ``ToolRuntime`` is injected
-(bare ``tool.ainvoke(args)`` fails FilesystemMiddleware tools).
+Readonly filesystem tools only. Recon evidence stays internal; the final
+message is a solution report (what to change and why) for Approve / Reject /
+More comments — not an investigation roadmap of further reads. Recon runs
+middleware tools via ``ToolNode`` so ``ToolRuntime`` is injected (bare
+``tool.ainvoke(args)`` fails FilesystemMiddleware tools).
 """
 
 from __future__ import annotations
@@ -71,7 +69,7 @@ class PlanSubagentConfig(BaseModel):
     )
     enable_recon: bool = Field(
         default=True,
-        description="When true, run readonly filesystem recon before drafting (RFC-633).",
+        description="When true, run readonly filesystem recon before drafting.",
     )
     max_recon_rounds: int = Field(
         default=4,

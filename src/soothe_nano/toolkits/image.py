@@ -1,8 +1,7 @@
-"""Image analysis toolkit using the router ``image`` model role.
+"""Image analysis toolkit using the ``image`` model role.
 
-Aligned with daemon vision (IG-327 / ``image_to_text`` intent hint):
-OpenAI-compatible ``image_url`` data URIs, MIME allowlist, 20 MiB cap.
-Does not depend on ``soothe_daemon``.
+Accepts local image paths, enforces a MIME allowlist and 20 MiB size cap,
+and builds OpenAI-compatible ``image_url`` data URIs for the vision model.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from soothe_nano.toolkits._internal.local_path_resolution import resolve_toolkit
 
 logger = logging.getLogger(__name__)
 
-# Align with soothe_daemon.services.image_understanding (IG-327).
+# 20 MiB cap on image payload size.
 _MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 _ALLOWED_MIME: frozenset[str] = frozenset(
@@ -242,10 +241,7 @@ class ImageToolkit:
     trust_level="built-in",
 )
 class ImagePlugin:
-    """Image analysis tools plugin.
-
-    Provides analyze_image.
-    """
+    """Image analysis tools plugin."""
 
     def __init__(self) -> None:
         """Initialize the plugin."""

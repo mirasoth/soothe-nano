@@ -1,8 +1,4 @@
-"""Plugin context creation and management.
-
-This module provides utilities for creating PluginContext instances
-with Soothe-specific context fields and event emission integration.
-"""
+"""Factory for `PluginContext` instances wired to Soothe's logging and events."""
 
 from __future__ import annotations
 
@@ -24,21 +20,23 @@ def create_plugin_context(
     emit_event_callback: Any | None = None,
     **extra_context: Any,
 ) -> PluginContext:
-    """Create a PluginContext instance for a plugin.
+    """Create a `PluginContext` for a plugin.
 
-    This factory function creates a PluginContext with proper initialization
-    for Soothe's event system and optional extra context fields.
+    Wires a plugin-specific logger (`soothe.plugins.<plugin_name>`) and an
+    event-emission wrapper. When `emit_event_callback` is `None`, events are
+    logged at debug level instead of emitted. Extra keyword arguments are
+    attached as attributes on the returned context.
 
     Args:
-        plugin_name: Name of the plugin (used for logger naming).
+        plugin_name: Plugin name (used for logger naming).
         config: Plugin-specific configuration dictionary.
         soothe_config: Soothe configuration instance.
-        emit_event_callback: Optional callback for event emission.
-            If None, events are logged but not emitted.
+        emit_event_callback: Optional callback invoked as `(name, data)`.
+            If `None`, events are logged but not emitted.
         **extra_context: Additional context fields to attach to the context.
 
     Returns:
-        Configured PluginContext instance.
+        Configured `PluginContext` instance.
 
     Example:
         context = create_plugin_context(
@@ -52,11 +50,7 @@ def create_plugin_context(
 
     # Create event emission wrapper
     def emit_event_wrapper(name: str, data: dict[str, Any]) -> None:
-        """Wrapper for event emission.
-
-        If emit_event_callback is provided, calls it.
-        Otherwise, logs the event as a debug message.
-        """
+        """Forward `name`/`data` to `emit_event_callback`, or log at debug if absent."""
         if emit_event_callback:
             emit_event_callback(name, data)
         else:

@@ -1,8 +1,4 @@
-"""Middleware stack construction for CoreAgent.
-
-Builds the Soothe middleware layer in the correct order with proper
-dependency handling.
-"""
+"""Construction of the CoreAgent middleware stack in execution order."""
 
 from __future__ import annotations
 
@@ -59,28 +55,24 @@ def build_soothe_middleware_stack(
     *,
     policy_profile_name: str | None = None,
 ) -> tuple[AgentMiddleware, ...]:
-    """Build Soothe middleware stack in correct order.
+    """Assemble the Soothe middleware stack in execution order.
 
-    The middleware order is intentional and follows dependency requirements:
-
-    1. Identity and optional outer profiling wrappers.
-    2. Safety and activation chain (policy, skill, MCP).
-    3. Tool-call arg capture, optimization policy, and edit coalescing.
-    4. Tool reliability guards and output controls.
-    5. Prompt/tool preparation (enforcement, progressive listing, system prompt).
-    6. LLM call wrappers (rate-limit, optional code interpreter, workspace context).
-    7. Optional inner profiling wrappers.
-    8. Tool timeout wrapper.
-    9. Role routing and per-turn model override.
+    Order is load-bearing and follows dependency requirements: identity
+    and outer profiling wrappers first, then safety/activation (policy,
+    skill, MCP), tool-call arg capture, optimization, edit coalescing,
+    reliability guards, output controls, prompt/tool preparation, LLM
+    call wrappers, optional inner profiling, tool timeout, and finally
+    role routing and per-turn model override.
 
     Args:
-        config: SootheConfig with performance settings.
-        policy: PolicyProtocol instance for safety enforcement.
-        mcp_registry: Optional MCPRegistry for MCP tool integration.
-        policy_profile_name: Optional override for `SoothePolicyMiddleware`
-            profile (defaults to `config.agent.protocols.policy.profile`).
+        config: SootheConfig driving which middleware is enabled.
+        policy: Policy instance for safety enforcement, or ``None`` to skip.
+        mcp_registry: Optional MCP registry for MCP tool integration.
+        policy_profile_name: Override for the policy profile; falls back to
+            ``config.agent.protocols.policy.profile``.
+
     Returns:
-        Tuple of middleware instances in execution order.
+        Middleware instances in execution order.
     """
     from soothe_deepagents.middleware.llm_rate_limit import LLMRateLimitMiddleware
     from soothe_deepagents.middleware.reliability import (

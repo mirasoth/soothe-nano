@@ -1,9 +1,8 @@
-"""Tool context and trigger registries for system prompt injection.
+"""Tool-trigger and tool-context registries for system-prompt injection.
 
-Provides:
-- BUILTIN_TOOL_TRIGGERS: Hardcoded tool-to-section mappings for core tools.
-- ToolTriggerRegistry: Resolves tool names to triggered system-prompt sections.
-- ToolContextRegistry: Resolves tool/subagent names to XML system-context fragments.
+Built-in tools declare which system-message sections they require via
+``BUILTIN_TOOL_TRIGGERS``; plugins contribute their own triggers and
+system-context fragments through the registries below.
 """
 
 from __future__ import annotations
@@ -58,23 +57,28 @@ BUILTIN_TOOL_TRIGGERS: dict[str, list[str]] = {
 
 
 class ToolTriggerRegistry:
-    """Registry for tool→section trigger mappings.
+    """Resolve tool names to the system-message sections they require.
 
-    Tools declare which system message sections they require.
-    Built-in tools have hardcoded triggers, plugins define their own.
+    Built-in tools carry hardcoded trigger mappings; plugin tools declare
+    their own via plugin metadata. The registry is read-only and stateless
+    aside from the optional plugin registry reference.
+
+    Example:
+        reg = ToolTriggerRegistry(plugin_registry)
+        sections = reg.get_triggered_sections(["read_file", "glob"])
     """
 
     def __init__(self, plugin_registry: PluginRegistry | None = None) -> None:
         self._plugin_registry = plugin_registry
 
     def get_triggered_sections(self, tool_names: list[str]) -> set[str]:
-        """Get sections triggered by a set of tool names.
+        """Return the section names triggered by ``tool_names``.
 
         Args:
-            tool_names: List of tool names that were recently invoked.
+            tool_names: Recently invoked tool names.
 
         Returns:
-            Set of section names that should be injected.
+            Section names to inject into the system prompt.
         """
         sections = set()
 
@@ -92,10 +96,18 @@ class ToolTriggerRegistry:
 
 
 class ToolContextRegistry:
-    """Registry for tool/subagent system context fragments.
+    """Resolve a tool or subagent name to an XML system-context fragment.
 
-    Merges plugin-defined fragments with config overrides.
-    Priority: config override > plugin metadata > None
+    Resolution priority: config override > plugin metadata > ``None``.
+    Results are cached per tool name for the lifetime of the instance.
+
+    Args:
+        config: SootheConfig carrying subagent and plugin config blocks.
+        plugin_registry: Optional plugin registry for tool/subagent metadata.
+
+    Example:
+        reg = ToolContextRegistry(config, plugin_registry)
+        fragment = reg.get_system_context("deep_research")
     """
 
     def __init__(self, config: SootheConfig, plugin_registry: PluginRegistry | None = None) -> None:
@@ -104,13 +116,13 @@ class ToolContextRegistry:
         self._cache: dict[str, str | None] = {}
 
     def get_system_context(self, tool_name: str) -> str | None:
-        """Get system context fragment for a tool/subagent.
+        """Return the cached XML context fragment for ``tool_name``, if any.
 
         Args:
             tool_name: Tool or subagent name.
 
         Returns:
-            XML system context string, or None if not defined.
+            System context string, or ``None`` when undefined.
         """
         if tool_name in self._cache:
             return self._cache[tool_name]
@@ -131,17 +143,16 @@ class ToolContextRegistry:
         return plugin_fragment
 
     def _get_config_override(self, tool_name: str) -> str | None:
-        """Get config-defined system context for tool.
+        """Return a config-defined system context for ``tool_name``, if any.
 
-        Checks:
-        - subagents[name].config.system_context
-        - plugins config (if tool discovered via plugin)
+        Looks up ``subagents[name].config.system_context`` and matching
+        plugin config blocks.
 
         Args:
             tool_name: Tool or subagent name.
 
         Returns:
-            System context string from config, or None.
+            System context string from config, or ``None``.
         """
         # Check subagents config
         if tool_name in self._config.subagents:
@@ -158,13 +169,13 @@ class ToolContextRegistry:
         return None
 
     def _get_plugin_metadata(self, tool_name: str) -> str | None:
-        """Get plugin-defined system context for tool.
+        """Return a plugin-defined system context for ``tool_name``, if any.
 
         Args:
             tool_name: Tool or subagent name.
 
         Returns:
-            System context string from plugin metadata, or None.
+            System context string from plugin metadata, or ``None``.
         """
         if not self._plugin_registry:
             return None

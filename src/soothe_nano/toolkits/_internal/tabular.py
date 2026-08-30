@@ -1,8 +1,5 @@
 """Tabular data inspection and quality validation tools.
 
-Ported from noesium's tabular_data toolkit. langchain has `create_csv_agent`
-but no direct equivalent for column inspection or data quality validation.
-
 Uses backend_ops for virtual mode file operations.
 """
 

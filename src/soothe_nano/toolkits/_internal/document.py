@@ -1,6 +1,5 @@
 """Document parsing and Q&A with multi-format support.
 
-Ported from noesium's document_toolkit.py.
 Uses PyMuPDF for PDF parsing, docx2txt for DOCX, and firecrawl-anydoc
 for Word, PowerPoint, OpenDocument, RTF, and EPUB formats.
 

@@ -1,16 +1,11 @@
 """Edit coalescing middleware for batched file operations.
 
-Collects parallel edit tool calls within a detection window, groups them by file,
-and merges same-file edits into a single batched operation. This eliminates:
-- Race conditions from concurrent edits to the same file
-- Middleware overhead (batched calls skip ~12 middleware via fast path)
-- Redundant file reads (single read per file for all merged edits)
-
-Architecture:
-    Position: After policy/skill, before NetworkToolErrorsMiddleware (position ~3)
-    Detection Window: 50ms to collect incoming edits
-    Merge Strategy: deletions → insertions → replacements (descending by line)
-    Conflict Handling: Reject overlapping edits with EditConflictError
+Collects parallel edit tool calls within a detection window, groups them
+by file, and merges same-file edits into a single batched operation. This
+eliminates race conditions from concurrent edits to the same file, cuts
+middleware overhead (batched calls skip downstream middleware via a fast
+path), and removes redundant file reads. Overlapping edits are rejected
+with ``EditConflictError``.
 """
 
 from __future__ import annotations
@@ -232,35 +227,23 @@ class EditConflictError(Exception):
 
 
 class EditCoalescingMiddleware(AgentMiddleware):
-    """Coalesces parallel edits to same file into batched operations.
+    """Coalesce parallel edits to the same file into batched operations.
 
-    Eliminates race conditions and reduces middleware overhead for parallel
-    file edits by collecting, grouping, and merging operations.
+    Collects edit tool calls within a detection window, groups them by
+    target file, and merges same-file edits into a single read-modify-write
+    cycle. Line-range edits merge as deletions→insertions→replacements
+    (descending by line); ``edit_file`` string replacements accumulate in a
+    per-file staging buffer. Overlapping ranges or strings are rejected
+    with ``EditConflictError``. Batched dispatch is serialized per file by
+    a ``FileEditLockRegistry``.
 
-    Detection Window:
-        - Collects incoming edit tool calls for detection_window_ms
-        - Groups edits by target file path
-        - Merges same-file edits into single batched operation
+    Args:
+        config: Coalescing configuration; when ``None`` a default is used.
+        lock_registry: External lock registry for per-file serialization;
+            when ``None`` a new registry is created.
 
-    Staging Buffer (edit_file string replacements):
-        - edit_file calls accumulate (old_string, new_string, replace_all)
-          tuples in a per-file staging buffer during the detection window
-        - After the window, all replacements for a file are applied in a
-          single read-modify-write cycle via the backend's atomic write path
-        - Overlapping string replacements are rejected with EditConflictError
-
-    Fast Path:
-        - Batched calls dispatched with `_batched=True` metadata
-        - Downstream middleware skip non-essential work for batched ops
-
-    Conflict Handling:
-        - Overlapping line ranges → reject with EditConflictError
-        - Overlapping string replacements → reject with EditConflictError
-        - Successful edits proceed, failed edits get error ToolMessage
-
-    Lock Serialization:
-        - FileEditLockRegistry serializes batch dispatch per-file, ensuring
-          the coalesced write is protected from concurrent non-coalesced writes
+    Example:
+        mw = EditCoalescingMiddleware()
     """
 
     name = "EditCoalescingMiddleware"
@@ -274,10 +257,10 @@ class EditCoalescingMiddleware(AgentMiddleware):
         """Initialize edit coalescing middleware.
 
         Args:
-            config: Configuration object. If None, a default
-                `EditCoalescingConfig` is used.
-            lock_registry: External `FileEditLockRegistry` for serializing
-                per-file batch dispatch. If None, a new registry is created.
+            config: Configuration object; a default ``EditCoalescingConfig``
+                is used when ``None``.
+            lock_registry: External ``FileEditLockRegistry`` for serializing
+                per-file batch dispatch; a new registry is created when ``None``.
         """
         self._config = config or EditCoalescingConfig()
 

@@ -1,7 +1,4 @@
-"""Browser automation subagent package.
-
-This package provides browser automation capabilities using browser-use library.
-"""
+"""Browser automation subagent package (browser-use library)."""
 
 from __future__ import annotations
 
@@ -25,10 +22,7 @@ __all__ = ["BrowserUsePlugin", "create_browser_use_subagent"]
     trust_level="built-in",
 )
 class BrowserUsePlugin:
-    """Browser automation plugin.
-
-    Provides browser_use subagent for web navigation and interaction.
-    """
+    """Built-in browser_use subagent plugin (web navigation and interaction)."""
 
     async def on_load(self, context: Any) -> None:
         """Verify browser-use is available."""
@@ -79,17 +73,7 @@ Capture screenshots at key navigation points for debugging.
         context: Any = None,  # noqa: ARG002
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Create browser_use automation subagent.
-
-        Args:
-            model: Unused; kept for ``@subagent`` factory wrapper compatibility.
-            config: Soothe configuration (router + ``subagents.browser_use.model_role``).
-            context: Plugin context.
-            **kwargs: Additional browser config (headless, max_steps, etc.).
-
-        Returns:
-            Subagent dict with name, description, and runnable.
-        """
+        """Build the browser_use subagent dict (name, description, runnable)."""
         from soothe_nano.subagents.browser_use.config_model import BrowserUseSubagentConfig
 
         browser_config = None

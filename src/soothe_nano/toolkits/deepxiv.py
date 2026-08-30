@@ -2,15 +2,6 @@
 
 Provides access to arXiv, bioRxiv, medRxiv, and PubMed Central papers with
 AI-generated TLDRs and section-level access for token-efficient reading.
-
-Tools:
-- deepxiv_search: Semantic paper search
-- deepxiv_paper_brief: Quick summary (TLDR, keywords, citations)
-- deepxiv_paper_metadata: Paper structure overview
-- deepxiv_read_section: Read specific sections
-- deepxiv_get_full_paper: Complete paper content
-- deepxiv_trending: Trending papers by social signals
-- deepxiv_websearch: Web search (higher token cost)
 """
 
 from __future__ import annotations
@@ -332,14 +323,13 @@ class DeepxivWebsearchInput(BaseModel):
 class DeepxivToolkit:
     """Toolkit for DeepXiv academic paper operations.
 
-    Manages shared DeepXiv Reader instance with lazy initialization.
-    Supports token-based access with free tier (1,000 req/day auto-register)
-    and registered tier (10,000 req/day).
+    Manages a shared DeepXiv Reader instance with lazy initialization.
+    Free tier allows 1,000 req/day (auto-registered); registered tier 10,000 req/day.
 
     Args:
-        token: API token (optional, auto-registers if None)
-        timeout: Request timeout in seconds
-        max_retries: Maximum retry attempts
+        token: API token (auto-registers when None).
+        timeout: Request timeout in seconds.
+        max_retries: Maximum retry attempts.
     """
 
     def __init__(
@@ -880,10 +870,7 @@ class DeepxivWebsearchTool(BaseTool):
 
 
 class DeepxivPlugin:
-    """DeepXiv tools plugin for Soothe SDK.
-
-    Provides academic paper search and reading capabilities via DeepXiv SDK.
-    """
+    """DeepXiv tools plugin for Soothe SDK."""
 
     def __init__(self) -> None:
         """Initialize the plugin."""

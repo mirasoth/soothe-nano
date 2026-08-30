@@ -1,11 +1,10 @@
-"""CodeInterpreterMiddleware -- embedded QuickJS interpreter for programmatic tool calling.
+"""Embedded QuickJS interpreter middleware for programmatic tool calling.
 
-Integrates CodeInterpreterMiddleware for stateful code execution
-within the agent loop. Enables programmatic tool calling (PTC) pattern where agents
-write code that calls tools directly, reducing token usage and enabling better
-control flow.
-
-Reference: https://www.langchain.com/blog/give-your-agents-an-interpreter
+Enables the programmatic-tool-calling pattern where agents write code
+that calls tools directly, reducing token usage and enabling multi-step
+control flow within a single eval. The interpreter is sandboxed: no
+filesystem, network, or shell access by default; capabilities are exposed
+only through the explicit ``ptc_allowlist`` bridge.
 """
 
 from __future__ import annotations
@@ -34,35 +33,17 @@ logger = logging.getLogger(__name__)
 
 
 class CodeInterpreterMiddleware(AgentMiddleware):
-    """Embedded QuickJS interpreter for programmatic tool calling.
+    """Wrap the QuickJS interpreter for stateful, programmatic tool calling.
 
-    This middleware wraps the CodeInterpreterMiddleware (via
-    langchain_quickjs) to provide:
+    Variables persist across eval calls (REPL-like), tools are exposed via
+    the ``tools.*`` namespace, and intermediate results stay in interpreter
+    state to cut token usage. The interpreter is intentionally limited:
+    no filesystem, network, or shell access; only language features plus
+    capabilities bridged through ``ptc_allowlist``.
 
-    - Stateful code execution: Variables persist across eval calls (REPL-like)
-    - Programmatic Tool Calling (PTC): Tools exposed via tools.* namespace
-    - Reduced token usage: Intermediate results stay in interpreter state
-    - Better control flow: Agents write code for multi-step logic
-
-    The interpreter is intentionally limited by design:
-    - No filesystem, network, or shell access by default
-    - Only language features (objects, arrays, maps, JSON)
-    - Capabilities exposed through explicit bridges (ptc_allowlist)
-
-    Configuration via SootheConfig.code_interpreter:
-        enabled: Enable the middleware (default: False, opt-in)
-        ptc_allowlist: Tools exposed via tools.* namespace (default: [])
-        memory_limit_mb: Memory limit (default: 128)
-        timeout_seconds: Per-eval timeout (default: 30)
-        max_ptc_calls: Max programmatic tool calls per eval (default: 50)
-        max_result_size: Max result size in chars (default: 100000)
-        console_capture: Capture console.log output (default: True)
-        snapshot_between_turns: Preserve state between turns (default: False)
-
-    Example usage in agent code:
+    Example:
         ```javascript
         // Programmatic tool calling with PTC
-        const topics = ["retrieval", "memory", "evaluation"];
         const reports = await Promise.all(
             topics.map(topic => tools.task({
                 description: `Research ${topic}`,
@@ -86,16 +67,18 @@ class CodeInterpreterMiddleware(AgentMiddleware):
     ) -> None:
         """Initialize the code interpreter middleware.
 
+        When ``config`` is provided, ``config.code_interpreter`` values take
+        precedence over the explicit constructor arguments.
+
         Args:
-            config: Soothe configuration. If provided, other args are overridden
-                by config.code_interpreter values.
-            ptc_allowlist: List of tool names exposed via tools.* namespace.
-            memory_limit_mb: Interpreter memory limit in MB (mapped to ``memory_limit`` bytes).
-            timeout_seconds: Per-eval timeout in seconds (mapped to ``timeout`` float).
+            config: Soothe configuration; when present, overrides the args below.
+            ptc_allowlist: Tool names exposed via the ``tools.*`` namespace.
+            memory_limit_mb: Interpreter memory limit in MB.
+            timeout_seconds: Per-eval timeout in seconds.
             max_ptc_calls: Maximum programmatic tool calls per eval.
-            max_result_size: Maximum result size in characters (mapped to ``max_result_chars``).
-            console_capture: Capture console.log output (mapped to ``capture_console``).
-            snapshot_between_turns: Preserve state between conversation turns.
+            max_result_size: Maximum result size in characters.
+            console_capture: Capture ``console.log`` output.
+            snapshot_between_turns: Preserve interpreter state between turns.
         """
         super().__init__()
         # Use config values if provided, otherwise use explicit args

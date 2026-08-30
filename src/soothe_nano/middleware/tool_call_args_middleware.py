@@ -22,13 +22,15 @@ if TYPE_CHECKING:
 
 
 class ToolCallArgsMiddleware(AgentMiddleware):
-    """Middleware that records tool call args for display purposes.
+    """Record tool-call kwargs at invocation time for display purposes.
 
-    Captures kwargs from ToolCallRequest at invocation time so downstream
-    stream code can attach them to unified wire ids (subagent display).
+    Captures kwargs from each ``ToolCallRequest`` so downstream stream code
+    can attach them to unified wire ids (subagent display). Optimization
+    logic is owned by ``ToolOptimizationMiddleware``; this middleware only
+    records. Batched operations are skipped.
 
-    This is a lightweight replacement for ToolConcurrencyMiddleware's
-    registry functionality, without the ineffective semaphore.
+    Example:
+        mw = ToolCallArgsMiddleware()
     """
 
     name = "ToolCallArgsMiddleware"

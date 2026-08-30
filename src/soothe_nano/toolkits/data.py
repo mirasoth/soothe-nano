@@ -1,13 +1,5 @@
 """Data inspection tools for tabular and document files.
 
-Provides single-purpose tools for data/document inspection:
-- inspect_data: Inspect data file structure
-- summarize_data: Get statistical summary
-- check_data_quality: Validate data quality
-- extract_text: Extract text from documents
-- get_data_info: Get file metadata
-- ask_about_file: Answer questions about file content
-
 Routes to tabular or document backends based on file extension.
 """
 
@@ -478,11 +470,7 @@ class DataToolkit:
     name="data", version="1.0.0", description="Data inspection and analysis", trust_level="built-in"
 )
 class DataPlugin:
-    """Data inspection and analysis tools plugin.
-
-    Provides inspect_data, summarize_data, check_data_quality, extract_text,
-    get_data_info, and ask_about_file tools.
-    """
+    """Data inspection and analysis tools plugin."""
 
     def __init__(self) -> None:
         """Initialize the plugin."""

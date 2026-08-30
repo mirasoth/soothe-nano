@@ -60,14 +60,18 @@ _COMPOUND_MARKERS = ("|", "&&", ";", "||")
 
 @dataclass(slots=True)
 class _ReadFileWindow:
-    """Normalized read_file path for consecutive-slice thrash detection."""
+    """Normalized read_file path used for consecutive-slice thrash detection."""
 
     path: str
 
 
 @dataclass(slots=True)
 class _ToolReuseState:
-    """Per-execution-scope deterministic tool lookup reuse state."""
+    """Per-execution-scope state for deterministic tool lookup reuse and thrash tracking.
+
+    Holds the lookup cache, signature-dedup counters, and native-search
+    guidance counters for a single execute step.
+    """
 
     scope_id: str = ""
     cache: dict[str, tuple[Any, str | None]] = field(default_factory=dict)
@@ -282,14 +286,16 @@ def _reset_scope_counters(state: _ToolReuseState, scope_id: str) -> None:
 
 
 class ToolOptimizationMiddleware(AgentMiddleware):
-    """Deterministic tool-call optimization middleware.
+    """Deterministic tool-call optimization for execute scopes.
 
-    Controls:
-    - Lookup cache for deterministic same-args reuse.
-    - Duplicate empty-result replay blocking.
-    - Native-search-first policy (block simple shell grep/rg/find).
-    - Empty write_todos short-circuit.
-    - Same-path read_file thrash guidance.
+    Controls lookup-cache reuse for same-args calls, duplicate empty-result
+    replay blocking, native-search-first policy (block simple shell
+    grep/rg/find), empty ``write_todos`` short-circuit, and same-path
+    ``read_file`` thrash guidance. State is scoped per execute step via a
+    ``ContextVar``.
+
+    Example:
+        mw = ToolOptimizationMiddleware()
     """
 
     name = "ToolOptimizationMiddleware"

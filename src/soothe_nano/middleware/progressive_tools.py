@@ -66,7 +66,18 @@ def pop_tool_activation_update() -> dict[str, set[str]] | None:
 
 
 class ProgressiveToolMiddleware(AgentMiddleware):
-    """Bind core tools on cold start; promote deferred tools on invoke or search."""
+    """Bind core tools on cold start and promote deferred tools on invoke or search.
+
+    Maintains a progressive registry partitioned into core (always loaded)
+    and deferred tools. Deferred tools enter the active set when the agent
+    invokes ``search_tools`` or calls a deferred tool by name.
+
+    Args:
+        config: SootheConfig driving core-tool and search-tool selection.
+
+    Example:
+        mw = ProgressiveToolMiddleware(config)
+    """
 
     name = "ProgressiveToolMiddleware"
     state_schema = ProgressiveToolState

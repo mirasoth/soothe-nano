@@ -1,9 +1,4 @@
-"""Desktop automation subagent package.
-
-This package provides desktop automation capabilities using pyautogui.
-Can take screenshots, click at screen coordinates, type text, and press
-keyboard hotkeys. Uses a vision-capable LLM to drive an agentic loop.
-"""
+"""Desktop automation subagent package (pyautogui-based)."""
 
 from __future__ import annotations
 
@@ -32,20 +27,16 @@ __all__ = [
     trust_level="built-in",
 )
 class ComputerUsePlugin:
-    """Desktop automation plugin.
-
-    Provides computer_use subagent for desktop GUI automation: screenshots,
-    mouse clicks, keyboard typing, and hotkey combinations.
-    """
+    """Built-in computer_use subagent plugin (screenshots, clicks, keyboard)."""
 
     async def on_load(self, context: Any) -> None:
         """Soft-check pyautogui availability (backend is lazy).
 
-        pyautogui is the default input backend, but on macOS the screenshot
-        path can fall back to the native ``screencapture`` CLI when pyautogui
-        is absent or Screen Recording permission is missing. Therefore we
-        only emit a warning (not a hard ``PluginError``) when pyautogui
-        cannot be imported, so that screenshot-only flows still work.
+        On macOS the screenshot path can fall back to the native
+        ``screencapture`` CLI when pyautogui is absent or Screen Recording
+        permission is missing, so this only warns (not a hard ``PluginError``)
+        on Darwin — screenshot-only flows still work. Off-Darwin, pyautogui
+        is required.
         """
         try:
             import pyautogui  # noqa: F401

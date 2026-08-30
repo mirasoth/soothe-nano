@@ -1,14 +1,4 @@
-"""Execution tools.
-
-Consolidates single-purpose execution tools into one module:
-- run_command: Synchronous shell (waits for completion; honors per-call timeout)
-- run_background: Background shell (PID + log_path; poll via tail_background_log)
-- run_python: Python REPL with session persistence
-- tail_background_log: Read trailing lines from background logs
-- kill_process: Terminate background processes
-
-Follows the pattern from data.py and file_ops.py.
-"""
+"""Execution tools: synchronous and background shell, Python REPL, and process control."""
 
 from __future__ import annotations
 
@@ -1045,10 +1035,7 @@ class KillProcessTool(BaseTool):
 
 
 class ExecutionToolkit:
-    """Toolkit for shell and Python execution.
-
-    Provides: run_command, run_python, run_background, tail_background_log, kill_process
-    """
+    """Toolkit for shell and Python execution."""
 
     def __init__(
         self,
@@ -1145,10 +1132,7 @@ def _execution_max_output_from_config(config: Any | None) -> int:
     trust_level="built-in",
 )
 class ExecutionPlugin:
-    """Execution tools plugin.
-
-    Provides run_command, run_python, run_background, tail_background_log, and kill_process tools.
-    """
+    """Execution tools plugin."""
 
     def __init__(self) -> None:
         """Initialize the plugin."""

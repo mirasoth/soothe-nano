@@ -1,9 +1,6 @@
-"""Plugin lifecycle events.
+"""Plugin lifecycle events in the `soothe.internal.plugin.*` namespace.
 
-This module defines event types emitted during the plugin lifecycle.
-All events follow the soothe.* event namespace pattern.
-
-Events are self-registered at module load time using register_event().
+Events self-register at module load time via `register_event()`.
 """
 
 from typing import Literal
@@ -12,16 +9,13 @@ from soothe_sdk.core.events import SootheEvent
 
 
 class PluginLoadedEvent(SootheEvent):
-    """Emitted when a plugin is successfully loaded.
-
-    This event signals that a plugin has completed its initialization
-    and is ready to provide tools and/or subagents.
+    """Signals that a plugin finished initialization and is ready to serve tools/subagents.
 
     Attributes:
-        type: Event type identifier ("soothe.internal.plugin.loaded").
+        type: Event type identifier (`soothe.internal.plugin.loaded`).
         name: Plugin name.
         version: Plugin version.
-        source: Discovery source (built-in, entry_point, config, filesystem).
+        source: Discovery source (`built-in`, `entry_point`, `config`, `filesystem`).
     """
 
     type: Literal["soothe.internal.plugin.loaded"] = "soothe.internal.plugin.loaded"
@@ -31,16 +25,14 @@ class PluginLoadedEvent(SootheEvent):
 
 
 class PluginFailedEvent(SootheEvent):
-    """Emitted when a plugin fails to load.
-
-    This event signals that a plugin failed during one of the loading phases.
-    The plugin will not be available for use.
+    """Signals that a plugin failed during a loading phase and is unavailable.
 
     Attributes:
-        type: Event type identifier ("soothe.internal.plugin.failed").
-        name: Plugin name (may be empty if failure occurred before manifest parsing).
+        type: Event type identifier (`soothe.internal.plugin.failed`).
+        name: Plugin name (empty if failure occurred before manifest parsing).
         error: Error message describing the failure.
-        phase: Loading phase where the failure occurred (discovery, validation, dependency, initialization).
+        phase: Phase where the failure occurred (`discovery`, `validation`,
+            `dependency`, or `initialization`).
     """
 
     type: Literal["soothe.internal.plugin.failed"] = "soothe.internal.plugin.failed"
@@ -50,15 +42,12 @@ class PluginFailedEvent(SootheEvent):
 
 
 class PluginHealthCheckedEvent(SootheEvent):
-    """Emitted when a plugin health check is completed.
-
-    This event signals that a plugin's health_check() hook has been
-    called and reports the plugin's current health status.
+    """Signals completion of a plugin's `health_check()` hook.
 
     Attributes:
-        type: Event type identifier ("soothe.internal.plugin.health_checked").
+        type: Event type identifier (`soothe.internal.plugin.health_checked`).
         name: Plugin name.
-        status: Health status ("healthy", "degraded", "unhealthy").
+        status: Health status (`healthy`, `degraded`, or `unhealthy`).
         details: Optional details about the health check result.
     """
 
@@ -69,13 +58,10 @@ class PluginHealthCheckedEvent(SootheEvent):
 
 
 class PluginUnloadedEvent(SootheEvent):
-    """Emitted when a plugin is unloaded.
-
-    This event signals that a plugin's on_unload() hook has been called
-    and the plugin is no longer available.
+    """Signals that a plugin's `on_unload()` hook has been called and it is no longer available.
 
     Attributes:
-        type: Event type identifier ("soothe.internal.plugin.unloaded").
+        type: Event type identifier (`soothe.internal.plugin.unloaded`).
         name: Plugin name.
     """
 

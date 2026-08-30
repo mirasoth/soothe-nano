@@ -22,7 +22,22 @@ logger = logging.getLogger(__name__)
 
 
 class ProgressiveListingMiddleware(AgentMiddleware):
-    """Compute and stash progressive listing blocks into request state."""
+    """Compute progressive listing blocks and stash them into request state.
+
+    Produces ``<AVAILABLE_TOOLS>``, ``<AVAILABLE_SKILLS>`` /
+    ``<SKILL_CONTEXT ...>``, and ``<AVAILABLE_MCP_TOOLS>`` blocks from the
+    activation state of each subsystem, leaving prompt assembly to a later
+    middleware. Results are cached on the instance across hops.
+
+    Args:
+        config: SootheConfig driving budget and core-skill resolution.
+        mcp_registry: Optional MCP registry for deferred MCP tool listings.
+        progressive_tool_middleware: Optional progressive-tool middleware
+            consulted for available-tool listings.
+
+    Example:
+        mw = ProgressiveListingMiddleware(config, mcp_registry=reg)
+    """
 
     def __init__(
         self,

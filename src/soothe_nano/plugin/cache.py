@@ -1,8 +1,4 @@
-"""Plugin instance caching for improved performance.
-
-Provides caching of loaded plugin instances to avoid redundant loading
-and improve agent creation time.
-"""
+"""In-memory cache of loaded plugin instances."""
 
 import logging
 from typing import Any
@@ -13,30 +9,18 @@ _plugin_cache: dict[str, Any] = {}
 
 
 def get_cached_plugin(name: str) -> Any | None:
-    """Get cached plugin instance.
-
-    Args:
-        name: Plugin name.
-
-    Returns:
-        Cached plugin instance or None if not cached.
-    """
+    """Return the cached plugin instance for `name`, or `None` if not cached."""
     return _plugin_cache.get(name)
 
 
 def cache_plugin(name: str, instance: Any) -> None:
-    """Cache a plugin instance.
-
-    Args:
-        name: Plugin name.
-        instance: Plugin instance to cache.
-    """
+    """Store `instance` in the cache under `name`."""
     _plugin_cache[name] = instance
     logger.debug("Cached plugin '%s'", name)
 
 
 def clear_plugin_cache() -> None:
-    """Clear all cached plugins."""
+    """Remove all cached plugin instances."""
     global _plugin_cache
     _plugin_cache = {}
     logger.debug("Cleared plugin cache")

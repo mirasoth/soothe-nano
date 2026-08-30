@@ -1,29 +1,8 @@
-"""Soothe Plugin System.
+"""Soothe plugin system: discovery, registry, loading, and lifecycle.
 
-This package provides the core plugin infrastructure for Soothe, enabling
-third-party developers to create custom tools and subagents using the
-decorator-based API in soothe_sdk.
-
-Key Components:
-- PluginRegistry: Priority-based storage with conflict resolution
-- PluginLoader: Dependency resolution and instantiation
-- PluginLifecycleManager: Orchestrates discovery through shutdown
-- Discovery: Entry points, config, and filesystem discovery
-
-Example:
-    from soothe_nano.plugin import PluginRegistry, PluginLifecycleManager
-    from soothe_nano.config.settings import SootheConfig
-
-    # Create registry
-    registry = PluginRegistry()
-
-    # Load plugins
-    lifecycle = PluginLifecycleManager(registry)
-    await lifecycle.load_all(config)
-
-    # Get tools and subagents
-    tools = registry.get_all_tools()
-    subagents = registry.get_all_subagents()
+Built on the decorator-based API in `soothe_sdk`. Third-party plugins
+register tools and subagents that are discovered from entry points,
+config, or the filesystem and loaded with dependency resolution.
 """
 
 from soothe_sdk.plugin import PluginManifest

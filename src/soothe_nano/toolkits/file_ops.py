@@ -1,8 +1,4 @@
-"""File operations toolkit -- surgical file manipulation plugin.
-
-This module provides the `FileOpsPlugin` class, which supplies surgical file operation
-tools (delete, file_info, edit_lines, insert_lines, delete_lines, apply_diff).
-"""
+"""File operations toolkit -- surgical file manipulation plugin."""
 
 from __future__ import annotations
 
@@ -21,8 +17,6 @@ logger = logging.getLogger(__name__)
 )
 class FileOpsPlugin:
     """File operations tools plugin.
-
-    Provides delete, file_info, edit_lines, insert_lines, delete_lines, apply_diff.
 
     Tools are provided by SootheFilesystemMiddleware for consistent
     implementation patterns (schema validation, path validation, backend usage).

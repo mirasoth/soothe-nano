@@ -23,7 +23,20 @@ if TYPE_CHECKING:
 
 
 class SoothePolicyMiddleware(AgentMiddleware):
-    """Enforce PolicyProtocol on tool calls and subagent delegations."""
+    """Enforce a PolicyProtocol on tool calls and subagent delegations.
+
+    Inspects each tool call (or ``task`` subagent spawn) against the policy
+    profile before it reaches the handler; denied actions return an error
+    ``ToolMessage`` and emit a ``PolicyDeniedEvent``. Batched operations
+    skip the check.
+
+    Args:
+        policy: Policy implementation used to check actions.
+        profile_name: Policy profile to apply.
+
+    Example:
+        mw = SoothePolicyMiddleware(policy=policy, profile_name="standard")
+    """
 
     def __init__(self, policy: PolicyProtocol, profile_name: str = "standard") -> None:
         """Initialize the policy middleware.

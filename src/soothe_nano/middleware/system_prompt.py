@@ -75,20 +75,21 @@ class _SystemPromptState(TypedDict):
 
 
 class SystemPromptMiddleware(AgentMiddleware):
-    """Dynamically adjust system prompts based on LLM query classification.
+    """Dynamically adjust the system prompt based on task complexity.
 
-    Uses task_complexity from RoutingClassification (determined by fast LLM)
-    to select appropriate prompt verbosity:
-    - minimal: Minimal prompt for greetings and quick questions
-    - simple: Compact execution prompt for small tasks
-    - medium: Standard prompt with guidelines
-    - complex: Full prompt with all context
-
-    This middleware expects the injected task classification in agent state
+    Selects prompt verbosity from the injected ``RoutingClassification``
+    (minimal/simple/medium/complex) and assembles progressive listing
+    blocks, tool-triggered sections, and workspace context into the
+    effective system prompt. Expects the classification in agent state
     before the first model call.
 
     Args:
-        config: Soothe configuration for resolving prompt templates.
+        config: SootheConfig for resolving prompt templates.
+        tool_trigger_registry: Optional registry of tool→section triggers.
+        tool_context_registry: Optional registry of tool context fragments.
+
+    Example:
+        mw = SystemPromptMiddleware(config, trigger_reg, context_reg)
     """
 
     state_schema = _SystemPromptState

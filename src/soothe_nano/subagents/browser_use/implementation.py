@@ -1,9 +1,10 @@
-"""BrowserUse subagent -- web browser automation specialist.
+"""BrowserUse subagent — web browser automation specialist.
 
-Provides web browser automation for navigating pages, interacting with
-elements, filling forms, extracting content, and taking screenshots.
-
-Uses only soothe-sdk (no soothe daemon dependency).
+Single-node LangGraph driving a browser-use loop for page navigation, element
+interaction, form filling, content extraction, and screenshots. A structured
+LLM call runs a post-run result quality gate. Wire events
+(started/step/completed) are emitted via ``emit_subagent_wire_event``. Uses
+only soothe-sdk (no daemon dependency).
 """
 
 from __future__ import annotations

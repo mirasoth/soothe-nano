@@ -1,9 +1,5 @@
 """Wizsearch toolkit -- multi-engine search and crawl powered by tarzi.
 
-Provides web search and crawl capabilities (tool names kept for config/wire compat):
-- wizsearch_search: Ordered multi-engine failover via tarzi SearchEngine
-- wizsearch_crawl: Page fetch via tarzi WebFetcher (plain HTTP → browser cascade)
-
 Tool names are prefixed with `wizsearch_` to avoid collision with base tools.
 """
 
@@ -103,8 +99,6 @@ class WizsearchSearchTool(BaseTool):
     Uses engines configured via wizsearch.default_engines in config.yml as an
     ordered failover list (first success wins). Common engines: tavily,
     duckduckgo, google_serper (alias serper), googleai, brave, bing.
-
-    name: str = "wizsearch_search"
     """
 
     name: str = "wizsearch_search"
@@ -233,8 +227,6 @@ class WizsearchCrawlTool(BaseTool):
 
     Uses tarzi's plain HTTP → headless browser cascade for content extraction.
     Returns converted page content (markdown/html/text).
-
-    name: str = "wizsearch_crawl"
     """
 
     name: str = "wizsearch_crawl"
@@ -348,10 +340,7 @@ class WizsearchCrawlTool(BaseTool):
 
 
 class WizsearchToolkit:
-    """Toolkit for wizsearch-enhanced web search and crawl.
-
-    Provides: wizsearch_search, wizsearch_crawl
-    """
+    """Toolkit for wizsearch-enhanced web search and crawl."""
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         """Initialize the toolkit.
@@ -380,10 +369,7 @@ class WizsearchToolkit:
     trust_level="built-in",
 )
 class WizsearchPlugin:
-    """Wizsearch tools plugin (tarzi-backed).
-
-    Provides wizsearch_search and wizsearch_crawl tools.
-    """
+    """Wizsearch tools plugin (tarzi-backed)."""
 
     def __init__(self) -> None:
         """Initialize the plugin."""

@@ -62,7 +62,17 @@ def pop_mcp_activation_update() -> dict[str, set[str]] | None:
 
 
 class MCPActivationMiddleware(AgentMiddleware):
-    """Bind always-loaded MCP tools; promote deferred tools on search or invoke."""
+    """Bind always-loaded MCP tools and promote deferred tools on search or invoke.
+
+    Deferred tools are promoted into the active tool set when the agent
+    invokes ``search_mcp_tools`` or calls a deferred MCP tool by name.
+
+    Args:
+        mcp_registry: MCP registry providing always-loaded and deferred tools.
+
+    Example:
+        mw = MCPActivationMiddleware(mcp_registry=registry)
+    """
 
     name = "MCPActivationMiddleware"
     state_schema = MCPActivationState

@@ -73,7 +73,19 @@ def resolve_model_role_for_request(
 
 
 class RoleRoutingMiddleware(AgentMiddleware):
-    """Swap `request.model` per hop using `ModelRouter` roles."""
+    """Swap ``request.model`` per hop using configured ModelRouter roles.
+
+    Selects between an orchestration role (tool-calling hops) and a
+    generation role (synthesis / no-tools / capped hops) based on the hop
+    index since the last user message. Role-specific models are cached per
+    instance unless a stream router overlay is active.
+
+    Args:
+        config: SootheConfig carrying ``agent.runtime.role_routing``.
+
+    Example:
+        mw = RoleRoutingMiddleware(config)
+    """
 
     name = "RoleRoutingMiddleware"
 
@@ -81,7 +93,7 @@ class RoleRoutingMiddleware(AgentMiddleware):
         """Cache role-specific chat models on the middleware instance.
 
         Args:
-            config: `SootheConfig` with `agent.runtime.role_routing`.
+            config: SootheConfig with ``agent.runtime.role_routing``.
         """
         super().__init__()
         self._config = config

@@ -1,8 +1,4 @@
-"""Early termination logic for Deep Research research loops.
-
-Provides heuristics to determine when sufficient information has been
-gathered to terminate the research loop early, reducing latency.
-"""
+"""Early termination heuristics for deep_research loops."""
 
 from __future__ import annotations
 
@@ -22,7 +18,7 @@ class TerminationDecision:
 
 
 class LoopTerminationChecker:
-    """Checks if research loop should terminate early based on gathered results."""
+    """Decides whether a research loop has gathered enough to stop early."""
 
     def __init__(
         self,
@@ -31,14 +27,6 @@ class LoopTerminationChecker:
         max_duplicate_ratio: float = 0.5,
         min_content_length: int = 200,
     ):
-        """Initialize termination checker.
-
-        Args:
-            min_results: Minimum total results needed before considering termination.
-            min_source_diversity: Minimum number of different sources required.
-            max_duplicate_ratio: Maximum ratio of duplicate results (0.0-1.0).
-            min_content_length: Minimum average content length per result.
-        """
         self.min_results = min_results
         self.min_source_diversity = min_source_diversity
         self.max_duplicate_ratio = max_duplicate_ratio
@@ -50,16 +38,7 @@ class LoopTerminationChecker:
         iteration: int,
         current_results: list[SourceResult],
     ) -> TerminationDecision:
-        """Check if research should terminate early.
-
-        Args:
-            state: Current graph state with accumulated results.
-            iteration: Current loop iteration (0-indexed).
-            current_results: Results from the current iteration.
-
-        Returns:
-            TerminationDecision with should_terminate flag and reason.
-        """
+        """Whether to stop after this iteration, with a reason."""
         # Get accumulated references from state
         accumulated = state.get("references_gathered", [])
 

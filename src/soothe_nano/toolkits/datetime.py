@@ -59,10 +59,7 @@ class DatetimeToolkit:
 
 @plugin(name="datetime", version="1.0.0", description="Datetime operations", trust_level="built-in")
 class DatetimePlugin:
-    """Datetime tools plugin.
-
-    Provides current_datetime tool.
-    """
+    """Datetime tools plugin."""
 
     def __init__(self) -> None:
         """Initialize the plugin."""

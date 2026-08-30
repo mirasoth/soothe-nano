@@ -36,10 +36,14 @@ _MAX_TOOL_ERROR_CHARS = 2000
 class ToolErrorGuardMiddleware(AgentMiddleware):
     """Convert any unhandled tool exception into an error ``ToolMessage``.
 
-    Positioned outer to the network-error recovery middleware in the stack so
-    it wraps the exceptions that path re-raises. Tools that already return
-    their own error strings are unaffected; only exceptions that escape every
-    inner handler and the graph's default tool-error catch are handled here.
+    Positioned outer to the network-error recovery middleware so it catches
+    the exceptions that path re-raises. Tools returning their own error
+    strings are unaffected; only exceptions escaping every inner handler
+    and the graph's default tool-error catch are handled here.
+    ``CancelledError`` is re-raised so cooperative shutdown is unaffected.
+
+    Example:
+        mw = ToolErrorGuardMiddleware()
     """
 
     name = "ToolErrorGuardMiddleware"

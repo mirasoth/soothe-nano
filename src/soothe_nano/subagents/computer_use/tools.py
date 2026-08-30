@@ -1,15 +1,10 @@
-"""Input toolkits for the computer_use subagent.
+"""LangChain ``BaseTool`` schemas for computer_use desktop input.
 
-Defines LangChain ``BaseTool`` schemas for the three core desktop input
-categories: screenshots, mouse clicks, and keyboard events. Each tool
-accepts structured Pydantic input and returns a JSON-serializable dict.
-
-The actual input execution is delegated to a backend adapter
-(``_DesktopInputBackend``) that the agent loop injects at runtime. This
-separation allows the tool schemas to be pure interface definitions
-while the backend can be swapped (pyautogui, osascript, platform-specific).
-
-Pattern follows ``soothe_nano.toolkits.datetime`` and ``execution.py``.
+Defines schemas for screenshots, mouse clicks, keyboard events, and scroll.
+Each tool accepts structured Pydantic input and returns a JSON-serializable
+dict. Input execution is delegated to a ``_DesktopInputBackend`` adapter that
+the agent loop injects at runtime, so the tool schemas are pure interface
+definitions and the backend can be swapped (pyautogui, osascript, etc.).
 """
 
 from __future__ import annotations

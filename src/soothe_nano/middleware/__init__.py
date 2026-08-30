@@ -1,24 +1,9 @@
-"""Soothe middleware modules.
+"""Soothe CoreAgent middleware stack.
 
-This package provides middleware implementations:
-- SoothePolicyMiddleware: Enforce PolicyProtocol on tool/subagent calls
-- SystemPromptMiddleware: Dynamic prompt adjustment based on classification
-- LLMRateLimitMiddleware: Rate limiting at LLM level, not thread level
-- WorkspaceContextMiddleware: Thread-aware workspace ContextVar management
-- PerTurnModelMiddleware: Per-stream model override for foreground/TUI
-- SootheFilesystemMiddleware: Extended filesystem tools middleware
-- CodeInterpreterMiddleware: Embedded QuickJS interpreter for programmatic tool calling
-- MCPActivationMiddleware: MCP progressive disclosure search, promote, bind
-- ToolTimeoutMiddleware: Wrap tool calls with configurable timeout
-- ToolEnforcementMiddleware: Request-time tool narrowing policies
-- ToolOptimizationMiddleware: Deterministic lookup reuse/dedup/search-consolidation policy
-- ProgressiveListingMiddleware: Prepare deferred listing blocks for system prompt
-
-Utility functions:
-- create_llm_call_metadata: Create standardized metadata for LLM calls
-
-Builder function:
-- build_soothe_middleware_stack(): Construct middleware stack in correct order
+Provides policy enforcement, prompt assembly, progressive disclosure
+(tools/skills/MCP), tool-call optimization, edit coalescing, workspace
+context, model-call profiling, and the stack builder. Public exports are
+lazily resolved via ``__getattr__`` to keep import cost low.
 """
 
 from __future__ import annotations

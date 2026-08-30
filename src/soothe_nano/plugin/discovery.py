@@ -1,10 +1,4 @@
-"""Plugin discovery mechanisms.
-
-This module implements three plugin discovery mechanisms:
-1. Python entry points (soothe.plugins group)
-2. Config-declared plugins (from SootheConfig.plugins)
-3. Filesystem discovery (~/.soothe/plugins/)
-"""
+"""Plugin discovery from entry points, config, and the filesystem."""
 
 import importlib
 import importlib.metadata
@@ -24,11 +18,10 @@ PluginDiscoverySource = Literal["built-in", "entry_point", "config", "filesystem
 
 
 def _try_extract_plugin_name(module_path: str) -> str | None:
-    """Attempt to extract plugin name from module path by loading it.
+    """Attempt to extract a plugin's name from its manifest by importing its module.
 
-    For entry point and filesystem discovery, tries to get the plugin
-    name from the manifest so deduplication works by name rather than
-    module path. Returns None if the manifest can't be loaded.
+    Used so deduplication works by name rather than module path. Returns
+    `None` when the manifest cannot be loaded.
     """
     try:
         if ":" in module_path:
@@ -55,20 +48,10 @@ def _try_extract_plugin_name(module_path: str) -> str | None:
 
 
 def discover_entry_points() -> list[str]:
-    """Discover plugins from Python entry points.
-
-    Scans the `soothe.plugins` entry point group for plugin declarations.
+    """Discover plugins declared via the `soothe.plugins` entry point group.
 
     Returns:
-        List of module paths (e.g., ["my_package:MyPlugin", "other:Plugin"]).
-
-    Example:
-        # In pyproject.toml:
-        [project.entry-points."soothe.plugins"]
-        my_plugin = "my_package:MyPlugin"
-
-        # Discovery result:
-        ["my_package:MyPlugin"]
+        List of `module_path:ClassName` strings, one per discovered entry point.
     """
     plugins = []
     try:
@@ -84,25 +67,13 @@ def discover_entry_points() -> list[str]:
 
 
 def discover_config_declared(config: "SootheConfig") -> list[tuple[str, dict]]:
-    """Discover plugins declared in Soothe configuration.
+    """Discover enabled plugins declared in Soothe configuration.
 
     Args:
         config: Resolved Soothe configuration.
 
     Returns:
-        List of (module_path, config_dict) tuples for enabled plugins.
-
-    Example:
-        # In config.yml:
-        plugins:
-          - name: my-plugin
-            enabled: true
-            module: "my_package:MyPlugin"
-            config:
-              api_key: "${MY_API_KEY}"
-
-        # Discovery result:
-        [("my_package:MyPlugin", {"api_key": "..."})]
+        List of `(module_path, config_dict)` tuples for each enabled plugin.
     """
     plugins = []
 
@@ -128,25 +99,17 @@ def discover_config_declared(config: "SootheConfig") -> list[tuple[str, dict]]:
 
 
 def discover_filesystem(base_dir: Path | None = None) -> list[str]:
-    """Discover plugins from filesystem directory.
+    """Discover plugins by scanning a directory for `plugin.py` or `__init__.py`.
 
-    Scans a directory for plugin directories containing plugin.py or __init__.py.
-    Adds the plugin directory to sys.path so plugins can be imported.
+    The directory is added to `sys.path` so discovered plugins can be imported.
+    Each subdirectory whose name does not start with `.` is treated as a
+    candidate plugin.
 
     Args:
-        base_dir: Base directory for discovery. Defaults to ~/.soothe/plugins/
+        base_dir: Base directory to scan. Defaults to `~/.soothe/plugins/`.
 
     Returns:
-        List of module paths (e.g., ["my_plugin.plugin", "research"]).
-
-    Directory structure:
-        ```
-        ~/.soothe/plugins/
-          my_plugin/
-            plugin.py  # Contains MyPlugin class
-          research/
-            __init__.py  # Contains ResearchPlugin class
-        ```
+        List of importable module paths (e.g., `["my_plugin.plugin", "research"]`).
     """
     if base_dir is None:
         base_dir = SOOTHE_HOME / "plugins"
@@ -194,19 +157,18 @@ def discover_filesystem(base_dir: Path | None = None) -> list[str]:
 def discover_all_plugins(
     config: "SootheConfig",
 ) -> dict[str, tuple[str, dict, PluginDiscoverySource]]:
-    """Run all discovery mechanisms and return plugin module paths.
+    """Run all discovery mechanisms and return a map of plugin identifiers to sources.
 
-    This function runs all discovery mechanisms and returns a dict
-    mapping plugin names to (module_path, config_dict, source) tuples. Duplicate
-    names are resolved later by the registry based on priority.
+    Built-in plugins are listed first; duplicates from lower-priority sources
+    overwrite higher-priority ones only at registry registration time.
 
     Args:
         config: Soothe configuration.
 
     Returns:
-        Dict mapping unique identifiers to (module_path, config_dict, source) tuples.
-        The identifier is the plugin name when discoverable from manifest,
-        or the module path for config-declared plugins.
+        Dict mapping a unique identifier (plugin name when discoverable
+        from the manifest, otherwise the module path) to a
+        `(module_path, config_dict, source)` tuple.
     """
     discovered: dict[str, tuple[str, dict, PluginDiscoverySource]] = {}
 

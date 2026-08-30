@@ -1,8 +1,4 @@
-"""Global plugin registry manager.
-
-This module provides a singleton plugin registry that is initialized
-during agent creation and accessed by resolvers.
-"""
+"""Process-wide singleton plugin registry initialized during agent creation."""
 
 import logging
 from typing import TYPE_CHECKING
@@ -22,13 +18,10 @@ _global_lifecycle_manager: PluginLifecycleManager | None = None
 
 
 def get_plugin_registry() -> PluginRegistry:
-    """Get the global plugin registry.
+    """Return the global plugin registry.
 
     Raises:
-        RuntimeError: If plugins have not been loaded yet.
-
-    Returns:
-        Global PluginRegistry instance.
+        RuntimeError: If `load_plugins()` has not been called yet.
     """
     if _global_registry is None:
         raise RuntimeError(
@@ -38,16 +31,17 @@ def get_plugin_registry() -> PluginRegistry:
 
 
 async def load_plugins(config: "SootheConfig") -> PluginRegistry:
-    """Load all plugins and initialize the global registry.
+    """Discover and load all plugins, initializing the global registry.
 
-    This should be called once during agent creation, before tool
-    and subagent resolution.
+    Must be called once during agent creation, before tool and subagent
+    resolution. Subsequent calls return the existing registry without
+    reloading.
 
     Args:
         config: Soothe configuration.
 
     Returns:
-        Initialized PluginRegistry with all loaded plugins.
+        Initialized `PluginRegistry` with all loaded plugins.
     """
     global _global_registry, _global_lifecycle_manager
 
@@ -75,10 +69,7 @@ async def load_plugins(config: "SootheConfig") -> PluginRegistry:
 
 
 async def shutdown_plugins() -> None:
-    """Shutdown all loaded plugins.
-
-    This should be called during agent cleanup.
-    """
+    """Call `on_unload()` on all loaded plugins and reset the global registry."""
     global _global_registry, _global_lifecycle_manager
 
     if _global_lifecycle_manager:
@@ -92,9 +83,5 @@ async def shutdown_plugins() -> None:
 
 
 def is_plugins_loaded() -> bool:
-    """Check if plugins have been loaded.
-
-    Returns:
-        True if plugins are loaded, False otherwise.
-    """
+    """Return `True` if `load_plugins()` has completed successfully."""
     return _global_registry is not None

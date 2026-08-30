@@ -1,4 +1,9 @@
-"""WorkspaceContextMiddleware for thread-aware workspace."""
+"""Thread-aware workspace context middleware.
+
+Sets a ``ContextVar`` workspace root for ``FrameworkFilesystem`` from
+configurable state so tools resolve paths against the active workspace.
+Does not depend on injecting ``soothe_config``.
+"""
 
 from __future__ import annotations
 
@@ -32,25 +37,21 @@ def _virtual_mode_without_soothe_config() -> bool:
 
 
 class WorkspaceContextMiddleware(AgentMiddleware):
-    """Set workspace context for tool execution.
+    """Set the workspace context for tool execution.
 
-    Reads workspace from config.configurable / state and sets ContextVar for
-    FrameworkFilesystem. Does **not** depend on injecting `soothe_config`.
-
-    Thread Safety:
-        Python's contextvars.ContextVar provides async-safe context isolation.
-        Each async task (thread execution) has its own context, preventing
-        cross-thread contamination even with concurrent execution.
+    Reads the workspace from ``config.configurable`` or state and sets the
+    ``ContextVar`` consumed by ``FrameworkFilesystem``. Python contextvars
+    provide async-safe isolation: each async task has its own context, so
+    concurrent threads cannot contaminate each other.
 
     Example:
         config.configurable = {
             "thread_id": "thread-123",
-            "workspace": "/home/user/project-a"
+            "workspace": "/home/user/project-a",
         }
-
-        → set_workspace_context("/home/user/project-a", virtual_mode=...)
-        → Tools resolve paths against /home/user/project-a
-        → reset_workspace_context(token) after execution
+        # -> set_workspace_context("/home/user/project-a", virtual_mode=...)
+        # -> tools resolve paths against /home/user/project-a
+        # -> reset_workspace_context(token) after execution
     """
 
     # Opt into general-purpose subagent inheritance (deepagents generic flag).

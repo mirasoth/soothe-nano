@@ -1,17 +1,11 @@
-"""ComputerUse subagent -- desktop automation specialist.
+"""ComputerUse subagent — desktop automation specialist.
 
-Provides desktop automation for taking screenshots, clicking at screen
-coordinates, typing text, and pressing keyboard hotkeys. Uses a vision-
-capable LLM to drive an agentic loop: screenshot → reason → act → repeat.
-
-Architecture mirrors ``browser_use``:
-- Single-node LangGraph: ``START → run_computer_use → END``
-- Manual step loop with ``max_steps`` cap and early-exit on ``done`` action
-- Structured LLM call for post-run result synthesis / quality gate
-- Wire events (started/step/completed) emitted via ``emit_subagent_wire_event``
-- Structured logging parallel to wire events
-
-Uses only soothe-sdk (no soothe daemon dependency).
+Single-node LangGraph (``START → run_computer_use → END``) with a manual
+step loop capped by ``max_steps`` and early-exit on a ``done`` action. A
+vision-capable LLM drives screenshot → reason → act → repeat. A structured
+LLM call runs a post-run result quality gate. Wire events
+(started/step/completed) are emitted via ``emit_subagent_wire_event``. Uses
+only soothe-sdk (no daemon dependency).
 """
 
 from __future__ import annotations

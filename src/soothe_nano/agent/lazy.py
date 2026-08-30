@@ -25,7 +25,7 @@ MaterializeHook = Callable[[SootheNanoAgent], Awaitable[None] | None]
 
 
 class LazyCoreAgent:
-    """Proxy that compiles the real CoreAgent on first Layer-1 use."""
+    """Proxy that compiles the real CoreAgent on first execution access."""
 
     def __init__(
         self,

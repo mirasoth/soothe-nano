@@ -45,11 +45,15 @@ def _filter_tools_to_task_only(
 
 
 class ToolEnforcementMiddleware(AgentMiddleware):
-    """Apply request-time tool availability from CoreAgent routing state.
+    """Apply request-time tool narrowing from CoreAgent routing state.
 
-    Policies:
-    - Explicit preferred_subagent routing on first hop: task-only tools.
-    Host layers may add goal-synthesis / step-wire policies separately.
+    When an explicit ``preferred_subagent`` routing hint is present on the
+    first hop after a user message, narrows the tool list to the ``task``
+    tool only so the root agent cannot bypass delegation. Host layers may
+    add goal-synthesis or step-wire policies separately.
+
+    Example:
+        mw = ToolEnforcementMiddleware()
     """
 
     def modify_request(self, request: ModelRequest[ContextT]) -> ModelRequest[ContextT]:

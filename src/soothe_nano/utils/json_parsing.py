@@ -22,7 +22,7 @@ def _strip_leading_bom(text: str) -> str:
 
 
 def _strip_markdown_json_fence(response: str) -> str:
-    """Extract JSON from ``json ... `` or generic `` ... `` blocks."""
+    """Extract JSON from `json ... ` or generic ` ... ` fenced blocks."""
     json_str = response.strip()
 
     if "```json" in json_str:

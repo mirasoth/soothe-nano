@@ -1,15 +1,10 @@
-"""Plugin system exception classes.
-
-This module defines the exception hierarchy for the plugin system,
-providing specific error types for each failure phase.
-"""
+"""Exception hierarchy for the plugin system, one type per failure phase."""
 
 
 class PluginError(Exception):
-    """Base exception for plugin system errors.
+    """Base exception for all plugin system errors.
 
-    All plugin-related exceptions inherit from this base class,
-    allowing callers to catch all plugin errors with a single except clause.
+    Catching this catches every plugin-specific exception type.
 
     Attributes:
         message: Human-readable error description.
@@ -17,18 +12,13 @@ class PluginError(Exception):
     """
 
     def __init__(self, message: str, plugin_name: str | None = None) -> None:
-        """Initialize plugin error.
-
-        Args:
-            message: Human-readable error description.
-            plugin_name: Name of the plugin that caused the error.
-        """
+        """Initialize with `message` and optional `plugin_name`."""
         self.message = message
         self.plugin_name = plugin_name
         super().__init__(message)
 
     def __str__(self) -> str:
-        """Return string representation of the error."""
+        """Return `[plugin_name] message` when a plugin name is set, else `message`."""
         if self.plugin_name:
             return f"[{self.plugin_name}] {self.message}"
         return self.message

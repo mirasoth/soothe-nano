@@ -141,28 +141,23 @@ def coerce_provider_safe_tool_message(
 
 
 class SootheFilesystemMiddleware(FilesystemMiddleware):
-    """Extended filesystem middleware with surgical file operations.
+    """Filesystem middleware extended with ``apply_diff`` and workspace resolution.
 
-    Inherits from FilesystemMiddleware and adds:
-    - apply_diff: Apply unified diff patches
-
-    All tools follow standard patterns:
-    - Schema validation with XxxSchema(BaseModel)
-    - ToolRuntime injection for backend access
-    - Path validation with validate_path()
-    - StructuredTool.from_function() with infer_schema=False
-
-    Supports thread workspace resolution via runtime.state["workspace"]
-    without using deprecated callable backend pattern.
+    Adds unified-diff patch application on top of the base filesystem tools
+    and resolves the active workspace from runtime state rather than a
+    deprecated callable backend. Tool schemas, runtime injection, and path
+    validation follow the standard deepagents patterns.
 
     Args:
-        backup_enabled: Whether delete backups are preferred when callers omit
-            an explicit ``backup`` flag (retained for compatibility).
-        backup_dir: Workspace-relative or absolute backup directory. Defaults to
-            ``.soothe/backups``. Injected into delete tool calls when omitted.
+        backup_enabled: Prefer delete backups when callers omit an explicit flag.
+        backup_dir: Workspace-relative or absolute backup directory.
         workspace_root: Root directory for workspace operations.
-        workspace_backend_factory: Optional factory for creating workspace backends.
-        **kwargs: Additional arguments passed to FilesystemMiddleware.
+        workspace_backend_factory: Optional factory returning a backend for a
+            given workspace path.
+        **kwargs: Additional arguments forwarded to ``FilesystemMiddleware``.
+
+    Example:
+        mw = SootheFilesystemMiddleware(workspace_root="/path/to/ws")
     """
 
     def __init__(
@@ -174,16 +169,15 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
         workspace_backend_factory: Callable[[str], BackendProtocol] | None = None,
         **kwargs,
     ) -> None:
-        """Initialize SootheFilesystemMiddleware.
+        """Initialize the filesystem middleware and verify apply_diff support.
 
         Args:
             backup_enabled: Compatibility flag for delete backup preference.
-            backup_dir: Custom backup directory (default ``.soothe/backups``).
+            backup_dir: Custom backup directory.
             workspace_root: Workspace root directory for path resolution.
-            workspace_backend_factory: Factory function that takes a workspace path
-                and returns a BackendProtocol instance. Used for thread workspace
-                resolution without callable backend deprecation.
-            **kwargs: Passed to FilesystemMiddleware (backend, system_prompt, etc.)
+            workspace_backend_factory: Factory taking a workspace path and
+                returning a ``BackendProtocol`` for thread workspace resolution.
+            **kwargs: Forwarded to ``FilesystemMiddleware``.
         """
         from soothe_nano.workspace.workspace_paths import WORKSPACE_BACKUP_DIR
 

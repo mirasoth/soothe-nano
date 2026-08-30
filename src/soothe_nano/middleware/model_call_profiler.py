@@ -1,17 +1,10 @@
-"""Profiling for model-call latency analysis across soothe_deepagents and Soothe middleware.
+"""Model-call latency profiling middleware.
 
-Use when debugging unexplained gaps between Langfuse `model` spans and LLM
-generation spans.
-
-Enable via config:
-    observability:
-      profile_model_calls: true
-
-Log prefixes:
-- `[DeepAgentsProfiler]` — outer soothe_deepagents stack (TodoList, Filesystem,
-  SubAgent, Summarization, PatchToolCalls) patched at CoreAgent build time
-- `[ModelProfiler]` / `[InnerProfiler]` / `[LLMProfiler]` — Soothe
-  middleware stack inserted via `build_soothe_middleware_stack`
+Wraps model calls to measure pre-handler (middleware chain), handler
+(LLM API), and post-handler timing for latency debugging. Enabled via
+``observability.profile_model_calls`` in config. Also patches selected
+deepagents middleware at CoreAgent build time so outer-stack timing is
+captured.
 """
 
 from __future__ import annotations
@@ -79,16 +72,18 @@ _DEEPAGENTS_PROFILER_TARGETS: tuple[tuple[str, str], ...] = (
 
 
 class ModelCallProfilerMiddleware(AgentMiddleware):
-    """Middleware that profiles model call timing for latency debugging.
+    """Profile model-call timing for latency debugging.
 
-    This middleware should be inserted at the START of the middleware chain
-    to capture the full timing picture. It wraps awrap_model_call to measure:
-    - Pre-handler time (middleware chain processing before LLM)
-    - Handler time (actual LLM API call)
-    - Post-handler time (middleware chain processing after LLM)
+    Insert at the start of the middleware chain to capture the full timing
+    picture. Wraps ``awrap_model_call`` to measure pre-handler time
+    (middleware chain plus callback overhead), handler time (LLM API call),
+    and post-handler time (middleware chain after the LLM).
 
-    The pre-handler time includes all inner middleware processing plus
-    any Langfuse/LangSmith callback overhead.
+    Args:
+        enabled: When True, log model-call timing checkpoints.
+
+    Example:
+        mw = ModelCallProfilerMiddleware(enabled=True)
     """
 
     name = "ModelCallProfilerMiddleware"
@@ -285,15 +280,19 @@ class ModelCallProfilerMiddleware(AgentMiddleware):
 
 
 class InnerModelCallProfilerMiddleware(AgentMiddleware):
-    """Middleware that profiles inner handler timing to pinpoint latency source.
+    """Profile inner handler timing to pinpoint the latency source.
 
-    Insert this AFTER SystemPromptMiddleware but BEFORE LLMRateLimitMiddleware
-    to capture timing after request modification but before rate limiting.
+    Insert after ``SystemPromptMiddleware`` but before
+    ``LLMRateLimitMiddleware`` to capture timing after request modification
+    but before rate limiting. This separates system-prompt build time
+    (outer profiler pre-handler), rate-limit wait (inner profiler entry to
+    handler), and the actual LLM call (handler time).
 
-    This helps distinguish:
-    - System prompt building time (captured in outer profiler's pre-handler)
-    - Rate limiting wait time (captured between inner profiler's entry and handler)
-    - Actual LLM call time (captured as handler time)
+    Args:
+        enabled: When True, log inner handler timing checkpoints.
+
+    Example:
+        mw = InnerModelCallProfilerMiddleware(enabled=True)
     """
 
     name = "InnerModelCallProfilerMiddleware"
@@ -372,13 +371,17 @@ class InnerModelCallProfilerMiddleware(AgentMiddleware):
 
 
 class LLMCallProfilerMiddleware(AgentMiddleware):
-    """Middleware that wraps JUST before the LLM call to capture pure API latency.
+    """Profile pure LLM API latency by wrapping just before the call.
 
-    Insert this as the LAST middleware before the actual LLM ainvoke.
-    This captures timing after Soothe middleware (PerTurnModel, caching).
+    Insert as the last middleware before the actual LLM ``ainvoke`` so
+    timing reflects the call after all Soothe middleware (per-turn model,
+    caching) has run.
 
-    SummarizationMiddleware runs in the soothe_deepagents stack before the Soothe
-    middleware slice; see `[DeepAgentsProfiler]` logs when profiling is enabled.
+    Args:
+        enabled: When True, log LLM API timing checkpoints.
+
+    Example:
+        mw = LLMCallProfilerMiddleware(enabled=True)
     """
 
     name = "LLMCallProfilerMiddleware"
