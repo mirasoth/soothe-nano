@@ -5,6 +5,18 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.2.17] - 2026-09-01
+
+### Added
+- **Bypass permissions mode (`interaction_mode="bypass"`).** A new interaction mode that skips all security enforcement layers — policy middleware, operation security (dangerous paths, banned commands), interrupt_on approval prompts, and tool approval pipeline safety checks — giving the agent unrestricted filesystem and shell access within a session. Per-session only (not a config default); selected via the CLI composer mode cycle or per-request via wire field.
+
+### Changed
+- **Multi-model router profiles with per-call failover.** The LLM provider now supports configurable router profiles that can fail over across models on a per-call basis.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.16...v1.2.17
+
 ## [1.2.16] - 2026-08-30
 
 ### Fixed
