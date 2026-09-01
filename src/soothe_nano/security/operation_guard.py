@@ -277,6 +277,8 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
     def evaluate(
         self, request: OperationSecurityRequest, context: OperationSecurityContext
     ) -> OperationSecurityDecision:
+        if context.bypass_security:
+            return OperationSecurityDecision(verdict="allow", reason="Security bypassed by mode")
         self._command_whitelist_patterns = tuple(
             getattr(context.security_config, "whitelist_commands_bypass", []) or []
         )

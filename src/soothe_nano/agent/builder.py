@@ -12,6 +12,7 @@ from soothe_nano.agent.core_agent import SootheNanoAgent, ephemeral_execute_stre
 from soothe_nano.agent.interaction_mode import (
     ASK_MUTATING_TOOL_GROUPS,
     ASK_POLICY_PROFILE,
+    BYPASS_POLICY_PROFILE,
     FILESYSTEM_TOOLS_AGENT,
     FILESYSTEM_TOOLS_ASK,
     FILESYSTEM_TOOLS_PLAN,
@@ -19,8 +20,10 @@ from soothe_nano.agent.interaction_mode import (
     READONLY_GP_SYSTEM_PROMPT,
     InteractionMode,
     append_ask_system_prompt,
+    append_bypass_system_prompt,
     append_plan_system_prompt,
     ask_permissions,
+    bypass_permissions,
     filter_subagents_for_mode,
     plan_permissions,
     resolve_interaction_mode,
@@ -100,7 +103,10 @@ class AgentBuilder:
         mode = resolve_interaction_mode(interaction_mode, self._config)
         is_ask = mode == "ask"
         is_plan = mode == "plan"
+        is_bypass = mode == "bypass"
         is_readonly = is_ask or is_plan
+        if is_bypass:
+            logger.warning("[Init] Bypass mode active — all security enforcement disabled.")
 
         resolved_model: str | BaseChatModel
         resolved_model = model if model is not None else self._config.create_chat_model("default")
@@ -181,7 +187,11 @@ class AgentBuilder:
         resolved_backend = backend or self._initialize_backend(resolved_policy)
 
         policy_profile = (
-            ASK_POLICY_PROFILE if is_ask else (PLAN_POLICY_PROFILE if is_plan else None)
+            ASK_POLICY_PROFILE
+            if is_ask
+            else (
+                PLAN_POLICY_PROFILE if is_plan else (BYPASS_POLICY_PROFILE if is_bypass else None)
+            )
         )
         default_middleware = build_soothe_middleware_stack(
             self._config,
@@ -222,13 +232,19 @@ class AgentBuilder:
             system_prompt = append_ask_system_prompt(system_prompt)
         elif is_plan:
             system_prompt = append_plan_system_prompt(system_prompt)
+        elif is_bypass:
+            system_prompt = append_bypass_system_prompt(system_prompt)
 
         filesystem_tools = (
             FILESYSTEM_TOOLS_ASK
             if is_ask
             else (FILESYSTEM_TOOLS_PLAN if is_plan else FILESYSTEM_TOOLS_AGENT)
         )
-        fs_permissions = ask_permissions() if is_ask else (plan_permissions() if is_plan else None)
+        fs_permissions = (
+            ask_permissions()
+            if is_ask
+            else (plan_permissions() if is_plan else (bypass_permissions() if is_bypass else None))
+        )
 
         def _compile_deep_agent(cp: Checkpointer | None) -> Any:
             gp_mode = self._config.agent.runtime.general_purpose_subagent

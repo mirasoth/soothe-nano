@@ -119,12 +119,32 @@ PRIVILEGED_PROFILE = PolicyProfile(
     deny_rules=[],
 )
 
+BYPASS_PROFILE = PolicyProfile(
+    name="bypass",
+    permissions=PermissionSet(
+        frozenset(
+            [
+                Permission("fs", "read", "*"),
+                Permission("fs", "write", "*"),
+                Permission("shell", "execute", "*"),
+                Permission("net", "outbound", "*"),
+                Permission("mcp", "connect", "*"),
+                Permission("subagent", "spawn", "*"),
+            ]
+        )
+    ),
+    approvable=PermissionSet(frozenset()),
+    deny_rules=[],
+)
+"""Bypass profile: full permissions, no deny rules. Signals middleware to skip enforcement."""
+
 DEFAULT_PROFILES: dict[str, PolicyProfile] = {
     "standard": STANDARD_PROFILE,
     "readonly": READONLY_PROFILE,
     "ask": ASK_PROFILE,
     "plan": PLAN_PROFILE,
     "privileged": PRIVILEGED_PROFILE,
+    "bypass": BYPASS_PROFILE,
 }
 
 
@@ -305,12 +325,17 @@ class ConfigDrivenPolicy:
         self._operation_security = WorkspaceToolOperationSecurity()
 
     def check(self, action: ActionRequest, context: PolicyContext) -> PolicyDecision:
+        # Signal bypass to the operation security layer when active.
+        active_profile = self._find_profile(context.active_permissions)
+        is_bypass = active_profile is not None and active_profile.name == "bypass"
+
         if action.action_type == "tool_call" and action.tool_name:
             request = self._build_operation_security_request(action)
             op_context = OperationSecurityContext(
                 thread_id=context.scope_id,
                 workspace=context.workspace,
                 security_config=getattr(self._config, "security", None),
+                bypass_security=is_bypass,
             )
             op_decision = self._operation_security.evaluate(request, op_context)
             if op_decision.verdict != "allow":

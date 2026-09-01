@@ -1,10 +1,9 @@
-"""ASK / PLAN vs AGENT interaction-mode profiles for Coding CoreAgent.
+"""Interaction-mode profiles for Coding CoreAgent.
 
-Default mode is ``agent`` (full mutating tool surface). ``ask`` is hard
-read-only: filesystem allowlist without writes, no shell/surgical tool
-groups, write-deny FS permissions, and an ask policy profile. ``plan``
-mirrors ``ask`` read-only constraints but with a plan-specific system
-prompt and an empty subagent allowlist (plan mode uses no subagents).
+``agent`` (default): full mutating tool surface. ``ask``: read-only with
+write-deny permissions and ask policy profile. ``plan``: read-only with
+plan-specific prompt and no subagents. ``bypass``: full tools, all security
+enforcement layers skipped.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from soothe_deepagents.middleware.filesystem import FilesystemPermission, FsTool
 if TYPE_CHECKING:
     from soothe_nano.config import SootheConfig
 
-InteractionMode = Literal["agent", "ask", "plan"]
+InteractionMode = Literal["agent", "ask", "plan", "bypass"]
 """Supported CoreAgent interaction modes."""
 
 FILESYSTEM_TOOLS_AGENT: list[FsToolName] = [
@@ -57,6 +56,9 @@ ASK_POLICY_PROFILE = "ask"
 PLAN_POLICY_PROFILE = "plan"
 """Policy profile name for Plan mode (deny write/execute, same constraints as Ask)."""
 
+BYPASS_POLICY_PROFILE = "bypass"
+"""Policy profile name for Bypass mode (signals middleware to skip enforcement)."""
+
 ASK_SYSTEM_PROMPT_SUFFIX = """\
 ## Interaction mode: Ask
 
@@ -76,6 +78,16 @@ files. Do not run shell commands or other mutating tools. Focus on \
 understanding the architecture, identifying the right files to change, \
 and producing a clear, actionable plan that can be approved and executed \
 in Agent mode."""
+
+BYPASS_SYSTEM_PROMPT_SUFFIX = """\
+## Interaction mode: Bypass
+
+You are in Bypass mode. All security enforcement layers are disabled: \
+filesystem path checks, banned command patterns, operation security, policy \
+middleware, and tool approval pipeline safety checks are skipped. You have \
+unrestricted filesystem and shell access. Use this mode responsibly — it is \
+intended for trusted operators who need the agent to perform operations that \
+would otherwise be blocked by safety rules."""
 
 READONLY_GP_SYSTEM_PROMPT = """\
 ## General-Purpose Subagent: Read-Only Mode
@@ -110,14 +122,9 @@ def resolve_interaction_mode(
 ) -> InteractionMode:
     """Resolve interaction mode from kwarg, then config, defaulting to agent.
 
-    Args:
-        explicit: Optional override from ``create_nano_agent`` / builder.
-        config: Optional Soothe config with ``agent.runtime.interaction_mode``.
-
-    Returns:
-        ``\"agent\"``, ``\"ask\"``, or ``\"plan\"``.
+    Bypass is per-request only — never resolved from config.
     """
-    if explicit in ("agent", "ask", "plan"):
+    if explicit in ("agent", "ask", "plan", "bypass"):
         return explicit
     runtime = getattr(getattr(config, "agent", None), "runtime", None)
     raw = getattr(runtime, "interaction_mode", None)
@@ -130,15 +137,7 @@ def filter_subagents_for_mode(
     subagents: list[Any],
     mode: InteractionMode,
 ) -> list[Any]:
-    """Filter subagent specs for the active interaction mode.
-
-    Args:
-        subagents: Resolved subagent specs.
-        mode: Active interaction mode.
-
-    Returns:
-        Unchanged list for agent mode; allowlist only for ask/plan modes.
-    """
+    """Filter subagent specs for the active mode. Ask/plan get allowlists; agent/bypass pass through."""
     if mode not in ("ask", "plan"):
         return list(subagents)
     from soothe_nano.agent.subagent_catalog import spec_subagent_name
@@ -168,9 +167,24 @@ def append_plan_system_prompt(system_prompt: str) -> str:
     return f"{body}\n\n{PLAN_SYSTEM_PROMPT_SUFFIX}"
 
 
+def append_bypass_system_prompt(system_prompt: str) -> str:
+    """Append the Bypass-mode instruction block to a system prompt."""
+    body = system_prompt.rstrip()
+    if not body:
+        return BYPASS_SYSTEM_PROMPT_SUFFIX
+    return f"{body}\n\n{BYPASS_SYSTEM_PROMPT_SUFFIX}"
+
+
+def bypass_permissions() -> list[FilesystemPermission]:
+    """Return permissions for Bypass mode (no write-deny)."""
+    return []
+
+
 __all__ = [
     "ASK_MUTATING_TOOL_GROUPS",
     "ASK_POLICY_PROFILE",
+    "BYPASS_POLICY_PROFILE",
+    "BYPASS_SYSTEM_PROMPT_SUFFIX",
     "FILESYSTEM_TOOLS_AGENT",
     "FILESYSTEM_TOOLS_ASK",
     "FILESYSTEM_TOOLS_PLAN",
@@ -178,8 +192,10 @@ __all__ = [
     "PLAN_POLICY_PROFILE",
     "READONLY_GP_SYSTEM_PROMPT",
     "append_ask_system_prompt",
+    "append_bypass_system_prompt",
     "append_plan_system_prompt",
     "ask_permissions",
+    "bypass_permissions",
     "filter_subagents_for_mode",
     "plan_permissions",
     "resolve_interaction_mode",

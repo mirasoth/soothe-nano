@@ -17,10 +17,14 @@ from soothe_nano.agent.interaction_mode import (
     ASK_MUTATING_TOOL_GROUPS,
     ASK_POLICY_PROFILE,
     ASK_SYSTEM_PROMPT_SUFFIX,
+    BYPASS_POLICY_PROFILE,
+    BYPASS_SYSTEM_PROMPT_SUFFIX,
     FILESYSTEM_TOOLS_AGENT,
     FILESYSTEM_TOOLS_ASK,
     append_ask_system_prompt,
+    append_bypass_system_prompt,
     ask_permissions,
+    bypass_permissions,
     filter_subagents_for_mode,
     resolve_interaction_mode,
 )
@@ -28,6 +32,7 @@ from soothe_nano.config import SootheConfig
 from soothe_nano.config.models import AgentConfig, AgentRuntimeConfig
 from soothe_nano.security.policy_profiles import (
     ASK_PROFILE,
+    BYPASS_PROFILE,
     READONLY_PROFILE,
     ConfigDrivenPolicy,
 )
@@ -41,6 +46,16 @@ class TestInteractionModeHelpers:
     def test_resolve_kwarg_overrides_config(self) -> None:
         cfg = SootheConfig(agent=AgentConfig(runtime=AgentRuntimeConfig(interaction_mode="ask")))
         assert resolve_interaction_mode("agent", cfg) == "agent"
+        assert resolve_interaction_mode(None, cfg) == "ask"
+
+    def test_resolve_bypass_explicit(self) -> None:
+        """Bypass is accepted as an explicit kwarg but never from config."""
+        assert resolve_interaction_mode("bypass", None) == "bypass"
+        # Bypass is NOT a valid config value — config only accepts "agent"|"ask".
+        # When config has "ask", explicit bypass still wins.
+        cfg = SootheConfig(agent=AgentConfig(runtime=AgentRuntimeConfig(interaction_mode="ask")))
+        assert resolve_interaction_mode("bypass", cfg) == "bypass"
+        # Without explicit bypass, config value is used (never bypass from config).
         assert resolve_interaction_mode(None, cfg) == "ask"
 
     def test_filesystem_tool_lists(self) -> None:
@@ -65,10 +80,30 @@ class TestInteractionModeHelpers:
         assert len(kept) == 1
         assert kept[0]["name"] == "planner"
 
+    def test_filter_subagents_bypass_returns_all(self) -> None:
+        """Bypass mode does not filter subagents — full surface."""
+        specs = [
+            {"name": "planner", "description": "p"},
+            {"name": "browser_use", "description": "b"},
+        ]
+        assert filter_subagents_for_mode(specs, "bypass") == specs
+
     def test_append_ask_prompt(self) -> None:
         out = append_ask_system_prompt("Hello")
         assert out.startswith("Hello")
         assert ASK_SYSTEM_PROMPT_SUFFIX in out
+
+    def test_append_bypass_prompt(self) -> None:
+        out = append_bypass_system_prompt("Hello")
+        assert out.startswith("Hello")
+        assert BYPASS_SYSTEM_PROMPT_SUFFIX in out
+
+    def test_bypass_permissions_empty(self) -> None:
+        """Bypass mode returns no write-deny permissions (full access)."""
+        assert bypass_permissions() == []
+
+    def test_bypass_policy_profile_name(self) -> None:
+        assert BYPASS_POLICY_PROFILE == "bypass"
 
 
 class TestAskPolicyProfile:
@@ -98,6 +133,39 @@ class TestAskPolicyProfile:
     def test_readonly_still_approvable(self) -> None:
         """Soft readonly profile must remain distinct from hard ask."""
         assert READONLY_PROFILE.approvable.contains(Permission("fs", "write", "*"))
+
+
+class TestBypassPolicyProfile:
+    def test_bypass_profile_registered(self) -> None:
+        assert BYPASS_PROFILE.name == "bypass"
+        assert BYPASS_POLICY_PROFILE == "bypass"
+
+    def test_bypass_allows_everything(self) -> None:
+        """Bypass profile grants all permissions including write and shell."""
+        assert BYPASS_PROFILE.permissions.contains(Permission("fs", "read", "*"))
+        assert BYPASS_PROFILE.permissions.contains(Permission("fs", "write", "*"))
+        assert BYPASS_PROFILE.permissions.contains(Permission("shell", "execute", "*"))
+        assert BYPASS_PROFILE.permissions.contains(Permission("net", "outbound", "*"))
+        assert BYPASS_PROFILE.permissions.contains(Permission("mcp", "connect", "*"))
+        assert BYPASS_PROFILE.permissions.contains(Permission("subagent", "spawn", "*"))
+        assert len(BYPASS_PROFILE.approvable.permissions) == 0
+        assert len(BYPASS_PROFILE.deny_rules) == 0
+
+    def test_bypass_policy_check_allows_shell(self) -> None:
+        """ConfigDrivenPolicy with bypass profile allows shell execute."""
+        policy = ConfigDrivenPolicy()
+        ctx = PolicyContext(active_permissions=BYPASS_PROFILE.permissions)
+        decision = policy.check(
+            ActionRequest(
+                action_type="tool_call",
+                tool_name="run_command",
+                tool_args={"command": "rm -rf /"},
+            ),
+            ctx,
+        )
+        # Bypass profile sets bypass_security=True on the op context,
+        # so the operation security evaluator short-circuits to allow.
+        assert decision.verdict == "allow"
         assert not ASK_PROFILE.approvable.contains(Permission("fs", "write", "*"))
 
 

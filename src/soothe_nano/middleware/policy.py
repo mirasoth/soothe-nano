@@ -68,6 +68,10 @@ class SoothePolicyMiddleware(AgentMiddleware):
         if metadata.get("_batched"):
             return await handler(request)
 
+        # Bypass mode: skip all policy enforcement
+        if self._profile_name == "bypass":
+            return await handler(request)
+
         tool_call = request.tool_call or {}
         tool_name = str(tool_call.get("name", ""))
         tool_args = tool_call.get("args", {})
