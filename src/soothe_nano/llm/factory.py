@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_model_cache_lock = threading.Lock()
+_model_cache_lock = threading.RLock()
 
 
 class LLMFactory:
