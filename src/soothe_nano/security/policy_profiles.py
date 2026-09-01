@@ -7,6 +7,7 @@ from typing import Any
 
 from soothe_sdk.protocols.operation_security import (
     OperationSecurityContext,
+    OperationSecurityDecision,
     OperationSecurityRequest,
 )
 from soothe_sdk.protocols.policy import (
@@ -330,14 +331,19 @@ class ConfigDrivenPolicy:
         is_bypass = active_profile is not None and active_profile.name == "bypass"
 
         if action.action_type == "tool_call" and action.tool_name:
-            request = self._build_operation_security_request(action)
-            op_context = OperationSecurityContext(
-                thread_id=context.scope_id,
-                workspace=context.workspace,
-                security_config=getattr(self._config, "security", None),
-                bypass_security=is_bypass,
-            )
-            op_decision = self._operation_security.evaluate(request, op_context)
+            if is_bypass:
+                # Bypass mode: skip operation security checks entirely.
+                op_decision = OperationSecurityDecision(
+                    verdict="allow", reason="Security bypassed by mode"
+                )
+            else:
+                request = self._build_operation_security_request(action)
+                op_context = OperationSecurityContext(
+                    thread_id=context.scope_id,
+                    workspace=context.workspace,
+                    security_config=getattr(self._config, "security", None),
+                )
+                op_decision = self._operation_security.evaluate(request, op_context)
             if op_decision.verdict != "allow":
                 return PolicyDecision(verdict=op_decision.verdict, reason=op_decision.reason)
 
