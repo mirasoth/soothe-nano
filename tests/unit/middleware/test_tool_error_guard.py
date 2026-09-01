@@ -1,9 +1,4 @@
-"""Tests for the catch-all ``ToolErrorGuardMiddleware``.
-
-Verifies that an unexpected tool exception is converted into an error
-``ToolMessage`` so the agent can self-recover, instead of the exception
-propagating up the graph stream and aborting the whole execute step.
-"""
+"""Tests for ``ToolErrorGuardMiddleware``."""
 
 from __future__ import annotations
 
@@ -78,6 +73,23 @@ async def test_cancelled_error_propagates_uncaught() -> None:
     handler = AsyncMock(side_effect=asyncio.CancelledError())
 
     with pytest.raises(asyncio.CancelledError):
+        await middleware.awrap_tool_call(_request(), handler)
+
+
+@pytest.mark.asyncio
+async def test_graph_interrupt_propagates_uncaught() -> None:
+    """``GraphInterrupt`` must bubble up, not become an error ToolMessage."""
+    from langgraph.errors import GraphInterrupt
+    from langgraph.types import Interrupt
+
+    middleware = ToolErrorGuardMiddleware()
+    interrupt_value = Interrupt(
+        value={"type": "ask_user", "questions": []},
+        id="test-interrupt-id",
+    )
+    handler = AsyncMock(side_effect=GraphInterrupt((interrupt_value,)))
+
+    with pytest.raises(GraphInterrupt):
         await middleware.awrap_tool_call(_request(), handler)
 
 
