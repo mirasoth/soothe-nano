@@ -214,20 +214,6 @@ if __name__ == "__main__":
 
 For a full TUI / StrangeLoop host on the same stack, see [mirasoth/soothe](https://github.com/mirasoth/soothe). For the slim CLI product, clone [caesar0301/fj-ai](https://github.com/caesar0301/fj-ai).
 
-## Package layout
-
-```
-soothe_nano/
-  agent/       SootheNanoAgent, create_nano_agent
-  config/      SootheConfig
-  toolkits/    Builtin tool groups
-  subagents/   plan, research, browser, …
-  middleware/  Progressive tools/skills, workspace, policy
-  skills/      Catalog + progressive search
-  mcp/         MCP registry / adapters
-  backends/    Persistence helpers
-```
-
 ## Development
 
 From `packages/soothe-nano/`:
