@@ -380,20 +380,80 @@ class ChatLitellmModel(BaseChatModel):
         return _StructuredOutputRunnable(self, response_format=None, schema=schema)
 
 
+class _ModelCircuit:
+    """Per-model circuit breaker tracking consecutive failures.
+
+    After ``threshold`` consecutive failures, the circuit opens for
+    ``cooldown_s`` seconds. While open, the model is skipped during failover.
+    A successful call resets the failure count. This prevents retrying models
+    with persistent failures (e.g. blocked API keys) on every single call.
+    """
+
+    __slots__ = ("threshold", "cooldown_s", "_failures", "_open_until")
+
+    def __init__(self, *, threshold: int = 5, cooldown_s: float = 60.0) -> None:
+        self.threshold = threshold
+        self.cooldown_s = cooldown_s
+        self._failures: dict[str, int] = {}
+        self._open_until: dict[str, float] = {}
+
+    def is_open(self, spec: str, *, now: float | None = None) -> bool:
+        """True when the circuit for ``spec`` is open (in cooldown)."""
+        import time as _time
+
+        ts = now if now is not None else _time.monotonic()
+        until = self._open_until.get(spec)
+        if until is not None and ts < until:
+            return True
+        if until is not None and ts >= until:
+            # Cooldown expired — allow a retry.
+            del self._open_until[spec]
+        return False
+
+    def record_failure(self, spec: str, *, now: float | None = None) -> None:
+        import time as _time
+
+        ts = now if now is not None else _time.monotonic()
+        count = self._failures.get(spec, 0) + 1
+        self._failures[spec] = count
+        if count >= self.threshold:
+            self._open_until[spec] = ts + self.cooldown_s
+            logger.warning(
+                "ModelCircuit: model %r opened after %d consecutive failures (cooldown=%.0fs)",
+                spec,
+                count,
+                self.cooldown_s,
+            )
+
+    def record_success(self, spec: str) -> None:
+        self._failures.pop(spec, None)
+        self._open_until.pop(spec, None)
+
+
 class MultiModelChatModel(BaseChatModel):
     """A ``BaseChatModel`` wrapping a pool of ``ChatLitellmModel`` instances.
 
     Each call picks a random model; on failure, retries the next untried
-    model. Failover is per-call (no persistent circuit breaker). For
-    streaming, failover applies only before the first chunk — mid-stream
-    errors propagate.
+    model. Failover is per-call with a persistent circuit breaker: after
+    ``circuit_threshold`` consecutive failures, a model is skipped for
+    ``circuit_cooldown_s`` seconds. For streaming, failover applies only
+    before the first chunk — mid-stream errors propagate.
     """
 
     models: list[ChatLitellmModel] = []
     temperature: float = 0.7
     model_kwargs: dict[str, Any] = {}
+    circuit_threshold: int = 5
+    circuit_cooldown_s: float = 60.0
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __init__(self, **data: Any) -> None:
+        super().__init__(**data)
+        self._circuit = _ModelCircuit(
+            threshold=self.circuit_threshold,
+            cooldown_s=self.circuit_cooldown_s,
+        )
 
     @property
     def _llm_type(self) -> str:
@@ -415,8 +475,12 @@ class MultiModelChatModel(BaseChatModel):
     # ------------------------------------------------------------------
 
     def _shuffled_models(self) -> list[ChatLitellmModel]:
-        """Return a shuffled copy of the model pool."""
-        pool = list(self.models)
+        """Return a shuffled copy of the model pool, excluding open circuits."""
+        pool = [m for m in self.models if not self._circuit.is_open(self._model_spec(m))]
+        if not pool:
+            # All circuits open — fall back to the full pool so the call
+            # still attempts (a model may have recovered since last check).
+            pool = list(self.models)
         random.shuffle(pool)
         return pool
 
@@ -441,9 +505,12 @@ class MultiModelChatModel(BaseChatModel):
         for model in self._shuffled_models():
             spec = self._model_spec(model)
             try:
-                return model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+                result = model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+                self._circuit.record_success(spec)
+                return result
             except Exception as exc:
                 last_exc = exc
+                self._circuit.record_failure(spec)
                 logger.warning("MultiModelChatModel: model '%s' failed in _generate: %s", spec, exc)
         msg = "MultiModelChatModel: all models in pool failed"
         raise RuntimeError(msg) from last_exc
@@ -460,11 +527,14 @@ class MultiModelChatModel(BaseChatModel):
         for model in self._shuffled_models():
             spec = self._model_spec(model)
             try:
-                return await model._agenerate(
+                result = await model._agenerate(
                     messages, stop=stop, run_manager=run_manager, **kwargs
                 )
+                self._circuit.record_success(spec)
+                return result
             except Exception as exc:
                 last_exc = exc
+                self._circuit.record_failure(spec)
                 logger.warning(
                     "MultiModelChatModel: model '%s' failed in _agenerate: %s", spec, exc
                 )
@@ -491,11 +561,13 @@ class MultiModelChatModel(BaseChatModel):
                 for chunk in model._stream(messages, stop=stop, run_manager=run_manager, **kwargs):
                     started = True
                     yield chunk
+                self._circuit.record_success(spec)
                 return  # Success — stop trying other models.
             except Exception as exc:
                 if started:
                     raise  # Mid-stream error: cannot retry.
                 last_exc = exc
+                self._circuit.record_failure(spec)
                 logger.warning(
                     "MultiModelChatModel: model '%s' failed before streaming: %s",
                     spec,
@@ -522,11 +594,13 @@ class MultiModelChatModel(BaseChatModel):
                 ):
                     started = True
                     yield chunk
+                self._circuit.record_success(spec)
                 return  # Success.
             except Exception as exc:
                 if started:
                     raise
                 last_exc = exc
+                self._circuit.record_failure(spec)
                 logger.warning(
                     "MultiModelChatModel: model '%s' failed before async streaming: %s",
                     spec,

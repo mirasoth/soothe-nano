@@ -284,6 +284,79 @@ class TestMultiModelChatModelFailover:
         assert result.generations[0].message.content == "from-m2"
 
 
+class TestMultiModelCircuitBreaker:
+    """Tests for the per-model circuit breaker in ``MultiModelChatModel``."""
+
+    def test_circuit_opens_after_threshold_failures(self) -> None:
+        """After threshold consecutive failures, the model is skipped."""
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._agenerate = AsyncMock(side_effect=RuntimeError("m1 down"))
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._agenerate = AsyncMock(return_value=_make_chat_result("from-m2"))
+
+        wrapper = MultiModelChatModel(
+            models=[m1, m2],
+            circuit_threshold=3,
+            circuit_cooldown_s=60.0,
+        )
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            import asyncio
+
+            # First 2 calls: m1 fails, failover to m2
+            for _ in range(2):
+                asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+            assert wrapper._circuit._failures["ds1:glm-5.2"] == 2
+
+            # Third call: circuit opens for m1, only m2 is tried
+            asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+            assert wrapper._circuit.is_open("ds1:glm-5.2")
+
+        # m1 should have been called 3 times (threshold), now circuit is open
+        # Subsequent calls skip m1 entirely
+        call_count_before = m1._agenerate.call_count
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+        assert m1._agenerate.call_count == call_count_before  # not called
+
+    def test_circuit_resets_on_success(self) -> None:
+        """A successful call resets the failure counter."""
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        results = [_make_chat_result("ok"), _make_chat_result("ok")]
+        m1._agenerate = AsyncMock(side_effect=results)
+
+        wrapper = MultiModelChatModel(
+            models=[m1],
+            circuit_threshold=3,
+        )
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            import asyncio
+
+            asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+            assert wrapper._circuit._failures.get("ds1:glm-5.2", 0) == 0
+
+    def test_all_circuits_open_falls_back_to_full_pool(self) -> None:
+        """When all models have open circuits, fall back to the full pool."""
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._agenerate = AsyncMock(return_value=_make_chat_result("from-m1"))
+
+        wrapper = MultiModelChatModel(
+            models=[m1],
+            circuit_threshold=1,
+            circuit_cooldown_s=60.0,
+        )
+        # Force circuit open
+        wrapper._circuit.record_failure("ds1:glm-5.2")
+        assert wrapper._circuit.is_open("ds1:glm-5.2")
+
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            import asyncio
+
+            result = asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+        # Despite open circuit, fallback allowed the call
+        assert result.generations[0].message.content == "from-m1"
+
+
 # ---------------------------------------------------------------------------
 # MultiModelChatModel.bind_tools
 # ---------------------------------------------------------------------------
