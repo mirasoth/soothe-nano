@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.22] - 2026-09-01
+
+### Changed
+- **Simplified docstrings in `tool_error_guard`.** Trimmed verbose module, class, and function docstrings to one-line summaries per the AGENTS.md docstring standard. Removed redundant inline comments. No behavior change.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.21...v1.2.22
+
 ## [1.2.21] - 2026-09-01
 
 ### Fixed
