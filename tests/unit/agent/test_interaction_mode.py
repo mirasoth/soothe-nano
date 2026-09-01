@@ -163,8 +163,8 @@ class TestBypassPolicyProfile:
             ),
             ctx,
         )
-        # Bypass profile sets bypass_security=True on the op context,
-        # so the operation security evaluator short-circuits to allow.
+        # Bypass profile triggers is_bypass in ConfigDrivenPolicy.check(),
+        # which skips operation security evaluation entirely.
         assert decision.verdict == "allow"
         assert not ASK_PROFILE.approvable.contains(Permission("fs", "write", "*"))
 
