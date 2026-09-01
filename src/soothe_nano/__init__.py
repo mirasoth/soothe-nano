@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 # Load .env before any soothe_sdk import — paths captures SOOTHE_HOME at import time.
-from soothe_nano._dotenv import bootstrap_dotenv  # noqa: E402
+from soothe_nano._dotenv import bootstrap_dotenv
 
 bootstrap_dotenv()
 
-import importlib.metadata  # noqa: E402
+import importlib.metadata
 
-from soothe_sdk.protocols.core_agent import CoreAgentCapabilities  # noqa: E402
+from soothe_sdk.protocols.core_agent import CoreAgentCapabilities
 
 from soothe_nano.agent import LazyCoreAgent, SootheNanoAgent
 from soothe_nano.agent.core_agent import ephemeral_execute_stream_enabled
