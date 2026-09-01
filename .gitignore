@@ -39,3 +39,4 @@ env/
 .soothe/
 # Legacy tool backups; current default is .soothe/backups/
 .backups/
+uv.lock
