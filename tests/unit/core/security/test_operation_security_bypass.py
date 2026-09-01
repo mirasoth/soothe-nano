@@ -19,8 +19,8 @@ from soothe_sdk.protocols.policy import (
 from soothe_nano.security.operation_guard import WorkspaceToolOperationSecurity
 from soothe_nano.security.policy_profiles import (
     BYPASS_PROFILE,
-    ConfigDrivenPolicy,
     STANDARD_PROFILE,
+    ConfigDrivenPolicy,
 )
 
 
