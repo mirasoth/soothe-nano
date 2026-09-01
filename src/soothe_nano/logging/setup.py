@@ -252,6 +252,7 @@ def _suppress_noisy_third_party() -> None:
         "cdp_use",
         "websockets",
         "requests",
+        "LiteLLM",
     )
     for name in noisy:
         logging.getLogger(name).setLevel(logging.WARNING)

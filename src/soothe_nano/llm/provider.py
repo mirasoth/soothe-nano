@@ -23,19 +23,27 @@ from typing import Any
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 import litellm
-from langchain_core.callbacks import (
+
+# Silence litellm's bare-print() "Give Feedback / Get Help" and "LiteLLM.Info"
+# messages emitted on every exception-mapping call. With MultiModelChatModel
+# failover across N instances, each failed model prints these two lines to
+# stdout (bypassing the logging system), producing 2*N lines of noise.
+# Mirrors litellm.router's own `litellm.suppress_debug_info = True` guard.
+litellm.suppress_debug_info = True
+
+from langchain_core.callbacks import (  # noqa: E402
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
 )
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
-from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from pydantic import ConfigDict
+from langchain_core.language_models import BaseChatModel  # noqa: E402
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage  # noqa: E402
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult  # noqa: E402
+from pydantic import ConfigDict  # noqa: E402
 
-from soothe_nano.llm.message import lc_to_litellm_messages
-from soothe_nano.llm.registry import ProviderCapabilities
-from soothe_nano.llm.thinking import ThinkingStreamFilter, strip_thinking
-from soothe_nano.llm.tools import bind_tools_litellm, extract_tool_calls_from_litellm
+from soothe_nano.llm.message import lc_to_litellm_messages  # noqa: E402
+from soothe_nano.llm.registry import ProviderCapabilities  # noqa: E402
+from soothe_nano.llm.thinking import ThinkingStreamFilter, strip_thinking  # noqa: E402
+from soothe_nano.llm.tools import bind_tools_litellm, extract_tool_calls_from_litellm  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.19] - 2026-09-01
+
+### Fixed
+- **Silenced litellm's bare-print() debug noise.** `litellm.suppress_debug_info = True` is now set before any LangChain imports, suppressing the "Give Feedback / Get Help" and "LiteLLM.Info" messages that litellm prints to stdout on every exception-mapping call. With `MultiModelChatModel` failover across N instances, each failed model previously produced 2 lines of noise (2*N total), bypassing the logging system entirely. Also added `LiteLLM` to the suppressed third-party loggers in `_suppress_noisy_third_party`.
+- **E402 lint violations resolved.** Module-level imports in `provider.py` that must follow the `litellm` import (for the `suppress_debug_info` side-effect) are now annotated with `# noqa: E402`, documenting the intentional ordering. `make lint` passes cleanly.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.18...v1.2.19
+
 ## [1.2.18] - 2026-09-01
 
 ### Fixed
