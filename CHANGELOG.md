@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.20] - 2026-09-01
+
+### Fixed
+- **`.env` loaded at import time.** `soothe_nano` now calls `bootstrap_dotenv()` in `__init__.py` before any `soothe_sdk` import, loading `SOOTHE_HOME/.env` and project-level `.env` files into `os.environ` before YAML config parsing resolves `${VAR}` placeholders. This fixes `fj` (and any other nano consumer) failing on all models in multi-model configs when the shell hasn't exported `DS1_API_KEY` etc. — providers previously resolved with `api_key=None`, causing `AuthenticationError` across the entire failover pool.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.19...v1.2.20
+
 ## [1.2.19] - 2026-09-01
 
 ### Fixed
