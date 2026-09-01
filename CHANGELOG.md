@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.21] - 2026-09-01
+
+### Fixed
+- **E402 lint failure in `__init__.py`.** The `bootstrap_dotenv()` call before module imports triggered E402 on all subsequent imports, failing CI. Added `__init__.py` to ruff `per-file-ignores` for E402 and removed redundant inline `# noqa: E402` comments.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.20...v1.2.21
+
 ## [1.2.20] - 2026-09-01
 
 ### Fixed
