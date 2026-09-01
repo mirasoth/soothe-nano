@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
@@ -371,6 +372,199 @@ class ChatLitellmModel(BaseChatModel):
         return _StructuredOutputRunnable(self, response_format=None, schema=schema)
 
 
+class MultiModelChatModel(BaseChatModel):
+    """A ``BaseChatModel`` wrapping a pool of ``ChatLitellmModel`` instances.
+
+    Each call picks a random model; on failure, retries the next untried
+    model. Failover is per-call (no persistent circuit breaker). For
+    streaming, failover applies only before the first chunk — mid-stream
+    errors propagate.
+    """
+
+    models: list[ChatLitellmModel] = []
+    temperature: float = 0.7
+    model_kwargs: dict[str, Any] = {}
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @property
+    def _llm_type(self) -> str:
+        return "litellm-multi"
+
+    @property
+    def _identifying_params(self) -> dict[str, Any]:
+        params: dict[str, Any] = dict(self.models[0]._identifying_params) if self.models else {}
+        params["pool_size"] = len(self.models)
+        return params
+
+    @property
+    def capabilities(self) -> ProviderCapabilities:
+        """Capabilities of the first (primary) model in the pool."""
+        return self.models[0].capabilities if self.models else ProviderCapabilities()
+
+    # ------------------------------------------------------------------
+    # Failover helpers
+    # ------------------------------------------------------------------
+
+    def _shuffled_models(self) -> list[ChatLitellmModel]:
+        """Return a shuffled copy of the model pool."""
+        pool = list(self.models)
+        random.shuffle(pool)
+        return pool
+
+    @staticmethod
+    def _model_spec(model: ChatLitellmModel) -> str:
+        """Extract the ``provider:model`` spec from a model's identifying params."""
+        return str(model._identifying_params.get("model", "unknown"))
+
+    # ------------------------------------------------------------------
+    # Non-streaming generation with failover
+    # ------------------------------------------------------------------
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Non-streaming generation with random selection and failover."""
+        last_exc: Exception | None = None
+        for model in self._shuffled_models():
+            spec = self._model_spec(model)
+            try:
+                return model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("MultiModelChatModel: model '%s' failed in _generate: %s", spec, exc)
+        msg = "MultiModelChatModel: all models in pool failed"
+        raise RuntimeError(msg) from last_exc
+
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Async non-streaming generation with random selection and failover."""
+        last_exc: Exception | None = None
+        for model in self._shuffled_models():
+            spec = self._model_spec(model)
+            try:
+                return await model._agenerate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "MultiModelChatModel: model '%s' failed in _agenerate: %s", spec, exc
+                )
+        msg = "MultiModelChatModel: all models in pool failed"
+        raise RuntimeError(msg) from last_exc
+
+    # ------------------------------------------------------------------
+    # Streaming generation with pre-stream failover
+    # ------------------------------------------------------------------
+
+    def _stream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        """Streaming with pre-first-chunk failover."""
+        last_exc: Exception | None = None
+        for model in self._shuffled_models():
+            spec = self._model_spec(model)
+            try:
+                started = False
+                for chunk in model._stream(messages, stop=stop, run_manager=run_manager, **kwargs):
+                    started = True
+                    yield chunk
+                return  # Success — stop trying other models.
+            except Exception as exc:
+                if started:
+                    raise  # Mid-stream error: cannot retry.
+                last_exc = exc
+                logger.warning(
+                    "MultiModelChatModel: model '%s' failed before streaming: %s",
+                    spec,
+                    exc,
+                )
+        msg = "MultiModelChatModel: all models in pool failed"
+        raise RuntimeError(msg) from last_exc
+
+    async def _astream(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        """Async streaming with failover before the first chunk."""
+        last_exc: Exception | None = None
+        for model in self._shuffled_models():
+            spec = self._model_spec(model)
+            try:
+                started = False
+                async for chunk in model._astream(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                ):
+                    started = True
+                    yield chunk
+                return  # Success.
+            except Exception as exc:
+                if started:
+                    raise
+                last_exc = exc
+                logger.warning(
+                    "MultiModelChatModel: model '%s' failed before async streaming: %s",
+                    spec,
+                    exc,
+                )
+        msg = "MultiModelChatModel: all models in pool failed"
+        raise RuntimeError(msg) from last_exc
+
+    # ------------------------------------------------------------------
+    # Tool binding and structured output
+    # ------------------------------------------------------------------
+
+    def bind_tools(self, tools: list[Any], **kwargs: Any) -> MultiModelChatModel:
+        """Bind tools to every model in the pool, returning a new wrapper."""
+        bound_models = [m.bind_tools(tools, **kwargs) for m in self.models]
+        return self.model_copy(update={"models": bound_models})
+
+    def with_structured_output(self, schema: Any, **kwargs: Any) -> Any:
+        """Structured output via the pool's first-model capabilities.
+
+        The ``_StructuredOutputRunnable`` wraps this model so
+        ``invoke``/``ainvoke`` route through failover.
+        """
+        from soothe_nano.llm.schema_wire import (
+            build_json_schema_response_format,
+            resolve_schema_name,
+            validate_response_schema,
+        )
+
+        if isinstance(schema, dict):
+            wire_schema = validate_response_schema(schema)
+            name = resolve_schema_name(wire_schema, kwargs.pop("schema_name", None))
+        else:
+            wire_schema = schema.model_json_schema()
+            name = kwargs.pop("schema_name", None) or getattr(schema, "__name__", "output")
+
+        strict = kwargs.pop("strict", True)
+
+        if self.capabilities.supports_json_schema:
+            response_format = build_json_schema_response_format(
+                wire_schema, name=name, strict=strict
+            )
+            return _StructuredOutputRunnable(self, response_format=response_format, schema=schema)
+        return _StructuredOutputRunnable(self, response_format=None, schema=schema)
+
+
 class _StructuredOutputRunnable:
     """Runnable that enforces structured output on top of a `ChatLitellmModel`.
 
@@ -554,4 +748,4 @@ def _normalize_tool_call_chunks(deltas: Any) -> list[dict[str, Any]]:
     return out
 
 
-__all__ = ["ChatLitellmModel"]
+__all__ = ["ChatLitellmModel", "MultiModelChatModel"]

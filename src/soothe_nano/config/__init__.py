@@ -40,6 +40,7 @@ from soothe_nano.config.models import (
     VectorStoreProviderConfig,
     VectorStoreRouter,
     WebSearchConfig,
+    parse_model_specs,
 )
 from soothe_nano.config.settings import SootheConfig
 from soothe_nano.prompts.system_templates import (
@@ -90,6 +91,7 @@ __all__ = [
     "VectorStoreProviderConfig",
     "VectorStoreRouter",
     "WebSearchConfig",
+    "parse_model_specs",
     "_resolve_env",
     "_resolve_provider_env",
     "_expand_env_in_config",

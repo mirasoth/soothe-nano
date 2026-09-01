@@ -43,6 +43,7 @@ from soothe_nano.config.models import (
     VectorStoreProviderConfig,
     VectorStoreRouter,
     WorkspaceMountConfig,
+    parse_model_specs,
 )
 
 # Lazy import to avoid circular dependency - _DEFAULT_SYSTEM_PROMPT imported in methods that use it
@@ -810,26 +811,8 @@ class SootheConfig(BaseSettings):
 
     # --- Model resolution ---
 
-    def resolve_model(self, role: ModelRole = "default") -> str:
-        """Resolve a model string for a given role.
-
-        Looks up the role in the router. Falls back to `default` if the
-        role has no explicit mapping.
-
-        When a stream router-profile overlay is active (loop-scoped
-        `/model-router`), chat roles resolve against that profile's
-        `ModelRouter`. The `embedding` role always uses the process
-        active profile so vector indexes stay consistent.
-
-        Args:
-            role: Purpose role — one of the :data:`~soothe_nano.config.models.ModelRole` values.
-
-        Returns:
-            A `provider_name:model_name` string.
-        """
-        if role == "embedding":
-            return self.embedding_model
-
+    def _resolve_router(self) -> Any:
+        """Return the effective ``ModelRouter`` (overlay-aware)."""
         router = self.router
         from soothe_nano.utils.runtime import get_stream_router_profile
 
@@ -838,10 +821,40 @@ class SootheConfig(BaseSettings):
             profile = next((p for p in self.router_profiles if p.name == overlay), None)
             if profile is not None:
                 router = profile.router
+        return router
+
+    def resolve_model(self, role: ModelRole = "default") -> str:
+        """Resolve a single ``provider:model`` string for *role*.
+
+        Multi-spec values return the first spec. Falls back to ``default``.
+        """
+        if role == "embedding":
+            return self.embedding_model
+
+        router = self._resolve_router()
         value = getattr(router, role, None)
         if value:
-            return value
-        return router.default
+            specs = parse_model_specs(value)
+            if specs:
+                return specs[0]
+        default_specs = parse_model_specs(router.default)
+        return default_specs[0] if default_specs else router.default
+
+    def resolve_model_specs(self, role: ModelRole = "default") -> list[str]:
+        """Resolve *role* to a list of ``provider:model`` specs.
+
+        Falls back to ``default``. ``embedding`` returns ``[embedding_model]``.
+        """
+        if role == "embedding":
+            return [self.embedding_model]
+
+        router = self._resolve_router()
+        value = getattr(router, role, None)
+        if value:
+            specs = parse_model_specs(value)
+            if specs:
+                return specs
+        return parse_model_specs(router.default)
 
     def resolve_backend(self, backend: str) -> str:
         """Resolve backend value, inheriting from persistence.default_backend if 'default'.

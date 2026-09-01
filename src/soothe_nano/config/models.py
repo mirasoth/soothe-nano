@@ -1733,3 +1733,19 @@ def get_knowledge_cutoff(model_id: str) -> str:
         model_id = model_id.rsplit(":", maxsplit=1)[-1]
 
     return MODEL_KNOWLEDGE_CUTOFFS.get(model_id, MODEL_KNOWLEDGE_CUTOFFS["default"])
+
+
+def parse_model_specs(value: str | None) -> list[str]:
+    """Split a ``;``-separated role string into ``provider:model`` specs."""
+    if not value:
+        return []
+    specs: list[str] = []
+    for part in value.split(";"):
+        spec = part.strip()
+        if not spec:
+            continue
+        if ":" not in spec:
+            msg = f"model spec '{spec}' must be 'provider:model'"
+            raise ValueError(msg)
+        specs.append(spec)
+    return specs

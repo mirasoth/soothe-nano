@@ -25,7 +25,7 @@ from soothe_nano.llm.observability import (
     extract_token_counts_from_llm_result,
     get_llm_token_usage_callback_handler,
 )
-from soothe_nano.llm.provider import ChatLitellmModel
+from soothe_nano.llm.provider import ChatLitellmModel, MultiModelChatModel
 from soothe_nano.llm.registry import ProviderCapabilities, ProviderRegistry, ResolvedProvider
 from soothe_nano.llm.response_text import (
     llm_response_text,
@@ -63,6 +63,7 @@ from soothe_nano.llm.types import ModelRole, ProviderType
 __all__ = [
     # Engine
     "ChatLitellmModel",
+    "MultiModelChatModel",
     "LLMFactory",
     "ProviderRegistry",
     "ProviderCapabilities",
