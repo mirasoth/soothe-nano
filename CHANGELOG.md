@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.18] - 2026-09-01
+
+### Fixed
+- **`_model_cache_lock` is now an `RLock` instead of a `Lock`.** `LLMFactory` methods that hold the cache lock call other methods that also try to acquire it, causing a deadlock (`RuntimeError: can't re-enter the same RLock` / frozen thread) under concurrent model creation. Switching to `threading.RLock()` allows re-entrant acquisition within the same thread.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.17...v1.2.18
+
 ## [1.2.17] - 2026-09-01
 
 ### Added
