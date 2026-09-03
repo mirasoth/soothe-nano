@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.23] - 2026-09-03
+
+### Fixed
+- **Per-model circuit breaker in `MultiModelChatModel`.** After N consecutive failures (default 5), a model's circuit opens for a cooldown period (default 60s). While open, the model is skipped in `_shuffled_models()`. If all circuits are open, falls back to the full pool. Success resets the counter. Prevents repeated identical API-key errors from being retried model-by-model on every call.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.22...v1.2.23
+
 ## [1.2.22] - 2026-09-01
 
 ### Changed
