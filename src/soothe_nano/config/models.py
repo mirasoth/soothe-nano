@@ -808,10 +808,10 @@ class LLMRateLimitConfig(BaseModel):
         default=True,
         description="Enable LLM rate-limit middleware (RPM, concurrency, timeouts, retries)",
     )
-    rpm_limit: int = Field(default=60, ge=1, le=10_000)
-    concurrent_limit: int = Field(default=2, ge=1, le=500)
+    rpm_limit: int = Field(default=120, ge=1, le=10_000)
+    concurrent_limit: int = Field(default=4, ge=1, le=500)
     global_concurrent_limit: int = Field(
-        default=4,
+        default=10,
         ge=0,
         le=500,
         description=("Process-wide max concurrent in-flight LLM HTTP calls (0 = no global limit)"),
