@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Inter-endpoint failover cooldown in `MultiModelChatModel`.** After a failed endpoint, the router now waits `failover_cooldown_s` seconds (default 3) before attempting the next endpoint, pacing failover across all four generation paths (`_generate`, `_agenerate`, `_stream`, `_astream`). The cooldown fires only between attempts — never before the first, never after the last failure, and never on success — smoothing burst traffic against a struggling provider without compounding retries. Configurable via the `failover_cooldown_s` field; independent of the existing 60s circuit-breaker cooldown (which governs skipping persistently-failing models, not pacing between attempts).
+
 ## [1.2.23] - 2026-09-03
 
 ### Fixed

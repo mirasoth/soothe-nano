@@ -430,14 +430,42 @@ class _ModelCircuit:
         self._open_until.pop(spec, None)
 
 
+def _failover_backoff(seconds: float) -> None:
+    """Sleep ``seconds`` between consecutive endpoint attempts during failover.
+
+    Guarded so a zero/negative cooldown (used in tests) is a no-op. Routed
+    through a module-level function so tests patch this path rather than the
+    stdlib ``time`` module.
+    """
+    if seconds > 0:
+        import time as _time
+
+        _time.sleep(seconds)
+
+
+async def _afailover_backoff(seconds: float) -> None:
+    """Async sleep ``seconds`` between consecutive endpoint attempts during failover.
+
+    Async counterpart of :func:`_failover_backoff` for the ``_agenerate`` and
+    ``_astream`` paths. Guarded so a zero/negative cooldown is a no-op.
+    """
+    if seconds > 0:
+        import asyncio as _asyncio
+
+        await _asyncio.sleep(seconds)
+
+
 class MultiModelChatModel(BaseChatModel):
     """A ``BaseChatModel`` wrapping a pool of ``ChatLitellmModel`` instances.
 
     Each call picks a random model; on failure, retries the next untried
-    model. Failover is per-call with a persistent circuit breaker: after
-    ``circuit_threshold`` consecutive failures, a model is skipped for
-    ``circuit_cooldown_s`` seconds. For streaming, failover applies only
-    before the first chunk — mid-stream errors propagate.
+    model. After a failed endpoint, the router waits ``failover_cooldown_s``
+    seconds (default 3) before attempting the next endpoint, smoothing burst
+    traffic against a struggling provider. Failover is per-call with a
+    persistent circuit breaker: after ``circuit_threshold`` consecutive
+    failures, a model is skipped for ``circuit_cooldown_s`` seconds. For
+    streaming, failover applies only before the first chunk — mid-stream
+    errors propagate.
     """
 
     models: list[ChatLitellmModel] = []
@@ -445,6 +473,7 @@ class MultiModelChatModel(BaseChatModel):
     model_kwargs: dict[str, Any] = {}
     circuit_threshold: int = 5
     circuit_cooldown_s: float = 60.0
+    failover_cooldown_s: float = 3.0
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -502,7 +531,8 @@ class MultiModelChatModel(BaseChatModel):
     ) -> ChatResult:
         """Non-streaming generation with random selection and failover."""
         last_exc: Exception | None = None
-        for model in self._shuffled_models():
+        pool = self._shuffled_models()
+        for i, model in enumerate(pool):
             spec = self._model_spec(model)
             try:
                 result = model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
@@ -512,6 +542,8 @@ class MultiModelChatModel(BaseChatModel):
                 last_exc = exc
                 self._circuit.record_failure(spec)
                 logger.warning("MultiModelChatModel: model '%s' failed in _generate: %s", spec, exc)
+                if i < len(pool) - 1:
+                    _failover_backoff(self.failover_cooldown_s)
         msg = "MultiModelChatModel: all models in pool failed"
         raise RuntimeError(msg) from last_exc
 
@@ -524,7 +556,8 @@ class MultiModelChatModel(BaseChatModel):
     ) -> ChatResult:
         """Async non-streaming generation with random selection and failover."""
         last_exc: Exception | None = None
-        for model in self._shuffled_models():
+        pool = self._shuffled_models()
+        for i, model in enumerate(pool):
             spec = self._model_spec(model)
             try:
                 result = await model._agenerate(
@@ -538,6 +571,8 @@ class MultiModelChatModel(BaseChatModel):
                 logger.warning(
                     "MultiModelChatModel: model '%s' failed in _agenerate: %s", spec, exc
                 )
+                if i < len(pool) - 1:
+                    await _afailover_backoff(self.failover_cooldown_s)
         msg = "MultiModelChatModel: all models in pool failed"
         raise RuntimeError(msg) from last_exc
 
@@ -554,7 +589,8 @@ class MultiModelChatModel(BaseChatModel):
     ) -> Iterator[ChatGenerationChunk]:
         """Streaming with pre-first-chunk failover."""
         last_exc: Exception | None = None
-        for model in self._shuffled_models():
+        pool = self._shuffled_models()
+        for i, model in enumerate(pool):
             spec = self._model_spec(model)
             try:
                 started = False
@@ -573,6 +609,8 @@ class MultiModelChatModel(BaseChatModel):
                     spec,
                     exc,
                 )
+                if i < len(pool) - 1:
+                    _failover_backoff(self.failover_cooldown_s)
         msg = "MultiModelChatModel: all models in pool failed"
         raise RuntimeError(msg) from last_exc
 
@@ -585,7 +623,8 @@ class MultiModelChatModel(BaseChatModel):
     ) -> AsyncIterator[ChatGenerationChunk]:
         """Async streaming with failover before the first chunk."""
         last_exc: Exception | None = None
-        for model in self._shuffled_models():
+        pool = self._shuffled_models()
+        for i, model in enumerate(pool):
             spec = self._model_spec(model)
             try:
                 started = False
@@ -606,6 +645,8 @@ class MultiModelChatModel(BaseChatModel):
                     spec,
                     exc,
                 )
+                if i < len(pool) - 1:
+                    await _afailover_backoff(self.failover_cooldown_s)
         msg = "MultiModelChatModel: all models in pool failed"
         raise RuntimeError(msg) from last_exc
 

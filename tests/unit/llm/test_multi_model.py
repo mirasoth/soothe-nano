@@ -214,7 +214,7 @@ class TestMultiModelChatModelFailover:
         m2 = _make_chat_litellm_model("ds2:glm-5.2")
         m2._agenerate = AsyncMock(return_value=_make_chat_result("from-m2"))
 
-        wrapper = MultiModelChatModel(models=[m1, m2])
+        wrapper = MultiModelChatModel(models=[m1, m2], failover_cooldown_s=0)
         with patch("soothe_nano.llm.provider.random.shuffle"):
             import asyncio
 
@@ -230,7 +230,7 @@ class TestMultiModelChatModelFailover:
         m2 = _make_chat_litellm_model("ds2:glm-5.2")
         m2._agenerate = AsyncMock(side_effect=RuntimeError("m2 down"))
 
-        wrapper = MultiModelChatModel(models=[m1, m2])
+        wrapper = MultiModelChatModel(models=[m1, m2], failover_cooldown_s=0)
         with patch("soothe_nano.llm.provider.random.shuffle"):
             import asyncio
 
@@ -247,7 +247,7 @@ class TestMultiModelChatModelFailover:
         m3 = _make_chat_litellm_model("ds3:glm-5.2")
         m3._agenerate = AsyncMock(side_effect=RuntimeError("m3 down"))
 
-        wrapper = MultiModelChatModel(models=[m1, m2, m3])
+        wrapper = MultiModelChatModel(models=[m1, m2, m3], failover_cooldown_s=0)
         with patch("soothe_nano.llm.provider.random.shuffle"):
             import asyncio
 
@@ -278,7 +278,7 @@ class TestMultiModelChatModelFailover:
         m2 = _make_chat_litellm_model("ds2:glm-5.2")
         m2._generate = MagicMock(return_value=_make_chat_result("from-m2"))
 
-        wrapper = MultiModelChatModel(models=[m1, m2])
+        wrapper = MultiModelChatModel(models=[m1, m2], failover_cooldown_s=0)
         with patch("soothe_nano.llm.provider.random.shuffle"):
             result = wrapper._generate([HumanMessage(content="hi")])
         assert result.generations[0].message.content == "from-m2"
@@ -299,6 +299,7 @@ class TestMultiModelCircuitBreaker:
             models=[m1, m2],
             circuit_threshold=3,
             circuit_cooldown_s=60.0,
+            failover_cooldown_s=0,
         )
         with patch("soothe_nano.llm.provider.random.shuffle"):
             import asyncio
@@ -355,6 +356,92 @@ class TestMultiModelCircuitBreaker:
             result = asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
         # Despite open circuit, fallback allowed the call
         assert result.generations[0].message.content == "from-m1"
+
+
+# ---------------------------------------------------------------------------
+# MultiModelChatModel inter-endpoint failover cooldown
+# ---------------------------------------------------------------------------
+
+
+class TestMultiModelFailoverCooldown:
+    """Tests for the inter-endpoint ``failover_cooldown_s`` backoff."""
+
+    def test_sync_cooldown_applied_once_between_failovers(self) -> None:
+        """Sync ``_generate`` waits once (3s) between two endpoint attempts."""
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._generate = MagicMock(side_effect=RuntimeError("m1 down"))
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._generate = MagicMock(return_value=_make_chat_result("from-m2"))
+
+        wrapper = MultiModelChatModel(models=[m1, m2])
+        with (
+            patch("soothe_nano.llm.provider.random.shuffle"),
+            patch("soothe_nano.llm.provider._failover_backoff") as mock_backoff,
+        ):
+            result = wrapper._generate([HumanMessage(content="hi")])
+        assert result.generations[0].message.content == "from-m2"
+        mock_backoff.assert_called_once_with(3.0)
+
+    def test_async_cooldown_applied_once_between_failovers(self) -> None:
+        """Async ``_agenerate`` waits once (3s) between two endpoint attempts."""
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._agenerate = AsyncMock(side_effect=RuntimeError("m1 down"))
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._agenerate = AsyncMock(return_value=_make_chat_result("from-m2"))
+
+        wrapper = MultiModelChatModel(models=[m1, m2])
+        with (
+            patch("soothe_nano.llm.provider.random.shuffle"),
+            patch("soothe_nano.llm.provider._afailover_backoff") as mock_backoff,
+        ):
+            import asyncio
+
+            result = asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+        assert result.generations[0].message.content == "from-m2"
+        mock_backoff.assert_awaited_once_with(3.0)
+
+    def test_no_cooldown_when_first_model_succeeds(self) -> None:
+        """No backoff when the first endpoint succeeds immediately."""
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._generate = MagicMock(return_value=_make_chat_result("from-m1"))
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._generate = MagicMock(return_value=_make_chat_result("from-m2"))
+
+        wrapper = MultiModelChatModel(models=[m1, m2])
+        with (
+            patch("soothe_nano.llm.provider.random.shuffle"),
+            patch("soothe_nano.llm.provider._failover_backoff") as mock_backoff,
+        ):
+            result = wrapper._generate([HumanMessage(content="hi")])
+        assert result.generations[0].message.content == "from-m1"
+        mock_backoff.assert_not_called()
+
+    def test_no_cooldown_after_last_failure(self) -> None:
+        """In an all-fail pool, backoff fires ``len(pool) - 1`` times."""
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._agenerate = AsyncMock(side_effect=RuntimeError("m1 down"))
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._agenerate = AsyncMock(side_effect=RuntimeError("m2 down"))
+
+        m3 = _make_chat_litellm_model("ds3:glm-5.2")
+        m3._agenerate = AsyncMock(side_effect=RuntimeError("m3 down"))
+
+        wrapper = MultiModelChatModel(models=[m1, m2, m3])
+        with (
+            patch("soothe_nano.llm.provider.random.shuffle"),
+            patch("soothe_nano.llm.provider._afailover_backoff") as mock_backoff,
+        ):
+            import asyncio
+
+            with pytest.raises(RuntimeError, match="all models in pool failed"):
+                asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+        # 3 models → 2 inter-attempt gaps (never after the last failure).
+        assert mock_backoff.await_count == 2
+        mock_backoff.assert_awaited_with(3.0)
 
 
 # ---------------------------------------------------------------------------
