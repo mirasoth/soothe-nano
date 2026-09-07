@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from .operation_guard import WorkspaceToolOperationSecurity, build_operation_security_request
+from .operation_guard import (
+    WorkspaceToolOperationSecurity,
+    build_operation_security_request,
+    dangerous_command_rule_id,
+)
 from .path_security import (
     PathValidationError,
     PathValidator,
@@ -67,6 +71,7 @@ __all__ = [
     "_extract_required_permission",
     "WorkspaceToolOperationSecurity",
     "build_operation_security_request",
+    "dangerous_command_rule_id",
     "OperationRecord",
     "RateLimiter",
     "SecurityEnforcer",

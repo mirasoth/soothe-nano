@@ -54,6 +54,22 @@ _KILL_INVOCATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+
+def dangerous_command_rule_id(command: str) -> str | None:
+    """Return the safety `rule_id` for the first banned pattern `command` matches, else `None`.
+
+    Single canonical mapping reused by the host `interrupt_on` ``when``
+    predicates so a prior rule-level approval suppresses re-interrupt for a
+    different command under the same rule.
+    """
+    if not command:
+        return None
+    for pattern, rule_id in _BANNED_COMMAND_PATTERNS:
+        if re.search(pattern, command, re.IGNORECASE):
+            return rule_id
+    return None
+
+
 _SENSITIVE_SYSTEM_PATH_PATTERNS: tuple[str, ...] = (
     "/etc/**",
     "/bin/**",
