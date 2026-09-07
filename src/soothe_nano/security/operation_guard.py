@@ -56,18 +56,42 @@ _KILL_INVOCATION_RE = re.compile(
 
 
 def dangerous_command_rule_id(command: str) -> str | None:
-    """Return the safety `rule_id` for the first banned pattern `command` matches, else `None`.
-
-    Single canonical mapping reused by the host `interrupt_on` ``when``
-    predicates so a prior rule-level approval suppresses re-interrupt for a
-    different command under the same rule.
-    """
+    """Return the safety ``rule_id`` for the first banned pattern ``command`` matches, or ``None``."""
     if not command:
         return None
     for pattern, rule_id in _BANNED_COMMAND_PATTERNS:
         if re.search(pattern, command, re.IGNORECASE):
             return rule_id
     return None
+
+
+# Rule families: approving one rule in a family suppresses all rules in that
+# family for the rest of the loop (e.g. approving ``rm -rf /`` also suppresses
+# ``rm -rf <folder>``).
+_RULE_FAMILIES: tuple[frozenset[str], ...] = (
+    frozenset(
+        {
+            "command.dangerous.rm_root",
+            "command.dangerous.rm_rf",
+            "command.dangerous.rm_r",
+            "command.dangerous.sudo_rm_rf",
+        }
+    ),
+    frozenset(
+        {
+            "command.dangerous.dd",
+            "command.dangerous.dd_block_device_write",
+        }
+    ),
+)
+
+
+def rule_family(rule_id: str) -> frozenset[str]:
+    """Return all rule ids in the same family as ``rule_id`` (inclusive)."""
+    for family in _RULE_FAMILIES:
+        if rule_id in family:
+            return family
+    return frozenset({rule_id})
 
 
 _SENSITIVE_SYSTEM_PATH_PATTERNS: tuple[str, ...] = (
