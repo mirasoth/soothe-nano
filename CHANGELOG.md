@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.24] - 2026-09-07
+
+### Added
+- **`dangerous_command_rule_id` exposed in `security_api`.** Public function returning the canonical safety `rule_id` for the first banned command pattern a command matches (reuses `_BANNED_COMMAND_PATTERNS`). Host `interrupt_on` when-predicates import this so a prior rule-level approval suppresses re-interrupt for a different command under the same rule — no duplicated pattern/rule-id mapping in the host.
+- **`rule_family()` helper in `operation_guard`.** Returns all rule ids in the same family as a given `rule_id` (inclusive). Approving one rule in a family now suppresses all rules in that family for the rest of the loop — e.g. approving `rm -rf /` also suppresses `rm -rf <folder>`. Two initial families: `rm`-root/rf/r/sudo variants, and `dd`/`dd_block_device_write`.
+
 ### Changed
 - **Inter-endpoint failover cooldown in `MultiModelChatModel`.** After a failed endpoint, the router now waits `failover_cooldown_s` seconds (default 3) before attempting the next endpoint, pacing failover across all four generation paths (`_generate`, `_agenerate`, `_stream`, `_astream`). The cooldown fires only between attempts — never before the first, never after the last failure, and never on success — smoothing burst traffic against a struggling provider without compounding retries. Configurable via the `failover_cooldown_s` field; independent of the existing 60s circuit-breaker cooldown (which governs skipping persistently-failing models, not pacing between attempts).
+- **Raised LLM rate-limit defaults.** `LLMRateLimitConfig` defaults increased: `rpm_limit` 60→120, `concurrent_limit` 2→4, `global_concurrent_limit` 4→10. Better matches modern multi-model workloads that fan out across several providers concurrently.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.23...v1.2.24
 
 ## [1.2.23] - 2026-09-03
 
