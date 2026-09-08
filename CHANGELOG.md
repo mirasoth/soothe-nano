@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.25] - 2026-09-08
+
+### Fixed
+- **Contentless 200-OK responses now trigger failover in `MultiModelChatModel`.** A model returning a 200-OK with no text content and no tool calls (empty response) is treated as a failure and triggers failover to the next endpoint, like a raised exception. Applies to all four generation paths (`_generate`, `_agenerate`, `_stream`, `_astream`). Empty responses also count toward the per-model circuit breaker threshold.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.24...v1.2.25
+
 ## [1.2.24] - 2026-09-07
 
 ### Added
