@@ -466,6 +466,9 @@ class MultiModelChatModel(BaseChatModel):
     failures, a model is skipped for ``circuit_cooldown_s`` seconds. For
     streaming, failover applies only before the first chunk — mid-stream
     errors propagate.
+
+    A contentless 200-OK response is treated as a failure and triggers
+    failover, like a raised exception.
     """
 
     models: list[ChatLitellmModel] = []
@@ -518,6 +521,28 @@ class MultiModelChatModel(BaseChatModel):
         """Extract the ``provider:model`` spec from a model's identifying params."""
         return str(model._identifying_params.get("model", "unknown"))
 
+    @staticmethod
+    def _is_empty_result(result: ChatResult) -> bool:
+        """True when ``result`` has no text content and no tool calls."""
+        if not result.generations:
+            return True
+        for gen in result.generations:
+            msg = gen.message
+            content = getattr(msg, "content", "")
+            if isinstance(content, str):
+                if content.strip():
+                    return False
+            elif isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict):
+                        if str(part.get("text", "")).strip():
+                            return False
+                    elif isinstance(part, str) and part.strip():
+                        return False
+            if getattr(msg, "tool_calls", None):
+                return False
+        return True
+
     # ------------------------------------------------------------------
     # Non-streaming generation with failover
     # ------------------------------------------------------------------
@@ -536,14 +561,26 @@ class MultiModelChatModel(BaseChatModel):
             spec = self._model_spec(model)
             try:
                 result = model._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
-                self._circuit.record_success(spec)
-                return result
             except Exception as exc:
                 last_exc = exc
                 self._circuit.record_failure(spec)
                 logger.warning("MultiModelChatModel: model '%s' failed in _generate: %s", spec, exc)
                 if i < len(pool) - 1:
                     _failover_backoff(self.failover_cooldown_s)
+                continue
+            if self._is_empty_result(result):
+                self._circuit.record_failure(spec)
+                logger.warning(
+                    "MultiModelChatModel: model '%s' returned an empty response "
+                    "(no content, no tool calls) in _generate; failing over to "
+                    "next endpoint",
+                    spec,
+                )
+                if i < len(pool) - 1:
+                    _failover_backoff(self.failover_cooldown_s)
+                continue
+            self._circuit.record_success(spec)
+            return result
         msg = "MultiModelChatModel: all models in pool failed"
         raise RuntimeError(msg) from last_exc
 
@@ -563,8 +600,6 @@ class MultiModelChatModel(BaseChatModel):
                 result = await model._agenerate(
                     messages, stop=stop, run_manager=run_manager, **kwargs
                 )
-                self._circuit.record_success(spec)
-                return result
             except Exception as exc:
                 last_exc = exc
                 self._circuit.record_failure(spec)
@@ -573,6 +608,20 @@ class MultiModelChatModel(BaseChatModel):
                 )
                 if i < len(pool) - 1:
                     await _afailover_backoff(self.failover_cooldown_s)
+                continue
+            if self._is_empty_result(result):
+                self._circuit.record_failure(spec)
+                logger.warning(
+                    "MultiModelChatModel: model '%s' returned an empty response "
+                    "(no content, no tool calls) in _agenerate; failing over to "
+                    "next endpoint",
+                    spec,
+                )
+                if i < len(pool) - 1:
+                    await _afailover_backoff(self.failover_cooldown_s)
+                continue
+            self._circuit.record_success(spec)
+            return result
         msg = "MultiModelChatModel: all models in pool failed"
         raise RuntimeError(msg) from last_exc
 
@@ -587,18 +636,16 @@ class MultiModelChatModel(BaseChatModel):
         run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
-        """Streaming with pre-first-chunk failover."""
+        """Streaming with pre-first-chunk failover, including empty streams."""
         last_exc: Exception | None = None
         pool = self._shuffled_models()
         for i, model in enumerate(pool):
             spec = self._model_spec(model)
+            started = False
             try:
-                started = False
                 for chunk in model._stream(messages, stop=stop, run_manager=run_manager, **kwargs):
                     started = True
                     yield chunk
-                self._circuit.record_success(spec)
-                return  # Success — stop trying other models.
             except Exception as exc:
                 if started:
                     raise  # Mid-stream error: cannot retry.
@@ -611,6 +658,19 @@ class MultiModelChatModel(BaseChatModel):
                 )
                 if i < len(pool) - 1:
                     _failover_backoff(self.failover_cooldown_s)
+                continue
+            if started:
+                self._circuit.record_success(spec)
+                return  # Success — stop trying other models.
+            # Contentless 200-OK (zero chunks) — fail over, don't surface empty.
+            self._circuit.record_failure(spec)
+            logger.warning(
+                "MultiModelChatModel: model '%s' returned an empty stream "
+                "(zero chunks); failing over to next endpoint",
+                spec,
+            )
+            if i < len(pool) - 1:
+                _failover_backoff(self.failover_cooldown_s)
         msg = "MultiModelChatModel: all models in pool failed"
         raise RuntimeError(msg) from last_exc
 
@@ -626,15 +686,13 @@ class MultiModelChatModel(BaseChatModel):
         pool = self._shuffled_models()
         for i, model in enumerate(pool):
             spec = self._model_spec(model)
+            started = False
             try:
-                started = False
                 async for chunk in model._astream(
                     messages, stop=stop, run_manager=run_manager, **kwargs
                 ):
                     started = True
                     yield chunk
-                self._circuit.record_success(spec)
-                return  # Success.
             except Exception as exc:
                 if started:
                     raise
@@ -647,6 +705,19 @@ class MultiModelChatModel(BaseChatModel):
                 )
                 if i < len(pool) - 1:
                     await _afailover_backoff(self.failover_cooldown_s)
+                continue
+            if started:
+                self._circuit.record_success(spec)
+                return  # Success.
+            # Contentless 200-OK (zero chunks) — fail over, don't surface empty.
+            self._circuit.record_failure(spec)
+            logger.warning(
+                "MultiModelChatModel: model '%s' returned an empty stream "
+                "(zero chunks); failing over to next endpoint",
+                spec,
+            )
+            if i < len(pool) - 1:
+                await _afailover_backoff(self.failover_cooldown_s)
         msg = "MultiModelChatModel: all models in pool failed"
         raise RuntimeError(msg) from last_exc
 

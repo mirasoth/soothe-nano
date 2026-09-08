@@ -3,11 +3,12 @@ MultiModelChatModel failover, LLMFactory multi-spec wrapping)."""
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Iterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
 from soothe_nano.config.models import parse_model_specs
 from soothe_nano.config.settings import SootheConfig
@@ -495,3 +496,181 @@ class TestMultiModelIdentity:
         m2 = _make_chat_litellm_model("ds2:glm-5.2")
         wrapper = MultiModelChatModel(models=[m1, m2])
         assert wrapper.capabilities is caps
+
+
+# ---------------------------------------------------------------------------
+# MultiModelChatModel empty-response failover
+# ---------------------------------------------------------------------------
+
+
+def _make_empty_chat_result() -> ChatResult:
+    """A degenerate 200-OK: non-empty generations list but empty content."""
+    return ChatResult(generations=[ChatGeneration(message=AIMessage(content=""))])
+
+
+async def _astream_empty() -> AsyncIterator[ChatGenerationChunk]:
+    """Async generator yielding zero chunks (degenerate empty stream)."""
+    if False:  # pragma: no cover - makes this an async generator
+        yield
+
+
+async def _astream_one(
+    chunk: ChatGenerationChunk,
+) -> AsyncIterator[ChatGenerationChunk]:
+    """Async generator yielding a single chunk."""
+    yield chunk
+
+
+def _stream_empty() -> Iterator[ChatGenerationChunk]:
+    """Generator yielding zero chunks (degenerate empty stream)."""
+    if False:  # pragma: no cover - makes this a generator
+        yield
+
+
+def _stream_one(chunk: ChatGenerationChunk) -> Iterator[ChatGenerationChunk]:
+    """Generator yielding a single chunk."""
+    yield chunk
+
+
+class TestMultiModelEmptyResponseFailover:
+    """Empty 200-OK responses trigger failover like raised exceptions."""
+
+    def test_agenerate_fails_over_on_empty_response(self) -> None:
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._agenerate = AsyncMock(return_value=_make_empty_chat_result())
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._agenerate = AsyncMock(return_value=_make_chat_result("from-m2"))
+
+        wrapper = MultiModelChatModel(models=[m1, m2], failover_cooldown_s=0)
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            import asyncio
+
+            result = asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+        assert result.generations[0].message.content == "from-m2"
+        m1._agenerate.assert_called_once()
+        m2._agenerate.assert_called_once()
+        assert wrapper._circuit._failures["ds1:glm-5.2"] == 1
+
+    def test_generate_sync_fails_over_on_empty_response(self) -> None:
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._generate = MagicMock(return_value=_make_empty_chat_result())
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._generate = MagicMock(return_value=_make_chat_result("from-m2"))
+
+        wrapper = MultiModelChatModel(models=[m1, m2], failover_cooldown_s=0)
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            result = wrapper._generate([HumanMessage(content="hi")])
+        assert result.generations[0].message.content == "from-m2"
+        m1._generate.assert_called_once()
+        m2._generate.assert_called_once()
+
+    def test_agenerate_raises_when_all_models_empty(self) -> None:
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._agenerate = AsyncMock(return_value=_make_empty_chat_result())
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._agenerate = AsyncMock(return_value=_make_empty_chat_result())
+
+        wrapper = MultiModelChatModel(models=[m1, m2], failover_cooldown_s=0)
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            import asyncio
+
+            with pytest.raises(RuntimeError, match="all models in pool failed"):
+                asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+
+    def test_astream_fails_over_on_empty_stream(self) -> None:
+        chunk = ChatGenerationChunk(message=AIMessageChunk(content="from-m2"))
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._astream = MagicMock(return_value=_astream_empty())
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._astream = MagicMock(return_value=_astream_one(chunk))
+
+        wrapper = MultiModelChatModel(models=[m1, m2], failover_cooldown_s=0)
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            import asyncio
+
+            async def _collect() -> list:
+                return [c async for c in wrapper._astream([HumanMessage(content="hi")])]
+
+            chunks = asyncio.run(_collect())
+        assert len(chunks) == 1
+        assert chunks[0].message.content == "from-m2"
+        assert wrapper._circuit._failures["ds1:glm-5.2"] == 1
+
+    def test_stream_sync_fails_over_on_empty_stream(self) -> None:
+        chunk = ChatGenerationChunk(message=AIMessageChunk(content="from-m2"))
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._stream = MagicMock(return_value=_stream_empty())
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._stream = MagicMock(return_value=_stream_one(chunk))
+
+        wrapper = MultiModelChatModel(models=[m1, m2], failover_cooldown_s=0)
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            chunks = list(wrapper._stream([HumanMessage(content="hi")]))
+        assert len(chunks) == 1
+        assert chunks[0].message.content == "from-m2"
+
+    def test_astream_raises_when_all_models_empty(self) -> None:
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._astream = MagicMock(return_value=_astream_empty())
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._astream = MagicMock(return_value=_astream_empty())
+
+        wrapper = MultiModelChatModel(models=[m1, m2], failover_cooldown_s=0)
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            import asyncio
+
+            async def _collect() -> list:
+                return [c async for c in wrapper._astream([HumanMessage(content="hi")])]
+
+            with pytest.raises(RuntimeError, match="all models in pool failed"):
+                asyncio.run(_collect())
+
+    def test_empty_response_opens_circuit(self) -> None:
+        """Repeated empty responses open the per-model circuit."""
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._agenerate = AsyncMock(return_value=_make_empty_chat_result())
+
+        m2 = _make_chat_litellm_model("ds2:glm-5.2")
+        m2._agenerate = AsyncMock(return_value=_make_chat_result("from-m2"))
+
+        wrapper = MultiModelChatModel(
+            models=[m1, m2],
+            circuit_threshold=2,
+            failover_cooldown_s=0,
+        )
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            import asyncio
+
+            asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+            asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+        assert wrapper._circuit.is_open("ds1:glm-5.2")
+
+    def test_non_empty_result_not_treated_as_failure(self) -> None:
+        """A result with tool calls but empty text is not empty."""
+        m1 = _make_chat_litellm_model("ds1:glm-5.2")
+        m1._agenerate = AsyncMock(
+            return_value=ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(
+                            content="",
+                            tool_calls=[{"name": "foo", "args": {}, "id": "call_1"}],
+                        )
+                    )
+                ]
+            )
+        )
+
+        wrapper = MultiModelChatModel(models=[m1])
+        with patch("soothe_nano.llm.provider.random.shuffle"):
+            import asyncio
+
+            result = asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
+        assert not wrapper._circuit._failures
+        assert result.generations[0].message.tool_calls
