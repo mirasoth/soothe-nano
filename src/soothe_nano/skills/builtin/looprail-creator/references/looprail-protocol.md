@@ -126,4 +126,4 @@ wait on children; children must not wait on the root.
 ## Validity rule
 
 A rail is valid **iff removing it changes job outcomes** for the same submit
-text versus AutopilotMonitor / ContextEngine opportunistic behavior (no rail).
+text versus ContextEngine opportunistic behavior (no rail).
