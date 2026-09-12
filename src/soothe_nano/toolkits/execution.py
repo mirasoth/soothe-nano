@@ -45,7 +45,10 @@ from soothe_nano.config.constants import (
     DEFAULT_EXECUTE_TIMEOUT,
     clamp_execute_timeout,
 )
-from soothe_nano.security.operation_guard import WorkspaceToolOperationSecurity
+from soothe_nano.security.operation_guard import (
+    WorkspaceToolOperationSecurity,
+    command_approved_by_allowlist,
+)
 from soothe_nano.toolkits.shell_compat import macos_shell_compatibility_error
 from soothe_nano.utils import expand_path
 
@@ -242,6 +245,33 @@ def _virtual_mode_from_security(security_config: Any) -> bool:
     if security_config is None:
         return False
     return not bool(getattr(security_config, "allow_paths_outside_workspace", True))
+
+
+def _tool_approval_allowlist_from_config() -> list[Any] | None:
+    """Read the loop-scoped tool-approval allowlist from the LangGraph runtime.
+
+    The executor plumbs human-approved ``(tool, signature)`` / ``{rule: ...}``
+    records into ``configurable["tool_approval_allowlist"]`` so the
+    pre-execution ``interrupt_on`` predicate can skip re-interrupting. The
+    tool's own security gate must read the same source to avoid re-denying a
+    command the operator just approved. Returns ``None`` outside a LangGraph
+    task (direct nano usage, unit tests) so the standard banned-rule path runs.
+    """
+    try:
+        from langgraph.config import get_config
+    except ImportError:  # pragma: no cover - langgraph is a hard dep
+        return None
+    try:
+        cfg = get_config()
+    except Exception:  # no active runtime context
+        return None
+    if not isinstance(cfg, dict):
+        return None
+    conf = cfg.get("configurable")
+    if not isinstance(conf, dict):
+        return None
+    allowlist = conf.get("tool_approval_allowlist")
+    return allowlist if isinstance(allowlist, list) else None
 
 
 def _translate_virtual_paths_in_command(
@@ -600,6 +630,14 @@ class RunCommandShellTool(BaseTool):
                 security_config=self.security_config,
             ),
         )
+        if decision.verdict != "allow":
+            # Honor a loop-scoped human approval plumbed through the LangGraph
+            # configurable: without this, the tool's own gate re-denies a
+            # command the operator just approved via tool_approval, so the
+            # retry loop re-escalates until the model emits an empty turn.
+            allowlist = _tool_approval_allowlist_from_config()
+            if command_approved_by_allowlist(command, decision.rule_id, allowlist):
+                return "allow", "Command allowed by loop-scoped approval"
         return decision.verdict, decision.reason
 
     def _run(

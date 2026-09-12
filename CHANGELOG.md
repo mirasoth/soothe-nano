@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.26] - 2026-09-12
+
+### Fixed
+- **`git rm` no longer blocked as a destructive `rm`.** The banned-command patterns now anchor on a negative lookbehind for `git `, so `git rm -r crates/foo/` (a repo-index operation that cannot delete arbitrary filesystem paths) is no longer tripped by the standalone-`rm` rules. Standalone `rm -rf /`, `cd x && rm -r y`, and `bash -c "rm -rf /"` remain blocked.
+- **Tool security gate now honors loop-scoped human approvals.** When the operator approves a command through the `tool_approval` pipeline, the `run_command` tool's own security gate reads the allowlist from the LangGraph configurable and no longer re-denies the same command or rule family, preventing the retry loop from re-escalating until the model emits an empty turn.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.25...v1.2.26
+
 ## [1.2.25] - 2026-09-08
 
 ### Fixed

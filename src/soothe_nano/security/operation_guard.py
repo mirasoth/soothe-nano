@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -21,9 +22,13 @@ from soothe_nano.workspace.workspace_paths import (
 )
 
 _BANNED_COMMAND_PATTERNS: tuple[tuple[str, str], ...] = (
-    (r"rm\s+-rf\s+/", "command.dangerous.rm_root"),
-    (r"rm\s+-rf\b", "command.dangerous.rm_rf"),
-    (r"rm\s+-r\b", "command.dangerous.rm_r"),
+    # Negative lookbehind `(?<!git\s)` keeps ``git rm -r`` (a repo-index
+    # operation that cannot delete arbitrary filesystem paths) out of the
+    # destructive-``rm`` net while still catching standalone ``rm -rf /``,
+    # ``cd x && rm -r y`` and ``bash -c "rm -rf /"``.
+    (r"(?<!git\s)rm\s+-rf\s+/", "command.dangerous.rm_root"),
+    (r"(?<!git\s)rm\s+-rf\b", "command.dangerous.rm_rf"),
+    (r"(?<!git\s)rm\s+-r\b", "command.dangerous.rm_r"),
     (r"sudo\s+rm\s+-rf", "command.dangerous.sudo_rm_rf"),
     (r"sudo\s", "command.dangerous.sudo"),
     (r"mkfs(\.|$)", "command.dangerous.mkfs"),
@@ -92,6 +97,37 @@ def rule_family(rule_id: str) -> frozenset[str]:
         if rule_id in family:
             return family
     return frozenset({rule_id})
+
+
+def command_approved_by_allowlist(
+    command: str,
+    rule_id: str | None,
+    allowlist: list[Any] | None,
+) -> bool:
+    """True when a human already approved this exact command or rule family.
+
+    Mirrors the allowlist semantics the ``ToolApprovalPipeline`` uses at the
+    pre-execution gate: an exact ``(tool=run_command, signature=command)``
+    record OR a ``{"rule": <rule_id>}`` record whose family covers ``rule_id``
+    means the operator consented, so the tool's own security gate must not
+    re-deny the command it already escalated.
+    """
+    if not allowlist:
+        return False
+    cmd = (command or "").strip()
+    approved_rules = rule_family(rule_id) if rule_id else frozenset()
+    for rec in allowlist:
+        if isinstance(rec, Mapping):
+            if (
+                str(rec.get("tool") or "") == "run_command"
+                and cmd
+                and str(rec.get("signature") or "") == cmd
+            ):
+                return True
+            rule = str(rec.get("rule") or "")
+            if rule and rule in approved_rules:
+                return True
+    return False
 
 
 _SENSITIVE_SYSTEM_PATH_PATTERNS: tuple[str, ...] = (
