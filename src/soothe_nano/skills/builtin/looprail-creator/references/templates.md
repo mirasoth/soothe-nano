@@ -156,7 +156,7 @@ applies_when: |
 fanout:
   artifact: "{job_id}/wave-plan.json"
   require_plan: true
-  max_waves: 3
+  max_slices: 3
 verbs:
   plan_milestones:
     do:
@@ -271,7 +271,7 @@ applies_when: |
 fanout:
   artifact: "{job_id}/wave-plan.json"
   require_plan: true
-  max_waves: 3
+  max_slices: 3
 verbs:
   plan_milestones:
     do:

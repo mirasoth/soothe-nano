@@ -15,7 +15,7 @@ Runtime loader: `soothe.rails.catalog` / `soothe.rails.LoopRailCatalog`.
 | `conditions` | no | Named NL guards (`str → str`); RFC-231 may add `structural:` |
 | `flow` | no* | NL-first hooks |
 | `rules` | no* | Explicit rules (*need `flow` and/or `rules`) |
-| `fanout` | no | Wave contract (`artifact`, `require_plan`, `max_waves`, …) |
+| `fanout` | no | Wave contract (`require_plan`, `max_slices`, …) |
 | `verbs` | no | Catalog verb body: `brief`/`tags`/`role` (M2) and/or `do:` L0 list (M3) |
 | `flow[].event` | yes | Trigger name (canonical; not `on`) |
 | `flow[].when` | no | Condition name, NL string, or structured when |
