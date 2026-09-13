@@ -153,8 +153,8 @@ def wire_entries_for_agent_config(
 
     When ``skill_index`` is provided, global user skills are served from the
     cached index (fast, stat-only invalidation) and only workspace-local skills
-    are scanned from the filesystem. Without an index, falls back to full
-    filesystem scan for backward compatibility.
+    are scanned from the filesystem. Without an index, falls back to a full
+    filesystem scan.
 
     Args:
         config: SootheConfig with optional ``config.skills`` directories.

@@ -97,19 +97,3 @@ async def stream_nano_agent(
 
     print("\n\n[Streaming] Done.", flush=True)
     return final_response
-
-
-async def stream_core_agent(
-    agent: NanoAgent,
-    query: str,
-    *,
-    thread_id: str = "example-thread",
-    show_tool_calls: bool = True,
-) -> str:
-    """Backward-compatible alias for older example imports."""
-    return await stream_nano_agent(
-        agent,
-        query,
-        thread_id=thread_id,
-        show_tool_calls=show_tool_calls,
-    )
