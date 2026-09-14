@@ -8,6 +8,7 @@ from soothe_sdk.paths import DEFAULT_EXECUTE_TIMEOUT  # noqa: F401
 __all__ = [
     "DEFAULT_CODE_EXEC_MAX_OUTPUT_CHARS",
     "DEFAULT_EXECUTE_TIMEOUT",
+    "DEFAULT_IDENTICAL_TOOL_CALL_THRESHOLD",
     "DEFAULT_TASK_TIMEOUT_SECONDS",
     "DEFAULT_TOOL_OUTPUT_CHARS",
     "MAX_EXECUTE_TIMEOUT",
@@ -40,3 +41,9 @@ DEFAULT_CODE_EXEC_MAX_OUTPUT_CHARS = 100_000
 
 # Max chars for non-code_exec tool output in stream aggregation.
 DEFAULT_TOOL_OUTPUT_CHARS = 10_000
+
+# Consecutive identical tool-call threshold for the Act-stream circuit breaker.
+# When the same tool is invoked with the same arguments N times in a row within
+# a single step, the stream is stopped to prevent degenerate repetition loops
+# (e.g. heartbeat-sentinel recovery re-emitting the same read_file call).
+DEFAULT_IDENTICAL_TOOL_CALL_THRESHOLD = 3
