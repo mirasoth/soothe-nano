@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.27] - 2026-09-15
+
+### Added
+- **Identical tool-call repeat breaker constant.** `DEFAULT_IDENTICAL_TOOL_CALL_THRESHOLD=3` exposes the Act-stream circuit-breaker threshold so the host (`soothe`) can import and use it. When the same tool is invoked with identical arguments 3 consecutive times within a single step's Act stream, the stream is stopped to prevent degenerate repetition loops (e.g. heartbeat-sentinel recovery re-emitting the same `read_file` call indefinitely).
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.26...v1.2.27
+
 ## [1.2.26] - 2026-09-12
 
 ### Fixed
