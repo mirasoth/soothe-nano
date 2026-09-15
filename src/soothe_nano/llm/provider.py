@@ -543,6 +543,34 @@ class MultiModelChatModel(BaseChatModel):
                 return False
         return True
 
+    @staticmethod
+    def _chunk_has_content(chunk: ChatGenerationChunk) -> bool:
+        """True when *chunk* carries non-whitespace text or tool-call data.
+
+        Used by the streaming failover to detect thinking-only responses:
+        when a thinking model emits all its output inside ``<think>`` blocks,
+        ``ThinkingStreamFilter`` strips them, leaving chunks with only
+        whitespace (or empty) content. Such chunks pass the ``started`` flag
+        but carry no usable payload — the accumulated content should be
+        treated as empty for failover purposes.
+        """
+        msg = chunk.message
+        content = getattr(msg, "content", "")
+        if isinstance(content, str):
+            if content.strip():
+                return True
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict):
+                    if str(part.get("text", "")).strip():
+                        return True
+                elif isinstance(part, str) and part.strip():
+                    return True
+        # Tool-call chunks (even partial fragments) count as real content.
+        if getattr(msg, "tool_call_chunks", None):
+            return True
+        return False
+
     # ------------------------------------------------------------------
     # Non-streaming generation with failover
     # ------------------------------------------------------------------
@@ -636,15 +664,24 @@ class MultiModelChatModel(BaseChatModel):
         run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
-        """Streaming with pre-first-chunk failover, including empty streams."""
+        """Streaming with pre-first-chunk failover, including empty streams.
+
+        Failover also triggers when a thinking model emits chunks that are
+        entirely thinking tokens — after ``ThinkingStreamFilter`` strips
+        them, the accumulated content is whitespace-only, which is treated
+        the same as a zero-chunk contentless 200-OK.
+        """
         last_exc: Exception | None = None
         pool = self._shuffled_models()
         for i, model in enumerate(pool):
             spec = self._model_spec(model)
             started = False
+            has_content = False
             try:
                 for chunk in model._stream(messages, stop=stop, run_manager=run_manager, **kwargs):
                     started = True
+                    if self._chunk_has_content(chunk):
+                        has_content = True
                     yield chunk
             except Exception as exc:
                 if started:
@@ -659,16 +696,24 @@ class MultiModelChatModel(BaseChatModel):
                 if i < len(pool) - 1:
                     _failover_backoff(self.failover_cooldown_s)
                 continue
-            if started:
+            if started and has_content:
                 self._circuit.record_success(spec)
                 return  # Success — stop trying other models.
-            # Contentless 200-OK (zero chunks) — fail over, don't surface empty.
+            # Contentless 200-OK (zero chunks or thinking-only) — fail over.
             self._circuit.record_failure(spec)
-            logger.warning(
-                "MultiModelChatModel: model '%s' returned an empty stream "
-                "(zero chunks); failing over to next endpoint",
-                spec,
-            )
+            if started:
+                logger.warning(
+                    "MultiModelChatModel: model '%s' returned a thinking-only "
+                    "stream (chunks yielded but no post-strip content); "
+                    "failing over to next endpoint",
+                    spec,
+                )
+            else:
+                logger.warning(
+                    "MultiModelChatModel: model '%s' returned an empty stream "
+                    "(zero chunks); failing over to next endpoint",
+                    spec,
+                )
             if i < len(pool) - 1:
                 _failover_backoff(self.failover_cooldown_s)
         msg = "MultiModelChatModel: all models in pool failed"
@@ -681,17 +726,26 @@ class MultiModelChatModel(BaseChatModel):
         run_manager: AsyncCallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        """Async streaming with failover before the first chunk."""
+        """Async streaming with failover before the first chunk.
+
+        Failover also triggers when a thinking model emits chunks that are
+        entirely thinking tokens — after ``ThinkingStreamFilter`` strips
+        them, the accumulated content is whitespace-only, which is treated
+        the same as a zero-chunk contentless 200-OK.
+        """
         last_exc: Exception | None = None
         pool = self._shuffled_models()
         for i, model in enumerate(pool):
             spec = self._model_spec(model)
             started = False
+            has_content = False
             try:
                 async for chunk in model._astream(
                     messages, stop=stop, run_manager=run_manager, **kwargs
                 ):
                     started = True
+                    if self._chunk_has_content(chunk):
+                        has_content = True
                     yield chunk
             except Exception as exc:
                 if started:
@@ -706,16 +760,24 @@ class MultiModelChatModel(BaseChatModel):
                 if i < len(pool) - 1:
                     await _afailover_backoff(self.failover_cooldown_s)
                 continue
-            if started:
+            if started and has_content:
                 self._circuit.record_success(spec)
                 return  # Success.
-            # Contentless 200-OK (zero chunks) — fail over, don't surface empty.
+            # Contentless 200-OK (zero chunks or thinking-only) — fail over.
             self._circuit.record_failure(spec)
-            logger.warning(
-                "MultiModelChatModel: model '%s' returned an empty stream "
-                "(zero chunks); failing over to next endpoint",
-                spec,
-            )
+            if started:
+                logger.warning(
+                    "MultiModelChatModel: model '%s' returned a thinking-only "
+                    "stream (chunks yielded but no post-strip content); "
+                    "failing over to next endpoint",
+                    spec,
+                )
+            else:
+                logger.warning(
+                    "MultiModelChatModel: model '%s' returned an empty stream "
+                    "(zero chunks); failing over to next endpoint",
+                    spec,
+                )
             if i < len(pool) - 1:
                 await _afailover_backoff(self.failover_cooldown_s)
         msg = "MultiModelChatModel: all models in pool failed"
