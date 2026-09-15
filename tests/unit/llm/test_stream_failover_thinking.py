@@ -10,8 +10,8 @@ fail over to the next model — not silently surface empty content.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Iterator
-from unittest.mock import AsyncMock, MagicMock, patch
+from collections.abc import AsyncIterator
+from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessageChunk, HumanMessage
