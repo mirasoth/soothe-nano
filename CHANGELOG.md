@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.2.27] - 2026-09-15
+## [1.2.28] - 2026-09-15
+
+### Fixed
+- **Thinking-only streams now trigger failover in `MultiModelChatModel`.** When a thinking model (e.g. glm-5.2 with `hide_thinking_tokens=True`) emits its entire output inside ``` blocks, `ThinkingStreamFilter` strips them, leaving chunks with only whitespace content. The streaming failover in `_stream` and `_astream` now detects this post-strip emptiness — via `_chunk_has_content()` (checks for non-whitespace text or tool-call chunks) — and fails over to the next endpoint instead of silently surfacing empty content. Applies to both sync and async streaming paths. Thinking-only responses also count toward the per-model circuit breaker threshold.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.27...v1.2.28
 
 ### Added
 - **Identical tool-call repeat breaker constant.** `DEFAULT_IDENTICAL_TOOL_CALL_THRESHOLD=3` exposes the Act-stream circuit-breaker threshold so the host (`soothe`) can import and use it. When the same tool is invoked with identical arguments 3 consecutive times within a single step's Act stream, the stream is stopped to prevent degenerate repetition loops (e.g. heartbeat-sentinel recovery re-emitting the same `read_file` call indefinitely).
