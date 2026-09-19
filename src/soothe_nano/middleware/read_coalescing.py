@@ -141,7 +141,4 @@ class ReadCoalescingMiddleware(AgentMiddleware):
                     read.result_future.set_exception(result)
             else:
                 if not read.result_future.done():
-                    read.result_future.set_result(
-                        cast("ToolMessage | Command[Any]", result)
-                    )
-
+                    read.result_future.set_result(cast("ToolMessage | Command[Any]", result))

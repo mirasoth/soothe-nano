@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.29] - 2026-09-19
+
 ### Added
 - **Tool call efficiency suite (IG-778).** Six improvements to reduce tool-call count and context bloat, benchmarked against Claude Code's patterns:
   - **Explicit parallel-call instruction** in the system prompt — tells the model to batch independent tool calls in a single response (30-50% fewer model hops expected).
@@ -19,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **`DEFAULT_CORE_TOOL_NAMES` reduced from 26 to 20.** `file_info`, `apply_diff`, `delete`, `tail_background_log`, `kill_process`, `current_datetime` moved to `DEFERRED_FROM_CORE`. The `<TIMESTAMP>` block in the system prompt already provides current time, making `current_datetime` safe to defer.
 - **`_TOOL_ORCHESTRATION_GUIDE` updated** with parallel-call batching guide and large-result re-fetch guide.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.28...v1.2.29
 
 ## [1.2.28] - 2026-09-15
 

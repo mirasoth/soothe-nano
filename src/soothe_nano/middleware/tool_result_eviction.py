@@ -78,9 +78,7 @@ class ToolResultEvictionMiddleware(AgentMiddleware):
             )
 
             self._max_tokens = max_tokens or DEFAULT_TOOL_RESULT_EVICTION_MAX_TOKENS
-            self._protect_recent = (
-                protect_recent or DEFAULT_TOOL_RESULT_EVICTION_PROTECT_RECENT
-            )
+            self._protect_recent = protect_recent or DEFAULT_TOOL_RESULT_EVICTION_PROTECT_RECENT
         self._evicted_ids: set[str] = set()
 
     def _estimate_tokens(self, content: Any) -> int:
