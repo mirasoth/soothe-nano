@@ -153,6 +153,12 @@ def build_soothe_middleware_stack(
     stack.append(ToolOptimizationMiddleware())
     logger.debug("[Middleware] Tool optimization middleware enabled")
 
+    # 6b. Multi-file read coalescing (concurrent read_file execution, IG-778 §4)
+    from .read_coalescing import ReadCoalescingMiddleware
+
+    stack.append(ReadCoalescingMiddleware())
+    logger.debug("[Middleware] Read coalescing enabled")
+
     # 7. Edit coalescing for parallel file edits
     stack.append(EditCoalescingMiddleware())
     logger.info("[Middleware] Edit coalescing enabled")
@@ -169,8 +175,30 @@ def build_soothe_middleware_stack(
     stack.append(ToolErrorGuardMiddleware())
     logger.info("[Middleware] Tool error guard enabled (catch-all → error ToolMessage)")
 
+    # 8c. Persist large tool results to disk (before output cap, IG-778 §6)
+    mw_config = agent_middleware_config(config)
+    storage_config = mw_config.tool_result_storage
+    if storage_config.enabled:
+        from .tool_result_storage_middleware import ToolResultStorageMiddleware
+
+        stack.append(
+            ToolResultStorageMiddleware(
+                workspace_root=str(
+                    config.filesystem_middleware.workspace_root
+                    if hasattr(config, "filesystem_middleware")
+                    and config.filesystem_middleware is not None
+                    and hasattr(config.filesystem_middleware, "workspace_root")
+                    and config.filesystem_middleware.workspace_root
+                    else "."
+                ),
+                persist_threshold=storage_config.persist_threshold_chars,
+                per_message_budget=storage_config.per_message_budget_chars,
+            )
+        )
+        logger.info("[Middleware] Tool result disk storage enabled")
+
     # 9. Cap tool output before graph state / model context
-    tool_output = agent_middleware_config(config).tool_output
+    tool_output = mw_config.tool_output
     stack.append(
         ToolOutputCapMiddleware(
             default_max_chars=int(tool_output.tool_output_max_chars),
@@ -178,6 +206,19 @@ def build_soothe_middleware_stack(
         )
     )
     logger.debug("[Middleware] Tool output cap enabled")
+
+    # 9b. Evict old tool results to prevent re-read churn (microcompact analog, IG-778 §2)
+    eviction_config = mw_config.tool_result_eviction
+    if eviction_config.enabled:
+        from .tool_result_eviction import ToolResultEvictionMiddleware
+
+        stack.append(
+            ToolResultEvictionMiddleware(
+                max_tokens=eviction_config.max_tokens,
+                protect_recent=eviction_config.protect_recent,
+            )
+        )
+        logger.info("[Middleware] Tool result eviction enabled")
 
     # 10. Progressive builtin-tool loading (optional)
     stack.append(InvalidToolHintsMiddleware())

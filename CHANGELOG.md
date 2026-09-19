@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Tool call efficiency suite (IG-778).** Six improvements to reduce tool-call count and context bloat, benchmarked against Claude Code's patterns:
+  - **Explicit parallel-call instruction** in the system prompt — tells the model to batch independent tool calls in a single response (30-50% fewer model hops expected).
+  - **Cross-step tool result eviction** (`ToolResultEvictionMiddleware`) — evicts old non-mutation tool results from context when total tool-result tokens exceed threshold (60K default), protecting the most recent 3 results. Runs in `awrap_model_call` (idempotent per hop).
+  - **Shrunk core tool set (26 → 20)** — moved `file_info`, `apply_diff`, `delete`, `tail_background_log`, `kill_process`, `current_datetime` to deferred loading, reducing per-hop schema tokens by ~2-4K.
+  - **Multi-file read coalescing** (`ReadCoalescingMiddleware`) — collects parallel `read_file` calls within a 50ms window and executes them concurrently via `asyncio.gather`, returning per-call results.
+  - **Search consolidation** in `ToolOptimizationMiddleware` — batches parallel `grep`/`glob` calls within a 50ms detection window for concurrent execution.
+  - **Tool result disk storage with compact reference** (`ToolResultStorageMiddleware`) — persists large tool outputs (>10K chars) to `.soothe/tool-results/{session_id}/`, replaces with a 2K preview + file path reference. Enforces per-message aggregate budget (200K chars). No information loss — model can `read_file` the persisted path.
+
+### Changed
+- **`DEFAULT_CORE_TOOL_NAMES` reduced from 26 to 20.** `file_info`, `apply_diff`, `delete`, `tail_background_log`, `kill_process`, `current_datetime` moved to `DEFERRED_FROM_CORE`. The `<TIMESTAMP>` block in the system prompt already provides current time, making `current_datetime` safe to defer.
+- **`_TOOL_ORCHESTRATION_GUIDE` updated** with parallel-call batching guide and large-result re-fetch guide.
+
 ## [1.2.28] - 2026-09-15
 
 ### Fixed

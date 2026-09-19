@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from soothe_nano.toolkits.progressive.registry import (
     DEFAULT_CORE_TOOL_NAMES,
+    DEFERRED_FROM_CORE,
     ProgressiveToolRegistry,
     ToolDescriptor,
     merge_tool_activation,
@@ -16,15 +17,17 @@ def _desc(name: str) -> ToolDescriptor:
 
 
 def test_default_core_includes_surgical_file_ops() -> None:
-    assert {"apply_diff", "file_info"}.issubset(DEFAULT_CORE_TOOL_NAMES)
-    assert {"run_background", "tail_background_log", "kill_process"}.issubset(
-        DEFAULT_CORE_TOOL_NAMES
-    )
+    assert {"edit_lines", "insert_lines", "delete_lines"}.issubset(DEFAULT_CORE_TOOL_NAMES)
+    assert {"run_background"}.issubset(DEFAULT_CORE_TOOL_NAMES)
     assert {"search_skills", "invoke_skill"}.issubset(DEFAULT_CORE_TOOL_NAMES)
     assert {"search_mcp_tools", "mcp_resources_list", "mcp_resources_read"}.issubset(
         DEFAULT_CORE_TOOL_NAMES
     )
-    assert len(DEFAULT_CORE_TOOL_NAMES) == 26
+    assert len(DEFAULT_CORE_TOOL_NAMES) == 20
+    # Tools moved to deferred
+    assert {"apply_diff", "file_info", "delete", "current_datetime"}.issubset(DEFERRED_FROM_CORE)
+    assert {"tail_background_log", "kill_process"}.issubset(DEFERRED_FROM_CORE)
+    assert len(DEFERRED_FROM_CORE) == 6
 
 
 def test_partition_core_and_deferred() -> None:

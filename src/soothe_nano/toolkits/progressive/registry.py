@@ -8,32 +8,25 @@ from typing import Any
 
 DEFAULT_CORE_TOOL_NAMES: frozenset[str] = frozenset(
     {
-        # soothe_deepagents filesystem
+        # Filesystem
         "ls",
         "read_file",
         "write_file",
         "edit_file",
         "glob",
         "grep",
-        # soothe_deepagents other
-        "write_todos",
-        "task",
-        # soothe surgical file ops
-        "delete",
+        # Surgical file ops (edit_lines is the primary edit tool)
         "edit_lines",
         "insert_lines",
         "delete_lines",
-        "apply_diff",
-        "file_info",
-        # soothe execution
+        # Execution
         "run_command",
         "run_python",
         "run_background",
-        "tail_background_log",
-        "kill_process",
-        # soothe datetime
-        "current_datetime",
-        # progressive discovery
+        # Task delegation
+        "write_todos",
+        "task",
+        # Progressive discovery
         "search_tools",
         "search_skills",
         "invoke_skill",
@@ -41,6 +34,18 @@ DEFAULT_CORE_TOOL_NAMES: frozenset[str] = frozenset(
         "search_mcp_tools",
         "mcp_resources_list",
         "mcp_resources_read",
+    }
+)
+
+# Tools moved to deferred (promoted on search_tools or direct invoke):
+DEFERRED_FROM_CORE: frozenset[str] = frozenset(
+    {
+        "file_info",
+        "apply_diff",
+        "delete",
+        "tail_background_log",
+        "kill_process",
+        "current_datetime",
     }
 )
 

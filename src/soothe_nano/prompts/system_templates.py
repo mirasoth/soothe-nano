@@ -25,6 +25,8 @@ Execution tools (always bound — not listed in <AVAILABLE_TOOLS>):
 - run_command: Sync shell — waits for completion and returns output. Default timeout 60s; pass timeout for longer bounded jobs (max 5h, e.g. timeout=3600). Use for: ls, curl, git, make test, one-shot scripts. Do NOT use for repo content/path search — use grep / glob instead.
 - run_background: Async shell — returns PID + log_path immediately. Use for: servers, daemons, training, long builds you poll separately. Follow with tail_background_log/read_file; stop with kill_process.
 - run_python: Execute Python code with session persistence. Variables persist across calls.
+
+Background job management (deferred — search_tools to promote):
 - tail_background_log: Read the last N lines from a run_background log (bg-{{pid}}.log).
 - kill_process: Terminate a run_background PID only (the pid field returned at spawn). Never kill the agent host process or use pkill/killall against the runtime that spawned you.
 
@@ -38,14 +40,36 @@ _FILE_OPS_GUIDE = """\
 File operation tools:
 - read_file: Read file contents (optional start_line, end_line for ranges).
 - write_file: Write to files (mode='overwrite' or 'append').
-- delete: Delete files (use backup=true to create automatic backup).
+- delete: Delete files (deferred — search_tools to promote; use backup=true to create automatic backup).
 - grep: Search for a literal text pattern inside files (prefer over shell grep/rg).
 - glob: Find files by path pattern (prefer over shell find).
 - ls: List a directory.
-- file_info: Get file metadata.
+- file_info: Get file metadata (deferred — search_tools to promote).
 
 Prefer one wider read_file (larger line range or full file when reasonable) over \
 many tiny offset/limit slices on the same path.\
+"""
+
+_PARALLEL_CALL_GUIDE = """\
+Parallel tool calls (CRITICAL for efficiency):
+- When you need multiple INDEPENDENT pieces of information, issue ALL tool \
+calls in a single response. The runtime executes them concurrently.
+- Examples of batchable independent calls:
+  - read_file(A) + read_file(B) + read_file(C) → one response, 3 calls
+  - grep("pattern1") + grep("pattern2") + glob("*.py") → one response
+  - read_file(config) + grep("API_KEY") + ls(directory) → one response
+- NEVER serialize independent calls. If call B does not depend on the \
+result of call A, issue them together.
+- Only serialize when output of call A determines arguments of call B.
+"""
+
+_LARGE_RESULT_GUIDE = """\
+Large tool outputs:
+- When a tool result says "Full output saved to: <path>", the full content \
+is on disk. Use read_file with that path to retrieve it if needed.
+- You rarely need to re-read the full output — the preview contains the \
+most relevant portion (first 2KB). Only re-read if the preview is \
+insufficient.
 """
 
 _SEARCH_GUIDE = """\
@@ -63,7 +87,7 @@ Surgical editing tools (PREFERRED over full-file rewrites):
 - edit_lines: Replace specific line range (safer than read→modify→write).
 - insert_lines: Insert content at specific line.
 - delete_lines: Delete specific line range.
-- apply_diff: Apply unified diff patch.
+- apply_diff: Apply unified diff patch (deferred — search_tools to promote).
 
 When to use surgical editing:
 - Changing a specific function → use edit_lines
@@ -119,6 +143,8 @@ Tool selection rules (follow strictly):
 
 {_FILE_OPS_GUIDE}
 
+{_PARALLEL_CALL_GUIDE}
+
 {_SEARCH_GUIDE}
 
 {_SURGICAL_EDIT_GUIDE}
@@ -127,12 +153,13 @@ Tool selection rules (follow strictly):
 
 {_RESEARCH_GUIDE}
 
-- datetime: Get current date and time.
+{_LARGE_RESULT_GUIDE}
 
 {_SUBAGENT_GUIDE}
 
 Progressive tool binding:
-- Always bound: filesystem, surgical edits, execution (run_command, run_python, run_background, tail_background_log, kill_process), search_tools, search_skills, invoke_skill, write_todos, task, current_datetime. Desktop automation (computer_use) is reachable only via the `task` tool — not bound as direct tools on this agent.
+- Always bound: filesystem, surgical edits (edit_lines, insert_lines, delete_lines), execution (run_command, run_python, run_background), search_tools, search_skills, invoke_skill, write_todos, task. Desktop automation (computer_use) is reachable only via the `task` tool — not bound as direct tools on this agent.
+- Deferred (promote via search_tools or direct invoke): file_info, apply_diff, delete, tail_background_log, kill_process, current_datetime.
 - <AVAILABLE_TOOLS> lists deferred tools not yet bound to this hop. Use search_tools(query) or call a listed name to promote it for subsequent hops.
 - Core/builtin skills appear in <AVAILABLE_SKILLS> on turn 0. Matching skills auto-load into <SKILL_CONTEXT> — follow those instructions before search_tools or ad-hoc web research.
 - Deferred skills stay hidden until search_skills(query), invoke_skill(name), or a matching file-op path auto-discovers them.

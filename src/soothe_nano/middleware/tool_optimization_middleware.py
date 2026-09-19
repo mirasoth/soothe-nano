@@ -6,6 +6,7 @@ step lifecycle semantics in the executor.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shlex
@@ -56,6 +57,24 @@ _SHELL_SEARCH_REDIRECT_MSG = (
 )
 _ENV_SKIP_TOKENS = frozenset({"sudo", "env", "command", "time", "nice"})
 _COMPOUND_MARKERS = ("|", "&&", ";", "||")
+
+# Search batching (IG-778 §5)
+_SEARCH_BATCH_TOOLS = frozenset({"grep", "glob"})
+_SEARCH_DETECTION_WINDOW_MS = 50
+
+
+@dataclass(slots=True)
+class PendingSearch:
+    """A pending search call awaiting batched execution."""
+
+    tool_name: str
+    args: dict[str, Any]
+    tool_call_id: str
+    request: ToolCallRequest
+    handler: Any  # Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]]
+    result_future: asyncio.Future[Any] = field(
+        default_factory=lambda: asyncio.get_event_loop().create_future()
+    )
 
 
 @dataclass(slots=True)
@@ -302,6 +321,15 @@ class ToolOptimizationMiddleware(AgentMiddleware):
     # Opt into general-purpose subagent inheritance (deepagents generic flag).
     propagate_to_general_purpose = True
 
+    _SEARCH_BATCH_TOOLS = _SEARCH_BATCH_TOOLS
+    _SEARCH_DETECTION_WINDOW_MS = _SEARCH_DETECTION_WINDOW_MS
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._pending_searches: list[PendingSearch] = []
+        self._search_window_task: asyncio.Task[None] | None = None
+        self._search_lock = asyncio.Lock()
+
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
@@ -442,6 +470,21 @@ class ToolOptimizationMiddleware(AgentMiddleware):
                 return cached_msg
             state.cache_misses += 1
 
+        # Search batching (IG-778 §5): collect grep/glob calls within a
+        # detection window for concurrent execution.
+        if tool_name in self._SEARCH_BATCH_TOOLS:
+            result = await self._batch_search_call(
+                request, handler, tool_name, tool_args, tool_call_id
+            )
+            # Populate cache for batched search results
+            if signature is not None and isinstance(result, ToolMessage):
+                state.last_signature = signature
+                state.cache[signature] = (
+                    result.content,
+                    getattr(result, "status", None),
+                )
+            return result
+
         result = await handler(request)
 
         if tool_name in _CACHE_INVALIDATING_TOOLS:
@@ -457,6 +500,85 @@ class ToolOptimizationMiddleware(AgentMiddleware):
             )
 
         return result
+
+    async def _batch_search_call(
+        self,
+        request: ToolCallRequest,
+        handler: Any,
+        tool_name: str,
+        args: dict[str, Any],
+        tool_call_id: str,
+    ) -> ToolMessage | Command[Any]:
+        """Collect search calls within a detection window for concurrent execution.
+
+        Args:
+            request: Tool call request.
+            handler: Next handler in the middleware chain.
+            tool_name: Name of the search tool (grep or glob).
+            args: Tool call arguments.
+            tool_call_id: Unique tool call ID.
+
+        Returns:
+            ToolMessage or Command result from the (possibly batched) execution.
+        """
+        async with self._search_lock:
+            pending = PendingSearch(
+                tool_name=tool_name,
+                args=args,
+                tool_call_id=tool_call_id,
+                request=request,
+                handler=handler,
+            )
+            self._pending_searches.append(pending)
+            if self._search_window_task is None or self._search_window_task.done():
+                self._search_window_task = asyncio.create_task(
+                    self._flush_pending_searches_after_window()
+                )
+            result_future = pending.result_future
+
+        result: ToolMessage | Command[Any] = await result_future
+        return result
+
+    async def _flush_pending_searches_after_window(self) -> None:
+        """Wait for the detection window, then flush pending searches."""
+        await asyncio.sleep(self._SEARCH_DETECTION_WINDOW_MS / 1000.0)
+        await self._flush_pending_searches()
+
+    async def _flush_pending_searches(self) -> None:
+        """Execute pending searches concurrently and resolve futures."""
+        async with self._search_lock:
+            pending = self._pending_searches
+            self._pending_searches = []
+            self._search_window_task = None
+
+        if not pending:
+            return
+
+        # If only one search, execute directly (no gather overhead)
+        if len(pending) == 1:
+            p = pending[0]
+            try:
+                result = await p.handler(p.request)
+                if not p.result_future.done():
+                    p.result_future.set_result(result)
+            except Exception as exc:
+                if not p.result_future.done():
+                    p.result_future.set_exception(exc)
+            return
+
+        # Execute all searches concurrently
+        results = await asyncio.gather(
+            *[p.handler(p.request) for p in pending],
+            return_exceptions=True,
+        )
+
+        for search, result in zip(pending, results, strict=True):
+            if isinstance(result, BaseException):
+                if not search.result_future.done():
+                    search.result_future.set_exception(result)
+            else:
+                if not search.result_future.done():
+                    search.result_future.set_result(result)
 
 
 __all__ = ["ToolOptimizationMiddleware", "get_tool_reuse_metrics_snapshot"]

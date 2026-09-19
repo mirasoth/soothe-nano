@@ -11,6 +11,11 @@ __all__ = [
     "DEFAULT_IDENTICAL_TOOL_CALL_THRESHOLD",
     "DEFAULT_TASK_TIMEOUT_SECONDS",
     "DEFAULT_TOOL_OUTPUT_CHARS",
+    "DEFAULT_TOOL_RESULT_EVICTION_MAX_TOKENS",
+    "DEFAULT_TOOL_RESULT_EVICTION_PROTECT_RECENT",
+    "DEFAULT_TOOL_RESULT_PER_MESSAGE_BUDGET",
+    "DEFAULT_TOOL_RESULT_PERSIST_THRESHOLD",
+    "DEFAULT_TOOL_RESULT_PREVIEW_CHARS",
     "MAX_EXECUTE_TIMEOUT",
     "clamp_execute_timeout",
 ]
@@ -47,3 +52,28 @@ DEFAULT_TOOL_OUTPUT_CHARS = 10_000
 # a single step, the stream is stopped to prevent degenerate repetition loops
 # (e.g. heartbeat-sentinel recovery re-emitting the same read_file call).
 DEFAULT_IDENTICAL_TOOL_CALL_THRESHOLD = 3
+
+
+# ============================================================================
+# Tool Result Disk Storage (IG-778 §6)
+# ============================================================================
+
+# Character threshold above which to persist tool results to disk.
+DEFAULT_TOOL_RESULT_PERSIST_THRESHOLD = 10_000
+
+# Per-message aggregate budget for tool results (chars).
+DEFAULT_TOOL_RESULT_PER_MESSAGE_BUDGET = 200_000
+
+# Preview size shown in the compact reference message (chars).
+DEFAULT_TOOL_RESULT_PREVIEW_CHARS = 2_000
+
+
+# ============================================================================
+# Tool Result Eviction (IG-778 §2)
+# ============================================================================
+
+# Maximum estimated tool-result tokens before eviction triggers.
+DEFAULT_TOOL_RESULT_EVICTION_MAX_TOKENS = 60_000
+
+# Number of most-recent tool results to protect from eviction.
+DEFAULT_TOOL_RESULT_EVICTION_PROTECT_RECENT = 3

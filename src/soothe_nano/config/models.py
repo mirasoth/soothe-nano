@@ -11,6 +11,11 @@ from soothe_nano.config.constants import (
     DEFAULT_CODE_EXEC_MAX_OUTPUT_CHARS,
     DEFAULT_TASK_TIMEOUT_SECONDS,
     DEFAULT_TOOL_OUTPUT_CHARS,
+    DEFAULT_TOOL_RESULT_EVICTION_MAX_TOKENS,
+    DEFAULT_TOOL_RESULT_EVICTION_PROTECT_RECENT,
+    DEFAULT_TOOL_RESULT_PER_MESSAGE_BUDGET,
+    DEFAULT_TOOL_RESULT_PERSIST_THRESHOLD,
+    DEFAULT_TOOL_RESULT_PREVIEW_CHARS,
 )
 
 
@@ -881,6 +886,67 @@ class LoopToolOutputConfig(BaseModel):
     )
 
 
+class ToolResultStorageConfig(BaseModel):
+    """Configuration for tool result disk storage (IG-778 §6).
+
+    Args:
+        enabled: Whether to persist large tool results to disk.
+        persist_threshold_chars: Character threshold above which to persist.
+        per_message_budget_chars: Aggregate per-turn budget for tool results.
+        preview_chars: Preview size shown in the compact reference.
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Persist large tool results to disk with compact reference",
+    )
+    persist_threshold_chars: int = Field(
+        default=DEFAULT_TOOL_RESULT_PERSIST_THRESHOLD,
+        ge=1000,
+        le=500_000,
+        description="Character threshold above which to persist to disk",
+    )
+    per_message_budget_chars: int = Field(
+        default=DEFAULT_TOOL_RESULT_PER_MESSAGE_BUDGET,
+        ge=10_000,
+        le=1_000_000,
+        description="Aggregate per-turn budget for tool results (chars)",
+    )
+    preview_chars: int = Field(
+        default=DEFAULT_TOOL_RESULT_PREVIEW_CHARS,
+        ge=500,
+        le=10_000,
+        description="Preview size shown in the compact reference (chars)",
+    )
+
+
+class ToolResultEvictionConfig(BaseModel):
+    """Configuration for tool result eviction (IG-778 §2).
+
+    Args:
+        enabled: Whether to evict old tool results from context.
+        max_tokens: Maximum estimated tool-result tokens before eviction.
+        protect_recent: Number of most-recent tool results to protect.
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Evict old tool results from context to prevent re-read churn",
+    )
+    max_tokens: int = Field(
+        default=DEFAULT_TOOL_RESULT_EVICTION_MAX_TOKENS,
+        ge=10_000,
+        le=500_000,
+        description="Maximum estimated tool-result tokens before eviction triggers",
+    )
+    protect_recent: int = Field(
+        default=DEFAULT_TOOL_RESULT_EVICTION_PROTECT_RECENT,
+        ge=1,
+        le=20,
+        description="Number of most-recent tool results protected from eviction",
+    )
+
+
 class ToolTimeoutConfig(BaseModel):
     """Tool timeout middleware configuration.
 
@@ -1526,6 +1592,14 @@ class CoreAgentMiddlewareConfig(BaseModel):
     tool_output: LoopToolOutputConfig = Field(
         default_factory=LoopToolOutputConfig,
         description="Tool result size caps for graph state and model context",
+    )
+    tool_result_storage: ToolResultStorageConfig = Field(
+        default_factory=ToolResultStorageConfig,
+        description="Tool result disk storage with compact reference (IG-778 §6)",
+    )
+    tool_result_eviction: ToolResultEvictionConfig = Field(
+        default_factory=ToolResultEvictionConfig,
+        description="Tool result eviction from context (IG-778 §2)",
     )
     llm_rate_limit: LLMRateLimitConfig = Field(
         default_factory=LLMRateLimitConfig,
