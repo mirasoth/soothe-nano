@@ -1,9 +1,9 @@
-"""Tests for the classifier provider + parameter configuration.
+"""Tests for the classifier configuration.
 
-The classifier is a swappable backend: `provider_type` names the wire
-protocol (currently only `typesafe`), and every deployment of that protocol
-is its own provider instance. Decision parameters live next to the provider
-list so nano internals and host consumers calibrate once.
+A classifier backend is a regular `providers` entry distinguished by
+`provider_type: typesafe` — the local gateway and hosted Jev are two entries of
+one protocol. Decision parameters live in the shared `classifier` block so nano
+internals and host consumers calibrate once.
 """
 
 from __future__ import annotations
@@ -12,8 +12,7 @@ import pytest
 
 from soothe_nano.config import (
     ClassifierConfig,
-    ClassifierProviderConfig,
-    ClassifierProviderType,
+    ModelProviderConfig,
     SootheConfig,
 )
 
@@ -21,35 +20,40 @@ langchain_typesafe = pytest.importorskip("langchain_typesafe")
 ChoiceAnswer = langchain_typesafe.ChoiceAnswer
 
 # ---------------------------------------------------------------------------
-# Provider type = protocol, not deployment
+# Provider list: `typesafe` marks a classifier backend
 # ---------------------------------------------------------------------------
 
 
-def test_provider_type_only_exposes_typesafe() -> None:
-    assert [t.value for t in ClassifierProviderType] == ["typesafe"]
+def test_typesafe_marks_a_classifier_backend() -> None:
+    local = ModelProviderConfig(
+        name="local-nanojev",
+        provider_type="typesafe",
+        api_base_url="http://127.0.0.1:8767",
+        api_key="local-nanojev",
+    )
+    assert local.provider_type == "typesafe"
 
 
-def test_multiple_instances_share_one_protocol() -> None:
+def test_local_and_hosted_are_two_entries_of_one_protocol() -> None:
     """Local gateway and hosted Jev are two entries of the same type."""
-    local = ClassifierProviderConfig(
-        name="local-nanojev", api_base_url="http://127.0.0.1:8767", api_key="local-nanojev"
+    local = ModelProviderConfig(name="local-nanojev", provider_type="typesafe")
+    hosted = ModelProviderConfig(name="hosted-jev", provider_type="typesafe")
+    assert local.provider_type == hosted.provider_type == "typesafe"
+
+
+def test_non_typesafe_entries_are_not_classifiers() -> None:
+    """A chat provider (`openai`) is never returned as a classifier backend."""
+    cfg = SootheConfig(
+        providers=[ModelProviderConfig(name="openai", provider_type="openai", api_key="k")],
     )
-    hosted = ClassifierProviderConfig(
-        name="hosted-jev", api_base_url="https://api.typesafe.dev", api_key="k"
-    )
-    assert local.provider_type is hosted.provider_type is ClassifierProviderType.TYPESAFE
+    assert cfg.find_classifier_provider("openai") is None
 
 
-def test_unknown_provider_type_rejected() -> None:
+def test_classifier_timeout_and_batch_bounds() -> None:
     with pytest.raises(ValueError):
-        ClassifierProviderConfig(name="bad", provider_type="openai")
-
-
-def test_timeout_and_batch_bounds() -> None:
+        ModelProviderConfig(name="x", provider_type="typesafe", timeout_seconds=0)
     with pytest.raises(ValueError):
-        ClassifierProviderConfig(name="x", timeout_seconds=0)
-    with pytest.raises(ValueError):
-        ClassifierProviderConfig(name="x", max_states_per_request=64)
+        ModelProviderConfig(name="x", provider_type="typesafe", max_states_per_request=64)
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +67,7 @@ def test_defaults_are_local_and_shadow() -> None:
     assert cfg.provider == "local-nanojev"
     assert cfg.shadow is True
     assert cfg.strict is False
-    assert cfg.min_confidence == 0.8
+    assert cfg.min_confidence == 0.75
     assert cfg.min_margin == 0.15
     assert cfg.suppress_min_confidence == 0.9
 
@@ -129,12 +133,12 @@ def test_choice_carries_confidence_where_noul_does_not() -> None:
 
 def test_default_config_ships_local_provider() -> None:
     cfg = SootheConfig()
-    names = [p.name for p in cfg.classifier_providers]
+    names = [p.name for p in cfg.providers]
     assert "local-nanojev" in names
     local = cfg.find_classifier_provider("local-nanojev")
     assert local is not None
     assert local.api_base_url == "http://127.0.0.1:8767"
-    assert local.provider_type is ClassifierProviderType.TYPESAFE
+    assert local.provider_type == "typesafe"
 
 
 def test_provider_kwargs_resolve_endpoint_and_limits() -> None:
@@ -145,7 +149,8 @@ def test_provider_kwargs_resolve_endpoint_and_limits() -> None:
     assert provider_type == "typesafe"
     assert kwargs["base_url"] == "http://127.0.0.1:8767"
     assert kwargs["api_key"] == "local-nanojev"
-    assert kwargs["timeout"] == 2.0
+    assert kwargs["model"] == "jev-latest"
+    assert kwargs["timeout"] == 5.0
     assert kwargs["max_states_per_request"] == 32
     # Decision parameters stay on `classifier`; kwargs only carry transport.
     assert "min_confidence" not in kwargs
@@ -157,13 +162,37 @@ def test_missing_provider_returns_none() -> None:
     assert cfg.classifier_provider_kwargs("does-not-exist") is None
 
 
+def test_provider_kwargs_apply_defaults_when_omitted() -> None:
+    """A bare typesafe entry without model/timeout/batch gets shared defaults."""
+    cfg = SootheConfig(
+        providers=[
+            ModelProviderConfig(
+                name="bare", provider_type="typesafe", api_base_url="http://127.0.0.1:9999"
+            ),
+        ],
+        classifier=ClassifierConfig(provider="bare"),
+    )
+    resolved = cfg.classifier_provider_kwargs()
+    assert resolved is not None
+    assert resolved[1]["model"] == "jev-latest"
+    assert resolved[1]["timeout"] == 5.0
+    assert resolved[1]["max_states_per_request"] == 32
+
+
 def test_switching_deployment_changes_only_the_reference() -> None:
     """Local ↔ hosted is a config change: add an entry, point at it."""
     cfg = SootheConfig(
-        classifier_providers=[
-            ClassifierProviderConfig(name="local-nanojev", api_base_url="http://127.0.0.1:8767"),
-            ClassifierProviderConfig(
-                name="hosted-jev", api_base_url="https://api.typesafe.dev", api_key="key"
+        providers=[
+            ModelProviderConfig(
+                name="local-nanojev",
+                provider_type="typesafe",
+                api_base_url="http://127.0.0.1:8767",
+            ),
+            ModelProviderConfig(
+                name="hosted-jev",
+                provider_type="typesafe",
+                api_base_url="https://api.typesafe.dev",
+                api_key="key",
             ),
         ],
         classifier=ClassifierConfig(enabled=True, provider="hosted-jev"),

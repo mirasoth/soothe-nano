@@ -13,8 +13,6 @@ from soothe_nano.config.env import (
 from soothe_nano.config.models import (
     AgentConfig,
     ClassifierConfig,
-    ClassifierProviderConfig,
-    ClassifierProviderType,
     ConsoleLoggingConfig,
     CoreAgentMiddlewareConfig,
     DurabilityProtocolConfig,
@@ -65,8 +63,6 @@ __all__ = [
     "_TOOL_ORCHESTRATION_GUIDE",
     "AgentConfig",
     "ClassifierConfig",
-    "ClassifierProviderConfig",
-    "ClassifierProviderType",
     "CoreAgentMiddlewareConfig",
     "ConsoleLoggingConfig",
     "DurabilityProtocolConfig",

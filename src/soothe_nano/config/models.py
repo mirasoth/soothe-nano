@@ -49,17 +49,28 @@ class UpdateConfig(BaseModel):
 class ModelProviderConfig(BaseModel):
     """Configuration for a single model provider.
 
+    One class serves both chat model providers and classifier backends. A
+    provider is a classifier backend when ``provider_type`` is ``"typesafe"``
+    (the TypeSafe ``/v1/systemone`` protocol); those entries use the `model`,
+    `timeout_seconds`, and `max_states_per_request` fields, which chat
+    providers ignore.
+
     Args:
         name: Provider name (e.g., `openai`, `openrouter`, `ollama`).
         api_base_url: Base URL for the provider's API endpoint.
         api_key: API key. Plain string or `${ENV_VAR}`.
         provider_type: Provider type for capability detection (`openai`,
-            `anthropic`, `ollama`, `custom`).
+            `anthropic`, `ollama`, `custom`), or `typesafe` for a classifier
+            backend.
         models: Model names available from this provider (documentation only).
         streaming: Whether to stream this provider's responses. Set to `False`
             for OpenAI-compatible servers whose streaming endpoint is broken.
         max_tokens: Default maximum generation tokens for this provider's chat
             completions (model-agnostic).
+        model: Single model identifier sent to a classifier backend.
+        timeout_seconds: Per-request timeout for a classifier backend.
+        max_states_per_request: Server-side batch cap for a classifier backend
+            (NanoJev: 32 states).
     """
 
     name: str
@@ -71,48 +82,12 @@ class ModelProviderConfig(BaseModel):
     """Whether to enable LangChain streaming for this provider."""
     max_tokens: int | None = None
     """Default max generation tokens for this provider (model-agnostic)."""
-
-
-class ClassifierProviderType(StrEnum):
-    """Wire-protocol category for classifier backends.
-
-    Mirrors :class:`~soothe_nano.llm.types.ProviderType` for chat models: the
-    value names an API *protocol*, not a deployment. Every server speaking
-    that protocol is configured as its own provider instance (different
-    ``name`` / ``api_base_url`` / ``api_key``), so hosted Jev and a local
-    gateway are two entries of the same type rather than two types.
-    """
-
-    TYPESAFE = "typesafe"
-    """TypeSafe `/v1/systemone` protocol: binary `Noul`, categorical `Choice`,
-    and ordinal `Score` questions answered with calibrated probabilities.
-    Covers hosted Jev and any compatible server (e.g. a local NanoJev
-    gateway fronting the same wire format)."""
-
-
-class ClassifierProviderConfig(BaseModel):
-    """Configuration for a single classifier backend.
-
-    Args:
-        name: Provider instance name, referenced by
-            :class:`ClassifierConfig.provider`.
-        provider_type: Wire protocol (currently only `typesafe`).
-        api_base_url: Base URL of the classifier endpoint.
-        api_key: API key. Plain string or `${ENV_VAR}`.
-        model: Model identifier sent to the endpoint.
-        timeout_seconds: Per-request timeout. Classification sits on the
-            tool-approval hot path, so this must stay small (the upstream
-            client default of 30s is far too long here).
-        max_states_per_request: Server-side batch cap (NanoJev: 32 states).
-    """
-
-    name: str
-    provider_type: ClassifierProviderType = ClassifierProviderType.TYPESAFE
-    api_base_url: str | None = None
-    api_key: str | None = None
-    model: str = "jev-latest"
-    timeout_seconds: float = Field(default=2.0, gt=0)
-    max_states_per_request: int = Field(default=32, ge=1, le=32)
+    model: str | None = None
+    """Single model identifier sent to a classifier backend."""
+    timeout_seconds: float | None = Field(default=None, gt=0)
+    """Per-request timeout for classifier backends."""
+    max_states_per_request: int | None = Field(default=None, ge=1, le=32)
+    """Server-side batch cap for classifier backends."""
 
 
 class ClassifierConfig(BaseModel):
@@ -135,7 +110,8 @@ class ClassifierConfig(BaseModel):
 
     Args:
         enabled: Whether classification is consulted at all.
-        provider: Name of a :class:`ClassifierProviderConfig` entry.
+        provider: Name of a `providers` entry whose `provider_type` is
+            `typesafe`.
         min_confidence: Minimum answer confidence to trust a verdict.
             Out-of-distribution inputs return diffuse distributions and
             therefore low confidence; below this the verdict is unusable and
@@ -157,7 +133,7 @@ class ClassifierConfig(BaseModel):
 
     enabled: bool = False
     provider: str = "local-nanojev"
-    min_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
     min_margin: float = Field(default=0.15, ge=0.0, le=1.0)
     suppress_min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
     max_calls_per_turn: int = Field(default=4, ge=1)

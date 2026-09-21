@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Merge classifier backends into `providers`: a backend is any entry with `provider_type: typesafe`. The standalone `classifier_providers` list is removed, so `classifier.provider` now names a `providers` entry.
+- Set classifier defaults to `min_confidence: 0.75` and a 5-second provider timeout.
+
 ## [1.2.30] - 2026-09-21
 
 ### Added
