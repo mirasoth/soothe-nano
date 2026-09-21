@@ -64,14 +64,12 @@ def default_router_profiles() -> list[RouterProfile]:
     ]
 
 
-def default_embedding_profile() -> list[EmbeddingProfile]:
+def default_embedding_profile() -> EmbeddingProfile:
     """Built-in embedding profile used when YAML omits `embedding_profile`."""
-    return [
-        EmbeddingProfile(
-            model_role="openai:text-embedding-3-small",
-            embedding_dims=1536,
-        )
-    ]
+    return EmbeddingProfile(
+        model_role="openai:text-embedding-3-small",
+        embedding_dims=1536,
+    )
 
 
 TYPESAFE_PROVIDER_TYPE = "typesafe"
@@ -242,7 +240,7 @@ class SootheConfig(BaseSettings):
     router_profiles: list[RouterProfile] = Field(default_factory=default_router_profiles)
     """Named router presets for chat/image/ocr roles."""
 
-    embedding_profile: list[EmbeddingProfile] = Field(default_factory=default_embedding_profile)
+    embedding_profile: EmbeddingProfile = Field(default_factory=default_embedding_profile)
     """Embedding model + vector dimensions (independent from router profile switching)."""
 
     active_router_profile: str = "default"
@@ -426,11 +424,8 @@ class SootheConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _apply_embedding_profile(self) -> SootheConfig:
-        """Apply the active embedding profile to `embedding_model` + `embedding_dims`."""
-        if not self.embedding_profile:
-            msg = "embedding_profile must contain at least one profile."
-            raise ValueError(msg)
-        profile = self.embedding_profile[0]
+        """Apply the embedding profile to `embedding_model` + `embedding_dims`."""
+        profile = self.embedding_profile
         object.__setattr__(self, "embedding_model", profile.model_role)
         object.__setattr__(self, "embedding_dims", profile.embedding_dims)
         return self

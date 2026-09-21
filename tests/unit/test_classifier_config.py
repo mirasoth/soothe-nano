@@ -61,11 +61,10 @@ def test_classifier_timeout_and_batch_bounds() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_defaults_are_local_and_shadow() -> None:
+def test_defaults_are_local() -> None:
     cfg = ClassifierConfig()
     assert cfg.enabled is False
     assert cfg.provider == "local-nanojev"
-    assert cfg.shadow is True
     assert cfg.strict is False
     assert cfg.min_confidence == 0.75
     assert cfg.min_margin == 0.15

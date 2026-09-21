@@ -113,9 +113,7 @@ class TestResolveModelSpecs:
                     "router": {"default": "dashscope:glm-5.2"},
                 }
             ],
-            embedding_profile=[
-                {"model_role": "dashscope:text-embedding-v4", "embedding_dims": 1536}
-            ],
+            embedding_profile={"model_role": "dashscope:text-embedding-v4", "embedding_dims": 1536},
         )
         assert cfg.resolve_model_specs("embedding") == ["dashscope:text-embedding-v4"]
 

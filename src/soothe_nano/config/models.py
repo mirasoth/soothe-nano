@@ -126,7 +126,6 @@ class ClassifierConfig(BaseModel):
             direction (run the audit, ask the operator) needs only
             `min_confidence`, because acting on a wrong suppression is more
             costly than doing the redundant work.
-        shadow: Record verdicts without changing any decision (calibration).
         strict: When true, untrusted or unavailable verdicts do not fall back
             to the caller's permissive default.
     """
@@ -137,7 +136,6 @@ class ClassifierConfig(BaseModel):
     min_margin: float = Field(default=0.15, ge=0.0, le=1.0)
     suppress_min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
     max_calls_per_turn: int = Field(default=4, ge=1)
-    shadow: bool = True
     strict: bool = False
 
     def trusted(self, confidence: float | None) -> bool:

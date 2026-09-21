@@ -28,7 +28,7 @@ async def check_models(config: Any | None = None) -> CategoryResult:
             checks=checks,
         )
 
-    embedding_profiles = getattr(config, "embedding_profile", None) or []
+    embedding_profile = getattr(config, "embedding_profile", None)
     resolve_model = getattr(config, "resolve_model", None)
     resolved = resolve_model("embedding") if callable(resolve_model) else None
     skillify = getattr(config, "skillify", None)
@@ -36,7 +36,7 @@ async def check_models(config: Any | None = None) -> CategoryResult:
     skillify_resolved = resolve_model(skillify_model_role) if callable(resolve_model) else None
     embedding_dims = getattr(config, "embedding_dims", None)
 
-    if not embedding_profiles:
+    if not embedding_profile:
         checks = [
             CheckResult(
                 name="embedding_role_configured",
@@ -64,7 +64,6 @@ async def check_models(config: Any | None = None) -> CategoryResult:
                 status=CheckStatus.OK,
                 message=f"Embedding role configured ({resolved})",
                 details={
-                    "embedding_profile_entries": len(embedding_profiles),
                     "skillify_model_role": skillify_model_role,
                     "skillify_resolved": skillify_resolved,
                     "embedding_dims": embedding_dims,
