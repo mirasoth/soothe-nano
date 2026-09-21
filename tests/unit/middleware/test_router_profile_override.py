@@ -31,7 +31,7 @@ def _config_with_two_profiles() -> SootheConfig:
                 },
             },
         ],
-        embedding_profile=[{"model_role": "dashscope:prod-embed", "embedding_dims": 768}],
+        embedding_profile={"model_role": "dashscope:prod-embed", "embedding_dims": 768},
         active_router_profile="production",
     )
 

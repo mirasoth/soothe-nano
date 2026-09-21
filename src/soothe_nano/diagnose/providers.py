@@ -50,11 +50,11 @@ def active_provider_names(config: Any) -> set[str]:
 
     _add(getattr(config, "embedding_model", None))
 
-    for entry in getattr(config, "embedding_profile", None) or []:
-        if isinstance(entry, dict):
-            _add(entry.get("model_role"))
-        else:
-            _add(getattr(entry, "model_role", None))
+    entry = getattr(config, "embedding_profile", None)
+    if isinstance(entry, dict):
+        _add(entry.get("model_role"))
+    elif entry is not None:
+        _add(getattr(entry, "model_role", None))
 
     return names
 

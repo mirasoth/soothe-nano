@@ -65,7 +65,7 @@ async def test_providers_only_configured() -> None:
         router=SimpleNamespace(default="openrouter:model"),
         active_router_profile="default",
         embedding_model=None,
-        embedding_profile=[],
+        embedding_profile=None,
     )
     result = await check_providers(cfg, live_llm=False)
     assert len(result.checks) == 1
@@ -92,7 +92,7 @@ async def test_providers_unused_env_ref_does_not_fail_category() -> None:
         ),
         active_router_profile="production",
         embedding_model="dashscope:text-embedding-v4",
-        embedding_profile=[],
+        embedding_profile=None,
     )
     result = await check_providers(cfg, live_llm=False)
     by_name = {c.name: c for c in result.checks}
@@ -115,7 +115,7 @@ async def test_providers_active_env_ref_fails_category() -> None:
         ),
         active_router_profile="agnes-eval",
         embedding_model=None,
-        embedding_profile=[],
+        embedding_profile=None,
     )
     result = await check_providers(cfg, live_llm=False)
     assert result.status == CheckStatus.ERROR
@@ -135,7 +135,7 @@ async def test_observability_skips_when_langfuse_disabled() -> None:
 @pytest.mark.asyncio
 async def test_embedding_role_warning_when_unset() -> None:
     config = SimpleNamespace(
-        embedding_profile=[],
+        embedding_profile=None,
         embedding_dims=1536,
         resolve_model=lambda role: "openai:gpt-4o-mini",
         skillify=SimpleNamespace(model_role="embedding"),
@@ -148,7 +148,7 @@ async def test_embedding_role_warning_when_unset() -> None:
 @pytest.mark.asyncio
 async def test_embedding_role_ok_when_configured() -> None:
     config = SimpleNamespace(
-        embedding_profile=[{"model_role": "dashscope:text-embedding-v4", "embedding_dims": 1024}],
+        embedding_profile={"model_role": "dashscope:text-embedding-v4", "embedding_dims": 1024},
         skillify=SimpleNamespace(model_role="embedding"),
         embedding_dims=1024,
         resolve_model=lambda role: (
