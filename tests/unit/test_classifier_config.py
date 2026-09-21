@@ -66,7 +66,7 @@ def test_defaults_are_local() -> None:
     assert cfg.enabled is False
     assert cfg.provider == "local-nanojev"
     assert cfg.strict is False
-    assert cfg.min_confidence == 0.75
+    assert cfg.min_confidence == 0.6
     assert cfg.min_margin == 0.15
     assert cfg.suppress_min_confidence == 0.9
 
