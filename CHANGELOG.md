@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `classifier` config block with shared decision parameters (`enabled`, `provider`, `min_confidence`, `min_margin`, `suppress_min_confidence`, `shadow`, `strict`) and a `classifier_providers` list, so a swappable calibrated-probability backend is configured once for nano internals and host consumers.
+- Add `classifier.suppress_min_confidence` (default 0.9): verdicts that suppress downstream work need a higher confidence than the fail-safe direction, since acting on a wrong suppression costs more than doing the redundant work.
+- Add `SootheConfig.classifier_provider_kwargs()` resolving the configured provider into transport kwargs, returning `None` when classification is unavailable.
+
+### Fixed
+- Gate classifier verdicts on `Choice` answers: binary `Noul` answers expose only a probability and carry no confidence, so they cannot be screened for distribution shift.
+
 ## [1.2.29] - 2026-09-19
 
 ### Added

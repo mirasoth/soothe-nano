@@ -18,6 +18,9 @@ from soothe_nano.config.env import (
 )
 from soothe_nano.config.models import (
     AgentConfig,
+    ClassifierConfig,
+    ClassifierProviderConfig,
+    ClassifierProviderType,
     ConsoleLoggingConfig,
     EmbeddingProfile,
     FilesystemMiddlewareConfig,
@@ -69,6 +72,23 @@ def default_embedding_profile() -> list[EmbeddingProfile]:
         EmbeddingProfile(
             model_role="openai:text-embedding-3-small",
             embedding_dims=1536,
+        )
+    ]
+
+
+def default_classifier_providers() -> list[ClassifierProviderConfig]:
+    """Built-in local TypeSafe-compatible gateway used when YAML omits the section.
+
+    Points at the local NanoJev gateway (see its DEPLOY.md) so the default
+    deployment never reaches a hosted endpoint. Hosted Jev is configured by
+    adding another entry and referencing it via `classifier.provider`.
+    """
+    return [
+        ClassifierProviderConfig(
+            name="local-nanojev",
+            provider_type=ClassifierProviderType.TYPESAFE,
+            api_base_url="http://127.0.0.1:8767",
+            api_key="local-nanojev",
         )
     ]
 
@@ -575,6 +595,19 @@ class SootheConfig(BaseSettings):
     vector_stores: list[VectorStoreProviderConfig] = Field(default_factory=default_vector_stores)
     """Vector store provider configurations."""
 
+    # --- Classifier config (calibrated-probability decisions) ---
+
+    classifier_providers: list[ClassifierProviderConfig] = Field(
+        default_factory=default_classifier_providers
+    )
+    """Classifier backend instances (TypeSafe wire protocol). Multiple entries
+    of the same `provider_type` differ only by endpoint and credentials, so
+    switching local ↔ hosted is a config change, never a code change."""
+
+    classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
+    """Shared classifier parameters: provider reference, confidence floor, and
+    the probability band that maps onto allow / escalate / reject."""
+
     vector_store_router: VectorStoreRouter = Field(default_factory=default_vector_store_router)
     """Maps component roles to provider:collection pairs."""
 
@@ -637,6 +670,71 @@ class SootheConfig(BaseSettings):
                 return self.resolve_postgres_dsn_for_database("checkpoints")
 
         return _resolve_env(self.persistence.soothe_postgres_dsn)
+
+    # --- Classifier helpers ---
+
+    def find_classifier_provider(self, provider_name: str) -> ClassifierProviderConfig | None:
+        """Find a classifier provider config by name.
+
+        Args:
+            provider_name: Provider instance name (`classifier.provider`).
+
+        Returns:
+            Provider config or None if not found.
+        """
+        for p in self.classifier_providers:
+            if p.name == provider_name:
+                return p
+        return None
+
+    def classifier_provider_kwargs(
+        self,
+        provider_name: str | None = None,
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Resolve a classifier provider into `(provider_type, kwargs)`.
+
+        Expands `${ENV_VAR}` placeholders for endpoint and credentials and
+        applies the shared `classifier` limits (timeout, batch cap).
+
+        Args:
+            provider_name: Provider instance name; defaults to
+                `classifier.provider`.
+
+        Returns:
+            `(provider_type_value, kwargs)` or `None` when the provider is
+            missing or its env placeholders cannot be resolved — callers
+            treat `None` as "classification unavailable" and fall back.
+        """
+        name = provider_name or self.classifier.provider
+        provider = self.find_classifier_provider(name)
+        if provider is None:
+            _logger.warning(
+                "Classifier provider '%s' not found in classifier_providers; "
+                "classification unavailable.",
+                name,
+            )
+            return None
+        api_base_url = None
+        if provider.api_base_url:
+            api_base_url = _resolve_provider_env(
+                provider.api_base_url,
+                provider_name=provider.name,
+                field_name="api_base_url",
+            )
+        api_key = None
+        if provider.api_key:
+            api_key = _resolve_provider_env(
+                provider.api_key,
+                provider_name=provider.name,
+                field_name="api_key",
+            )
+        return str(provider.provider_type), {
+            "base_url": api_base_url,
+            "api_key": api_key,
+            "model": provider.model,
+            "timeout": provider.timeout_seconds,
+            "max_states_per_request": provider.max_states_per_request,
+        }
 
     # --- Vector store helpers ---
 
