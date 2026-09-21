@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -70,6 +71,122 @@ class ModelProviderConfig(BaseModel):
     """Whether to enable LangChain streaming for this provider."""
     max_tokens: int | None = None
     """Default max generation tokens for this provider (model-agnostic)."""
+
+
+class ClassifierProviderType(StrEnum):
+    """Wire-protocol category for classifier backends.
+
+    Mirrors :class:`~soothe_nano.llm.types.ProviderType` for chat models: the
+    value names an API *protocol*, not a deployment. Every server speaking
+    that protocol is configured as its own provider instance (different
+    ``name`` / ``api_base_url`` / ``api_key``), so hosted Jev and a local
+    gateway are two entries of the same type rather than two types.
+    """
+
+    TYPESAFE = "typesafe"
+    """TypeSafe `/v1/systemone` protocol: binary `Noul`, categorical `Choice`,
+    and ordinal `Score` questions answered with calibrated probabilities.
+    Covers hosted Jev and any compatible server (e.g. a local NanoJev
+    gateway fronting the same wire format)."""
+
+
+class ClassifierProviderConfig(BaseModel):
+    """Configuration for a single classifier backend.
+
+    Args:
+        name: Provider instance name, referenced by
+            :class:`ClassifierConfig.provider`.
+        provider_type: Wire protocol (currently only `typesafe`).
+        api_base_url: Base URL of the classifier endpoint.
+        api_key: API key. Plain string or `${ENV_VAR}`.
+        model: Model identifier sent to the endpoint.
+        timeout_seconds: Per-request timeout. Classification sits on the
+            tool-approval hot path, so this must stay small (the upstream
+            client default of 30s is far too long here).
+        max_states_per_request: Server-side batch cap (NanoJev: 32 states).
+    """
+
+    name: str
+    provider_type: ClassifierProviderType = ClassifierProviderType.TYPESAFE
+    api_base_url: str | None = None
+    api_key: str | None = None
+    model: str = "jev-latest"
+    timeout_seconds: float = Field(default=2.0, gt=0)
+    max_states_per_request: int = Field(default=32, ge=1, le=32)
+
+
+class ClassifierConfig(BaseModel):
+    """Calibrated-probability classifier configuration.
+
+    Shared by every consumer of the classifier — the host tool-approval gate
+    and (future) nano internals that replace LLM round trips with local
+    classification. Thresholds live here, not in each consumer, so a
+    deployment calibrates once.
+
+    A calibrated probability is only meaningful inside the endpoint's
+    training distribution: `min_confidence` gates whether a verdict is
+    trusted at all, and the two band thresholds map the trusted probability
+    onto allow / escalate / reject.
+
+    Consumers ask categorical (`Choice`) questions so each answer carries a
+    selected label, the full probability distribution, and a confidence
+    score. Binary (`Noul`) answers expose only a probability — they carry no
+    confidence, so they cannot be gated for distribution shift.
+
+    Args:
+        enabled: Whether classification is consulted at all.
+        provider: Name of a :class:`ClassifierProviderConfig` entry.
+        min_confidence: Minimum answer confidence to trust a verdict.
+            Out-of-distribution inputs return diffuse distributions and
+            therefore low confidence; below this the verdict is unusable and
+            the caller falls back to its deterministic behaviour.
+        min_margin: Minimum gap between the top two label probabilities.
+            Near-ties indicate the endpoint cannot separate the options and
+            are escalated rather than acted on.
+        max_calls_per_turn: Cap on classified subjects per decision turn.
+        suppress_min_confidence: Confidence floor for a verdict that
+            *suppresses* downstream work — skipping a coverage audit, letting
+            a call through unchallenged. Asymmetric by design: the fail-safe
+            direction (run the audit, ask the operator) needs only
+            `min_confidence`, because acting on a wrong suppression is more
+            costly than doing the redundant work.
+        shadow: Record verdicts without changing any decision (calibration).
+        strict: When true, untrusted or unavailable verdicts do not fall back
+            to the caller's permissive default.
+    """
+
+    enabled: bool = False
+    provider: str = "local-nanojev"
+    min_confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+    min_margin: float = Field(default=0.15, ge=0.0, le=1.0)
+    suppress_min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+    max_calls_per_turn: int = Field(default=4, ge=1)
+    shadow: bool = True
+    strict: bool = False
+
+    def trusted(self, confidence: float | None) -> bool:
+        """Whether an answer's confidence clears the distribution-shift floor.
+
+        Args:
+            confidence: Answer confidence, or `None` when the endpoint omits
+                it (treated as usable — absence is not evidence of drift).
+        """
+        if confidence is None:
+            return True
+        return confidence >= self.min_confidence
+
+    def decisive(self, probabilities: Mapping[str, float] | None) -> bool:
+        """Whether the top label leads the runner-up by `min_margin`.
+
+        Args:
+            probabilities: Per-label probability distribution, or `None`.
+        """
+        if not probabilities:
+            return True
+        ordered = sorted((float(p) for p in probabilities.values()), reverse=True)
+        if len(ordered) < 2:
+            return True
+        return (ordered[0] - ordered[1]) >= self.min_margin
 
 
 class VectorStoreProviderConfig(BaseModel):
