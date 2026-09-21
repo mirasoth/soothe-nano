@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-21
+
+### Changed
+- Flatten `embedding_profile` from a list to a single `EmbeddingProfile` scalar on `SootheConfig`: YAML configs that passed a one-element list must now pass the profile object directly. The `_apply_embedding_profile` validator reads the scalar instead of indexing `[0]`.
+- Remove `ClassifierConfig.shadow` field and its docstring entry — verdicts always apply now; calibration-only recording is gone.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.31...v1.3.0
+
 ## [1.2.31] - 2026-09-21
 
 ### Changed
