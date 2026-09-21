@@ -132,7 +132,7 @@ class ClassifierConfig(BaseModel):
 
     enabled: bool = False
     provider: str = "local-nanojev"
-    min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
+    min_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
     min_margin: float = Field(default=0.15, ge=0.0, le=1.0)
     suppress_min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
     max_calls_per_turn: int = Field(default=4, ge=1)
