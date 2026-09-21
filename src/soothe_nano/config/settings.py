@@ -19,8 +19,6 @@ from soothe_nano.config.env import (
 from soothe_nano.config.models import (
     AgentConfig,
     ClassifierConfig,
-    ClassifierProviderConfig,
-    ClassifierProviderType,
     ConsoleLoggingConfig,
     EmbeddingProfile,
     FilesystemMiddlewareConfig,
@@ -76,17 +74,26 @@ def default_embedding_profile() -> list[EmbeddingProfile]:
     ]
 
 
-def default_classifier_providers() -> list[ClassifierProviderConfig]:
-    """Built-in local TypeSafe-compatible gateway used when YAML omits the section.
+TYPESAFE_PROVIDER_TYPE = "typesafe"
+"""`ModelProviderConfig.provider_type` value that marks a classifier backend."""
+
+DEFAULT_CLASSIFIER_MODEL = "jev-latest"
+DEFAULT_CLASSIFIER_TIMEOUT_SECONDS = 5.0
+DEFAULT_CLASSIFIER_MAX_STATES = 32
+
+
+def default_providers() -> list[ModelProviderConfig]:
+    """Built-in local TypeSafe gateway used when YAML omits the `providers` list.
 
     Points at the local NanoJev gateway (see its DEPLOY.md) so the default
     deployment never reaches a hosted endpoint. Hosted Jev is configured by
-    adding another entry and referencing it via `classifier.provider`.
+    adding another `provider_type: typesafe` entry and referencing it via
+    `classifier.provider`.
     """
     return [
-        ClassifierProviderConfig(
+        ModelProviderConfig(
             name="local-nanojev",
-            provider_type=ClassifierProviderType.TYPESAFE,
+            provider_type=TYPESAFE_PROVIDER_TYPE,
             api_base_url="http://127.0.0.1:8767",
             api_key="local-nanojev",
         )
@@ -228,8 +235,9 @@ class SootheConfig(BaseSettings):
 
     # --- Multi-provider model config ---
 
-    providers: list[ModelProviderConfig] = Field(default_factory=list)
-    """Model provider configurations."""
+    providers: list[ModelProviderConfig] = Field(default_factory=default_providers)
+    """Model provider configurations. Classifier backends are entries with
+    `provider_type: typesafe`; the chat-model router ignores them."""
 
     router_profiles: list[RouterProfile] = Field(default_factory=default_router_profiles)
     """Named router presets for chat/image/ocr roles."""
@@ -597,13 +605,6 @@ class SootheConfig(BaseSettings):
 
     # --- Classifier config (calibrated-probability decisions) ---
 
-    classifier_providers: list[ClassifierProviderConfig] = Field(
-        default_factory=default_classifier_providers
-    )
-    """Classifier backend instances (TypeSafe wire protocol). Multiple entries
-    of the same `provider_type` differ only by endpoint and credentials, so
-    switching local ↔ hosted is a config change, never a code change."""
-
     classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     """Shared classifier parameters: provider reference, confidence floor, and
     the probability band that maps onto allow / escalate / reject."""
@@ -673,17 +674,17 @@ class SootheConfig(BaseSettings):
 
     # --- Classifier helpers ---
 
-    def find_classifier_provider(self, provider_name: str) -> ClassifierProviderConfig | None:
-        """Find a classifier provider config by name.
+    def find_classifier_provider(self, provider_name: str) -> ModelProviderConfig | None:
+        """Find a classifier provider (a `provider_type: typesafe` entry) by name.
 
         Args:
             provider_name: Provider instance name (`classifier.provider`).
 
         Returns:
-            Provider config or None if not found.
+            Provider config or None if not found or not a classifier backend.
         """
-        for p in self.classifier_providers:
-            if p.name == provider_name:
+        for p in self.providers:
+            if p.provider_type == TYPESAFE_PROVIDER_TYPE and p.name == provider_name:
                 return p
         return None
 
@@ -709,9 +710,10 @@ class SootheConfig(BaseSettings):
         provider = self.find_classifier_provider(name)
         if provider is None:
             _logger.warning(
-                "Classifier provider '%s' not found in classifier_providers; "
-                "classification unavailable.",
+                "Classifier provider '%s' not found among providers (provider_type "
+                "'%s'); classification unavailable.",
                 name,
+                TYPESAFE_PROVIDER_TYPE,
             )
             return None
         api_base_url = None
@@ -728,12 +730,14 @@ class SootheConfig(BaseSettings):
                 provider_name=provider.name,
                 field_name="api_key",
             )
-        return str(provider.provider_type), {
+        return TYPESAFE_PROVIDER_TYPE, {
             "base_url": api_base_url,
             "api_key": api_key,
-            "model": provider.model,
-            "timeout": provider.timeout_seconds,
-            "max_states_per_request": provider.max_states_per_request,
+            "model": provider.model or DEFAULT_CLASSIFIER_MODEL,
+            "timeout": provider.timeout_seconds or DEFAULT_CLASSIFIER_TIMEOUT_SECONDS,
+            "max_states_per_request": (
+                provider.max_states_per_request or DEFAULT_CLASSIFIER_MAX_STATES
+            ),
         }
 
     # --- Vector store helpers ---
