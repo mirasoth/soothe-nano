@@ -22,6 +22,10 @@ from soothe_sdk.core.verbosity import VerbosityTier
 StreamChunk = tuple[tuple[str, ...], str, Any]
 """Deepagents-canonical stream chunk: `(namespace, mode, data)`."""
 
+# Event type constants for nano-owned protocol events.
+MODEL_FALLBACK = "soothe.cognition.llm.model_fallback"
+LLM_PERSISTENT_RETRY = "soothe.cognition.llm.persistent_retry"
+
 
 def custom_event(data: dict[str, Any]) -> StreamChunk:
     """Build a soothe protocol custom event chunk."""
@@ -45,6 +49,41 @@ class LLMRetryAttemptEvent(LifecycleEvent):
     max_attempts: int
     error_type: str
     thread_id: str | None = None
+
+
+class ModelFallbackEvent(LifecycleEvent):
+    """Model fallback triggered after repeated capacity errors.
+
+    Emitted by ``PersistentRetryRunner`` when the model is switched to a
+    fallback after ``fallback_model_threshold`` consecutive 529/overloaded
+    errors. Carries enough context for downstream consumers (TUI, daemon
+    health) to surface the degradation.
+    """
+
+    type: Literal["soothe.cognition.llm.model_fallback"] = "soothe.cognition.llm.model_fallback"
+    from_model: str = ""
+    to_model: str = ""
+    to_role: str | None = None
+    consecutive_capacity_errors: int = 0
+    thread_id: str | None = None
+
+
+class LLMPersistentRetryEvent(LifecycleEvent):
+    """Persistent retry attempt event for 24/7 resilience visibility.
+
+    Emitted by ``PersistentRetryRunner`` on each persistent-retry backoff
+    cycle so the daemon and TUI can surface ongoing retry activity during
+    provider capacity cascades.
+    """
+
+    type: Literal["soothe.cognition.llm.persistent_retry"] = "soothe.cognition.llm.persistent_retry"
+    attempt: int
+    error_type: str
+    backoff_seconds: float = 0.0
+    elapsed_seconds: float = 0.0
+    total_cap_seconds: float = 0.0
+    thread_id: str | None = None
+    query_source: str = ""
 
 
 class MemoryRecalledEvent(ProtocolEvent):
@@ -86,6 +125,18 @@ register_event(
     summary_template="LLM retry {attempt}/{max_attempts} ({error_type})",
     priority=EventPriority.HIGH,
 )
+register_event(
+    ModelFallbackEvent,
+    verbosity=VerbosityTier.NORMAL,
+    summary_template="Model fallback: {from_model} → {to_model} ({consecutive_capacity_errors} capacity errors)",
+    priority=EventPriority.HIGH,
+)
+register_event(
+    LLMPersistentRetryEvent,
+    verbosity=VerbosityTier.INTERNAL,
+    summary_template="Persistent retry #{attempt} ({error_type}) backoff={backoff_seconds:.1f}s",
+    priority=EventPriority.NORMAL,
+)
 register_event(MemoryRecalledEvent, summary_template="{count} items recalled")
 register_event(MemoryStoredEvent, summary_template="Stored memory: {id}")
 register_event(PolicyDeniedEvent, summary_template="Denied: {reason}")
@@ -103,9 +154,13 @@ __all__ = [
     "EventMeta",
     "EventPriority",
     "EventRegistry",
+    "LLM_PERSISTENT_RETRY",
+    "LLMPersistentRetryEvent",
     "LLMRetryAttemptEvent",
+    "MODEL_FALLBACK",
     "MemoryRecalledEvent",
     "MemoryStoredEvent",
+    "ModelFallbackEvent",
     "PolicyDeniedEvent",
     "StreamChunk",
     "StreamEndEvent",
