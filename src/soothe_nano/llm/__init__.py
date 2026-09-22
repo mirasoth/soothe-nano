@@ -14,6 +14,7 @@ from soothe_nano.llm.exceptions import ContentPolicyError, LLMError, StructuredO
 from soothe_nano.llm.factory import LLMFactory
 from soothe_nano.llm.invoke_policy import (
     EnhancedTimeoutError,
+    PersistentRetryRunner,
     await_with_llm_call_policy,
     llm_rate_limit_config_from,
     run_with_llm_call_policy_sync,
@@ -95,6 +96,7 @@ __all__ = [
     "extract_token_counts_from_llm_result",
     # Invoke policy
     "EnhancedTimeoutError",
+    "PersistentRetryRunner",
     "await_with_llm_call_policy",
     "llm_rate_limit_config_from",
     "run_with_llm_call_policy_sync",

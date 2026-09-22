@@ -314,6 +314,37 @@ def build_soothe_middleware_stack(
             llm_rl.respect_retry_after_header,
             llm_rl.rate_limit_retry_timeout_seconds,
         )
+
+        # 15b. Persistent retry wrapper — resilience layer
+        # Wraps LLMRateLimitMiddleware to add indefinite retry with heartbeat
+        # for 429/529/transient-connection errors, query-source discrimination,
+        # model fallback on repeated capacity errors, and stale-connection
+        # recovery.
+        if llm_rl.persistent_retry_enabled:
+            from soothe_nano.llm.invoke_policy import PersistentRetryRunner
+
+            persistent_runner = PersistentRetryRunner(
+                config=llm_rl,
+                fallback_model=llm_rl.fallback_model,
+                fallback_model_role=llm_rl.fallback_model_role,
+                fallback_model_threshold=llm_rl.fallback_model_threshold,
+                query_source_discrimination=llm_rl.query_source_discrimination_enabled,
+                stale_connection_recovery=llm_rl.stale_connection_recovery_enabled,
+            )
+            stack.append(persistent_runner)
+            logger.info(
+                "[Middleware] Persistent retry enabled: max_backoff=%.0fs "
+                "total_cap=%.0fs fallback_model=%s fallback_role=%s "
+                "fallback_threshold=%d query_source_discrimination=%s "
+                "stale_connection_recovery=%s",
+                llm_rl.persistent_retry_max_backoff_seconds,
+                llm_rl.persistent_retry_total_cap_seconds,
+                llm_rl.fallback_model or "none",
+                llm_rl.fallback_model_role or "none",
+                llm_rl.fallback_model_threshold,
+                llm_rl.query_source_discrimination_enabled,
+                llm_rl.stale_connection_recovery_enabled,
+            )
     else:
         logger.debug("[Middleware] LLM rate limiting disabled")
 

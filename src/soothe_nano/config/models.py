@@ -876,6 +876,27 @@ class ToolRetryConfig(BaseModel):
     initial_delay: float = Field(default=1.0, ge=0, description="Initial delay in seconds")
 
 
+class QuerySource(StrEnum):
+    """Origin of an LLM invocation within the agent graph.
+
+    Used by query-source discrimination to decide whether a capacity
+    error should trigger persistent retry or bail immediately.
+
+    Members:
+        main_loop: Primary agent reasoning loop — foreground, retries on 529.
+        compact: Context compaction pass — background, bails on 529.
+        summary: Conversation summarisation pass — background, bails on 529.
+        clarification: User clarification round-trip — foreground, retries on 529.
+        subagent: Delegated subagent invocation — foreground, retries on 529.
+    """
+
+    main_loop = "main_loop"
+    compact = "compact"
+    summary = "summary"
+    clarification = "clarification"
+    subagent = "subagent"
+
+
 class LLMRateLimitConfig(BaseModel):
     """LLM rate limiting, timeout, and retry configuration.
 
@@ -898,6 +919,29 @@ class LLMRateLimitConfig(BaseModel):
         rate_limit_backoff_max: Maximum backoff wait in seconds.
         respect_retry_after_header: Use retry-after header from API when present.
         rate_limit_retry_timeout_seconds: Per-attempt timeout after a 429 (shorter than normal calls).
+        persistent_retry_enabled: Enable indefinite persistent retry on 429/529
+            and transient-connection errors with exponential backoff. Intended
+            for 24/7 autopilot mode; off by default for interactive sessions.
+        persistent_retry_max_backoff_seconds: Per-attempt backoff ceiling in
+            seconds. Capped at 300 (5 min) regardless of caller override.
+        persistent_retry_total_cap_seconds: Hard wall-clock ceiling for the
+            entire persistent-retry sequence. Capped at 21600 (6 hr).
+        query_source_discrimination_enabled: When true, graph invocations are
+            tagged with a ``QuerySource`` and background sources (compact,
+            summary) bail immediately on 529 instead of amplifying retries.
+        fallback_model: Model spec string to switch to after
+            ``fallback_model_threshold`` consecutive 529/overloaded errors.
+            ``None`` disables model-spec fallback.
+        fallback_model_role: Model router role (e.g. 'fast') to resolve the
+            fallback model from the configured ``ModelRouter``. Takes
+            precedence over ``fallback_model`` when both are set; the role
+            path is preferred because it reuses the router's provider/model
+            mapping and caching. Set to ``None`` to disable role-based fallback.
+        fallback_model_threshold: Consecutive 529/overloaded errors before
+            switching to ``fallback_model``.
+        stale_connection_recovery_enabled: When true, ECONNRESET/EPIPE/
+            ConnectionResetError triggers HTTP keep-alive disable and a fresh
+            client/connection for the next retry attempt.
     """
 
     enabled: bool = Field(
@@ -952,6 +996,71 @@ class LLMRateLimitConfig(BaseModel):
         ge=10,
         le=600,
         description="Per-attempt timeout for LLM calls after HTTP 429 (seconds)",
+    )
+
+    # Persistent retry with heartbeat
+    persistent_retry_enabled: bool = Field(
+        default=False,
+        description=(
+            "Retry 429/529/transient-connection errors indefinitely with "
+            "exponential backoff and heartbeat events. Off by default for "
+            "interactive sessions; enable for 24/7 autopilot."
+        ),
+    )
+    persistent_retry_max_backoff_seconds: float = Field(
+        default=300.0,
+        ge=1.0,
+        le=300.0,
+        description="Per-attempt backoff ceiling (seconds, capped at 300)",
+    )
+    persistent_retry_total_cap_seconds: float = Field(
+        default=21600.0,
+        ge=60.0,
+        le=21600.0,
+        description="Hard wall-clock ceiling for persistent retry (seconds, capped at 21600)",
+    )
+
+    # Foreground/background query-source discrimination
+    query_source_discrimination_enabled: bool = Field(
+        default=False,
+        description=(
+            "Tag graph invocations with a QuerySource; background sources "
+            "(compact, summary) bail immediately on 529 without retry."
+        ),
+    )
+
+    # Model fallback on repeated capacity errors
+    fallback_model: str | None = Field(
+        default=None,
+        description=(
+            "Model spec to switch to after fallback_model_threshold "
+            "consecutive 529/overloaded errors. None disables fallback."
+        ),
+    )
+    fallback_model_role: ModelRole | None = Field(
+        default="fast",
+        description=(
+            "Model router role to resolve the fallback model from (e.g. "
+            "'fast' for a cheap/fast model). When set, the fallback model is "
+            "created via the router role instead of a raw spec string. "
+            "Ignored when fallback_model is set. Set to None to disable "
+            "role-based fallback."
+        ),
+    )
+    fallback_model_threshold: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Consecutive 529/overloaded errors before model fallback",
+    )
+
+    # Stale-connection detection and recovery
+    stale_connection_recovery_enabled: bool = Field(
+        default=False,
+        description=(
+            "Detect ECONNRESET/EPIPE/ConnectionResetError and disable HTTP "
+            "keep-alive for the retry with a fresh client/connection."
+        ),
     )
 
 

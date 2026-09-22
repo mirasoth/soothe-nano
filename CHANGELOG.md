@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `PersistentRetryRunner` middleware wrapper that retries 429/529/transient-connection errors with exponential backoff (capped at 5 min/attempt, 6 hr total), yielding heartbeat events during backoff sleeps so the daemon sees periodic activity.
+- Add `QuerySource` enum and query-source discrimination: background sources (compact, summary) bail immediately on 529 capacity errors instead of amplifying gateway load.
+- Add model fallback on repeated capacity errors: after a configurable threshold of consecutive 529/overloaded errors, switch to a fallback model resolved via `fallback_model_role` (router role like `"fast"`) or `fallback_model` (raw spec string).
+- Add stale-connection recovery: detect `ECONNRESET`/`EPIPE`/`ConnectionResetError`/`BrokenPipeError`, disable HTTP keep-alive, and retry with a fresh connection.
+- Add `ModelFallbackEvent` and `LLMPersistentRetryEvent` protocol events emitted via `stream_writer` during persistent retry cycles.
+
 ## [1.3.0] - 2026-09-21
 
 ### Changed
