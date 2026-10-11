@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-10-11
+
 ### Fixed
 - Fix `run_python` REPL corrupting `sys.stderr` when user code redirects it (e.g. to capture pytest output) and the tool times out: the in-process REPL now saves/restores both `sys.stdout` and `sys.stderr` in its `finally` block, preventing a closed-file `ValueError` from cascading into step failures via `SkillActivationMiddleware` logging.
 - Make `SkillIndex._parse_skill_dir` resilient to exceptions from `parse_skill_metadata` (including logging-infrastructure failures): malformed skills now produce a debug log and are skipped instead of crashing the calling step.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.3.1...v1.3.2
 
 ## [1.3.1] - 2026-09-23
 
