@@ -268,3 +268,37 @@ def test_dedup_uses_frontmatter_name_not_directory_name(tmp_path: Path) -> None:
     assert len(entries) == 1
     assert entries[0].name == "shared"
     assert entries[0].description == "from-soothe"
+
+
+def test_parse_skill_dir_swallows_parse_metadata_exception(tmp_path: Path) -> None:
+    """A skill whose parse_skill_metadata raises must not crash rebuild."""
+    root = tmp_path / "skills"
+    root.mkdir()
+    _make_skill(root, "good-skill")
+    _make_skill(root, "bad-skill")
+
+    index = SkillIndex()
+
+    real_parse = None
+
+    def _side_effect(text, path, dir_name):
+        nonlocal real_parse
+        if real_parse is None:
+            from soothe_deepagents.middleware.skills import _parse_skill_metadata
+
+            real_parse = _parse_skill_metadata
+        if dir_name == "bad-skill":
+            raise ValueError("I/O operation on closed file.")
+        return real_parse(text, path, dir_name)
+
+    import soothe_deepagents.middleware.skills as sdm
+
+    with (
+        patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)),
+        patch.object(sdm, "parse_skill_metadata", side_effect=_side_effect),
+    ):
+        entries = index.rebuild_if_stale()
+
+    names = [e.name for e in entries]
+    assert "good-skill" in names
+    assert "bad-skill" not in names
