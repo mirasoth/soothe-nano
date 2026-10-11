@@ -181,7 +181,11 @@ class SkillIndex:
         except OSError:
             return None
 
-        meta = parse_skill_metadata(text, str(md_file), skill_dir.name)
+        try:
+            meta = parse_skill_metadata(text, str(md_file), skill_dir.name)
+        except Exception:
+            logger.debug("parse_skill_metadata raised for %s", md_file, exc_info=True)
+            return None
         if meta is None:
             return None
 

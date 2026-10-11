@@ -725,18 +725,25 @@ class _SoothePythonREPL:
         self.locals: dict[str, Any] | None = None
 
     def run(self, command: str) -> str:
-        """Execute ``command`` and return captured stdout (or ``repr(exc)``)."""
+        """Execute ``command`` and return captured stdout/stderr (or ``repr(exc)``)."""
         from io import StringIO
 
         old_stdout = sys.stdout
-        sys.stdout = buf = StringIO()
+        old_stderr = sys.stderr
+        sys.stdout = out_buf = StringIO()
+        sys.stderr = err_buf = StringIO()
         try:
             exec(_sanitize_python_repl_input(command), self.globals, self.locals)  # noqa: S102
-            return buf.getvalue()
+            result = out_buf.getvalue()
+            err = err_buf.getvalue()
+            if err:
+                result = f"{result}\n{err}" if result else err
+            return result
         except Exception as exc:
             return repr(exc)
         finally:
             sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
 
 def _soothe_python_repl() -> _SoothePythonREPL:

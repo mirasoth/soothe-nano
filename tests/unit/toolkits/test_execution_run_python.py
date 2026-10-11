@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -39,3 +40,26 @@ async def test_run_python_arun_uses_executor() -> None:
     with patch("soothe_nano.toolkits.execution.run_in_executor", side_effect=fake_executor):
         result = await tool._arun(code="print(42)")
     assert "42" in str(result)
+
+
+def test_run_python_restores_stderr_after_user_code_redirects_it() -> None:
+    """User code that reassigns sys.stderr must not corrupt the host process."""
+    tool = RunPythonREPLTool()
+    original_stderr = sys.stderr
+    tool._run(code="import sys, io; sys.stderr = io.StringIO(); print('hi')")
+    assert sys.stderr is original_stderr
+
+
+def test_run_python_captures_stderr_output() -> None:
+    """Content written to stderr inside the REPL should appear in the result."""
+    tool = RunPythonREPLTool()
+    out = tool._run(code="import sys; sys.stderr.write('warn-msg\\n')")
+    assert "warn-msg" in str(out)
+
+
+def test_run_python_restores_stderr_on_exception() -> None:
+    """sys.stderr must be restored even when user code raises."""
+    tool = RunPythonREPLTool()
+    original_stderr = sys.stderr
+    tool._run(code="import sys, io; sys.stderr = io.StringIO(); raise ValueError('boom')")
+    assert sys.stderr is original_stderr
