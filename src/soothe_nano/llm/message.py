@@ -242,6 +242,11 @@ def lc_from_litellm_message(message: Any) -> AIMessage:
 
     Maps native `tool_calls` (`Function(name, arguments)`) to the langchain
     `tool_calls` list-of-dicts shape the agent graph and executor read.
+
+    Preserves native reasoning tokens (``reasoning_content``) that some
+    models (GLM, DeepSeek, Qwen) emit as a separate field on the response
+    message, forwarding them via ``additional_kwargs`` so the TUI reasoning
+    branch can display them.
     """
     content = getattr(message, "content", "") or ""
     tcs = getattr(message, "tool_calls", None) or []
@@ -264,7 +269,16 @@ def lc_from_litellm_message(message: Any) -> AIMessage:
             args = {}
         tc_id = getattr(tc, "id", "") or (tc.get("id", "") if isinstance(tc, dict) else "")
         tool_calls.append({"name": name, "args": args, "id": tc_id, "type": "tool_call"})
-    return AIMessage(content=content, tool_calls=tool_calls)
+    # Preserve native reasoning_content (GLM/DeepSeek/Qwen) for the TUI reasoning branch.
+    rc = getattr(message, "reasoning_content", None) or getattr(message, "reasoning", None)
+    additional_kwargs: dict[str, Any] = {}
+    if rc:
+        additional_kwargs["reasoning_content"] = str(rc)
+    return AIMessage(
+        content=content,
+        tool_calls=tool_calls,
+        additional_kwargs=additional_kwargs,
+    )
 
 
 def _json_dumps(obj: Any) -> str:

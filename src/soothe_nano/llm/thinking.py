@@ -1,10 +1,13 @@
 """Thinking-token filter for local-model LLM output.
 
 Strips inline thinking blocks so reasoning tokens never surface to the
-agent/UI, while logging stripped content at `DEBUG` first so it stays
-inspectable. `strip_thinking` handles complete blocks in a fully-assembled
-string; `ThinkingStreamFilter` handles streaming chunks with partial-tag
-buffering.
+agent/UI as visible content, while capturing stripped content so it can be
+forwarded to the TUI reasoning branch. ``strip_thinking`` handles complete
+blocks in a fully-assembled string; ``ThinkingStreamFilter`` handles
+streaming chunks with partial-tag buffering.
+
+Captured reasoning is available via :attr:`ThinkingStreamFilter.captured_reasoning`
+and :func:`strip_thinking` returns it via the optional ``capture_sink`` callback.
 """
 
 from __future__ import annotations
@@ -24,8 +27,9 @@ _THINK_OPEN_RE = re.compile(r"<(thinking|reasoning|think)>", re.IGNORECASE)
 _THINK_CLOSE_RE = re.compile(r"</(?:thinking|reasoning|think)>", re.IGNORECASE)
 
 # Complete block (open + content + matching close) for stateless stripping.
+# Group 1 = tag variant, group 2 = inner content (for capture_sink).
 _THINK_BLOCK_RE = re.compile(
-    r"<(thinking|reasoning|think)>.*?</\1>",
+    r"<(thinking|reasoning|think)>(.*?)</\1>",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -39,17 +43,25 @@ _OPEN_TAGS_LOWER: tuple[str, ...] = ("<think>", "<thinking>", "<reasoning>")
 
 
 def _resolve_logger(log: Logger | None) -> Logger:
-    """Return *log* or the module logger when *log* is `None`."""
+    """Return *log* or the module logger when *log* is ``None``."""
     return log if log is not None else logger
 
 
-def strip_thinking(text: str, *, logger: Logger | None = None) -> str:
-    """Remove complete `<think>...</think>` blocks from *text*.
+def strip_thinking(
+    text: str,
+    *,
+    logger: Logger | None = None,
+    capture_sink: list[str] | None = None,
+) -> str:
+    """Remove complete ``<think>...</think>`` blocks from *text*.
 
-    Matches `<think>`, `<thinking>`, and `<reasoning>` variants
+    Matches ``<think>``, ``<thinking>``, and ``<reasoning>`` variants
     (case-insensitive; content may span newlines). Each extracted thinking
-    block is logged at `DEBUG` via *logger* (or the module logger) **before**
+    block is logged at ``DEBUG`` via *logger* (or the module logger) **before**
     removal, so the hidden reasoning remains recoverable from debug logs.
+
+    When *capture_sink* is a list, each stripped block's inner text (without
+    tags) is appended so callers can forward reasoning to the TUI.
 
     Only complete blocks (open + matching close) are removed; an unterminated
     opening tag is left untouched here -- streaming truncation is handled by
@@ -68,6 +80,9 @@ def strip_thinking(text: str, *, logger: Logger | None = None) -> str:
             len(block),
             block,
         )
+        if capture_sink is not None:
+            inner = match.group(2) if match.lastindex and match.lastindex >= 2 else ""
+            capture_sink.append(inner)
         return ""
 
     return _THINK_BLOCK_RE.sub(_record, text)
@@ -77,10 +92,14 @@ class ThinkingStreamFilter:
     """Stateful filter that strips thinking tags from a stream of text chunks.
 
     Feed each arriving content chunk through :meth:`feed` and emit the returned
-    text to the consumer. Partial `<think` / `</think` (and `<thinking>`,
-    `<reasoning>`) fragments that arrive split across chunk boundaries are
+    text to the consumer. Partial ``<think`` / ``</think`` (and ``<thinking>``,
+    ``<reasoning>``) fragments that arrive split across chunk boundaries are
     buffered until the tag completes or is ruled out, so no tag fragments leak
     into visible output.
+
+    Captured reasoning content (the text inside thinking blocks) is accumulated
+    in :attr:`captured_reasoning` so callers can forward it to the TUI reasoning
+    branch instead of discarding it.
     """
 
     def __init__(self, logger: Logger | None = None) -> None:
@@ -88,6 +107,12 @@ class ThinkingStreamFilter:
         self._buffer: str = ""
         self._inside: bool = False
         self._variant: str | None = None
+        self._reasoning_parts: list[str] = []
+
+    @property
+    def captured_reasoning(self) -> str:
+        """Concatenated reasoning text captured from all completed thinking blocks."""
+        return "".join(self._reasoning_parts)
 
     def feed(self, chunk: str) -> str:
         """Filter *chunk* and return text safe to emit to the consumer."""
@@ -107,6 +132,9 @@ class ThinkingStreamFilter:
                 len(segment),
                 segment,
             )
+            # Capture unterminated reasoning too (the model was cut off mid-think).
+            if segment:
+                self._reasoning_parts.append(segment)
             self._buffer = ""
             self._inside = False
             self._variant = None
@@ -133,6 +161,9 @@ class ThinkingStreamFilter:
                         len(segment),
                         segment,
                     )
+                    # Capture the reasoning content inside the thinking block.
+                    if segment:
+                        self._reasoning_parts.append(segment)
                     self._buffer = self._buffer[match.end() :]
                     self._inside = False
                     self._variant = None
