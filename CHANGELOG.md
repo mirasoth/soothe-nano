@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-10-12
+
+### Fixed
+- `SootheConfig.secret_resolver` property: `MCPRegistry` construction in the daemon and per-thread runner raised `AttributeError: 'SootheConfig' object has no attribute 'secret_resolver'`, leaving the MCP registry empty and the agent with zero tools. The property now returns the shared `_resolve_env` helper.
+- `fetch_tools_and_descriptors` is now async and awaits `client.get_tools(...)` when it returns a coroutine (`langchain-mcp-adapters` 0.3.x), instead of iterating the coroutine as a list. Previously every MCP server logged `'coroutine' object is not iterable`, the coroutine was never awaited, and zero tools loaded despite `Initialized: N connected, 0 failed`.
+
+### Changed
+- Widened `langchain-mcp-adapters` pin from `<0.3.1` to `<0.4.0` (0.3.0 caused the async `get_tools` regression above) and bumped the langchain ecosystem to latest stable: `langchain` 1.4.4, `langchain-core` 1.6.9, `langchain-openai` 1.7.0, `langchain-community` 0.4.2, `langgraph` 1.2.14, `mcp` 1.30.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.3.2...v1.3.3
+
 ## [1.3.2] - 2026-10-11
 
 ### Fixed
