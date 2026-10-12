@@ -148,17 +148,29 @@ class ChatLitellmModel(BaseChatModel):
         return kw
 
     def _strip_thinking_from_message(self, message: AIMessage) -> AIMessage:
-        """Strip inline thinking blocks from an AIMessage's text content."""
+        """Strip inline thinking blocks from an AIMessage's text content.
+
+        Captured reasoning is stored in ``additional_kwargs["reasoning_content"]``
+        so it travels through the wire to the TUI reasoning branch.
+        """
         if not self.capabilities.hide_thinking_tokens:
             return message
         content = message.content
         if isinstance(content, str) and content:
-            stripped = strip_thinking(content, logger=logger)
+            capture: list[str] = []
+            stripped = strip_thinking(content, logger=logger, capture_sink=capture)
             if stripped != content:
+                merged_kwargs = dict(message.additional_kwargs or {})
+                reasoning = "".join(capture)
+                if reasoning:
+                    existing = merged_kwargs.get("reasoning_content", "")
+                    merged_kwargs["reasoning_content"] = (
+                        f"{existing}{reasoning}" if existing else reasoning
+                    )
                 return AIMessage(
                     content=stripped,
                     tool_calls=message.tool_calls,
-                    additional_kwargs=message.additional_kwargs,
+                    additional_kwargs=merged_kwargs,
                     id=getattr(message, "id", None),
                 )
         return message
@@ -262,12 +274,19 @@ class ChatLitellmModel(BaseChatModel):
         filt = (
             ThinkingStreamFilter(logger=logger) if self.capabilities.hide_thinking_tokens else None
         )
+        native_reasoning_parts: list[str] = []
         try:
             stream = litellm.completion(messages=llm_messages, **call_kwargs)
             for chunk in stream:
                 delta = chunk.choices[0].delta
                 text = getattr(delta, "content", None) or ""
                 tool_call_deltas = getattr(delta, "tool_calls", None)
+                # Capture native reasoning tokens (delta.reasoning_content) that
+                # some models (GLM, DeepSeek, Qwen) send as a separate field
+                # instead of inline <think> tags in delta.content.
+                rc = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                if rc:
+                    native_reasoning_parts.append(rc)
                 if text and filt is not None:
                     text = filt.feed(text)
                 if text or tool_call_deltas:
@@ -281,6 +300,27 @@ class ChatLitellmModel(BaseChatModel):
                 tail = filt.finalize()
                 if tail:
                     yield ChatGenerationChunk(message=AIMessageChunk(content=tail))
+                reasoning = filt.captured_reasoning
+                if native_reasoning_parts:
+                    native = "".join(native_reasoning_parts)
+                    reasoning = f"{reasoning}{native}" if reasoning else native
+                if reasoning:
+                    yield ChatGenerationChunk(
+                        message=AIMessageChunk(
+                            content="",
+                            additional_kwargs={"reasoning_content": reasoning},
+                        )
+                    )
+            elif native_reasoning_parts:
+                # No thinking-token filter but model still sent native reasoning.
+                reasoning = "".join(native_reasoning_parts)
+                if reasoning:
+                    yield ChatGenerationChunk(
+                        message=AIMessageChunk(
+                            content="",
+                            additional_kwargs={"reasoning_content": reasoning},
+                        )
+                    )
         except Exception as exc:
             if self._is_no_generations_error(exc):
                 logger.warning(
@@ -312,12 +352,19 @@ class ChatLitellmModel(BaseChatModel):
         filt = (
             ThinkingStreamFilter(logger=logger) if self.capabilities.hide_thinking_tokens else None
         )
+        native_reasoning_parts: list[str] = []
         try:
             stream = await litellm.acompletion(messages=llm_messages, **call_kwargs)
             async for chunk in stream:
                 delta = chunk.choices[0].delta
                 text = getattr(delta, "content", None) or ""
                 tool_call_deltas = getattr(delta, "tool_calls", None)
+                # Capture native reasoning tokens (delta.reasoning_content) that
+                # some models (GLM, DeepSeek, Qwen) send as a separate field
+                # instead of inline  tags in delta.content.
+                rc = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                if rc:
+                    native_reasoning_parts.append(rc)
                 if text and filt is not None:
                     text = filt.feed(text)
                 if text or tool_call_deltas:
@@ -331,6 +378,27 @@ class ChatLitellmModel(BaseChatModel):
                 tail = filt.finalize()
                 if tail:
                     yield ChatGenerationChunk(message=AIMessageChunk(content=tail))
+                reasoning = filt.captured_reasoning
+                if native_reasoning_parts:
+                    native = "".join(native_reasoning_parts)
+                    reasoning = f"{reasoning}{native}" if reasoning else native
+                if reasoning:
+                    yield ChatGenerationChunk(
+                        message=AIMessageChunk(
+                            content="",
+                            additional_kwargs={"reasoning_content": reasoning},
+                        )
+                    )
+            elif native_reasoning_parts:
+                # No thinking-token filter but model still sent native reasoning.
+                reasoning = "".join(native_reasoning_parts)
+                if reasoning:
+                    yield ChatGenerationChunk(
+                        message=AIMessageChunk(
+                            content="",
+                            additional_kwargs={"reasoning_content": reasoning},
+                        )
+                    )
         except Exception as exc:
             if self._is_no_generations_error(exc):
                 logger.warning(
