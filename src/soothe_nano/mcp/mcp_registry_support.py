@@ -26,14 +26,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def fetch_tools_and_descriptors(
+async def fetch_tools_and_descriptors(
     client: Any,
     *,
     server_name: str,
     server_cfg: MCPServerConfig,
 ) -> tuple[list[BaseTool], list[MCPToolDescriptor]]:
-    """Fetch tools from a server, applying filter and name mangling."""
+    """Fetch tools from a server, applying filter and name mangling.
+
+    Awaits ``client.get_tools`` when it returns a coroutine (langchain-mcp-adapters
+    0.3.x) and uses the value directly when sync (0.2.x).
+    """
     tools = client.get_tools(server_name=server_name)
+    if asyncio.iscoroutine(tools):
+        tools = await tools
     if server_cfg.tool_filter:
         filtered: list[BaseTool] = []
         for tool in tools:
