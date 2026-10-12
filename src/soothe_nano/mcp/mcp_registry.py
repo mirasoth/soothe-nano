@@ -131,8 +131,7 @@ class MCPRegistry:
         start_time = datetime.now(UTC)
         try:
             async with self._client.session(name, auto_initialize=True) as session:
-                tools_task = asyncio.to_thread(
-                    fetch_tools_and_descriptors,
+                tools_task = fetch_tools_and_descriptors(
                     self._client,
                     server_name=name,
                     server_cfg=server_cfg,
