@@ -1,13 +1,12 @@
 """Tests for policy implementation (ConfigDrivenPolicy)."""
 
-from soothe_sdk.protocols.policy import (
+from soothe_nano.protocols.policy import (
     ActionRequest,
     Permission,
     PermissionSet,
     PolicyContext,
     PolicyProfile,
 )
-
 from soothe_nano.security import (
     DEFAULT_PROFILES,
     PRIVILEGED_PROFILE,

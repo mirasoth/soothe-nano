@@ -28,7 +28,7 @@ def test_plugin_load_from_entry_points() -> None:
     """Plugins should be loadable via entry points."""
     import importlib.metadata
 
-    from soothe_sdk.plugin.manifest import PluginManifest
+    from soothe_nano.plugin.manifest import PluginManifest
 
     eps = list(importlib.metadata.entry_points(group="soothe.plugins"))
     if not eps:

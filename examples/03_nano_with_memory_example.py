@@ -21,9 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _shared.config import load_nano_example_config
 from _shared.streaming import stream_nano_agent
-from soothe_sdk.protocols.memory import MemoryItem
 
 from soothe_nano import create_nano_agent
+from soothe_nano.protocols.memory import MemoryItem
 
 load_dotenv()
 

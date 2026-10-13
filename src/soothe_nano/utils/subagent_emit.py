@@ -5,18 +5,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from soothe_sdk.core.subagent_wire import (
+from soothe_nano.core.subagent_wire import (
     clip_wire_event_payload,
     is_emit_allowed_subagent_wire_event_type,
 )
-
 from soothe_nano.utils.progress import emit_progress
 
 
 def emit_subagent_wire_event(event: dict[str, Any], logger: logging.Logger) -> None:
     """Emit allowlisted subagent progress to LangGraph `custom` stream.
 
-    Delegates wire allowlisting and clipping to `soothe_sdk`, then uses
+    Delegates wire allowlisting and clipping to `soothe_nano`, then uses
     `emit_progress` so step context and compact logging match core agents.
 
     Unknown types are dropped (types must be registered via the subagent `events` module).

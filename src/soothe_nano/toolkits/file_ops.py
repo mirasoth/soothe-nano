@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 
 from langchain_core.tools import BaseTool
-from soothe_sdk.plugin import plugin
 
+from soothe_nano.plugin import plugin
 from soothe_nano.toolkits.file_ops_catalog import build_surgical_file_ops_tools
 
 logger = logging.getLogger(__name__)

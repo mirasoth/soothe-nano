@@ -6,11 +6,6 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from soothe_sdk.protocols.policy import (
-    ActionRequest,
-    Permission,
-    PolicyContext,
-)
 
 from soothe_nano.agent.dual_mode import DualModeCoreAgent
 from soothe_nano.agent.interaction_mode import (
@@ -30,6 +25,11 @@ from soothe_nano.agent.interaction_mode import (
 )
 from soothe_nano.config import SootheConfig
 from soothe_nano.config.models import AgentConfig, AgentRuntimeConfig
+from soothe_nano.protocols.policy import (
+    ActionRequest,
+    Permission,
+    PolicyContext,
+)
 from soothe_nano.security.policy_profiles import (
     ASK_PROFILE,
     BYPASS_PROFILE,

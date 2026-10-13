@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING, Any
 
 from langchain.agents.middleware.types import AgentMiddleware, ToolCallRequest
 from langchain_core.messages import ToolMessage
-from soothe_sdk.protocols.policy import (
+
+from soothe_nano.events import PolicyDeniedEvent
+from soothe_nano.protocols.policy import (
     ActionRequest,
     PermissionSet,
     PolicyContext,
     PolicyProtocol,
 )
-
-from soothe_nano.events import PolicyDeniedEvent
 
 if TYPE_CHECKING:
     from collections.abc import Callable

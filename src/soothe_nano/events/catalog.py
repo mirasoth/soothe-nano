@@ -1,23 +1,23 @@
-"""Nano-owned Soothe protocol event models, registered into the shared sdk registry at import time."""
+"""Nano-owned Soothe protocol event models, registered into the shared event registry at import time."""
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from soothe_sdk.core.events import (
+from soothe_nano.core.events import (
     ERROR,
     ErrorEvent,
     LifecycleEvent,
     ProtocolEvent,
 )
-from soothe_sdk.core.registry import (
+from soothe_nano.core.registry import (
     REGISTRY,  # noqa: F401  (re-exported for nano consumers)
     EventMeta,  # noqa: F401
     EventPriority,  # noqa: F401
     EventRegistry,  # noqa: F401
     register_event,
 )
-from soothe_sdk.core.verbosity import VerbosityTier
+from soothe_nano.core.verbosity import VerbosityTier
 
 StreamChunk = tuple[tuple[str, ...], str, Any]
 """Deepagents-canonical stream chunk: `(namespace, mode, data)`."""

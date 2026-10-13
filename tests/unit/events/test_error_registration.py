@@ -1,9 +1,8 @@
 """IG-643: nano protocol ERROR is registered in the shared REGISTRY."""
 
-from soothe_sdk.core.events import ERROR
-from soothe_sdk.core.registry import REGISTRY
-
 import soothe_nano.events.catalog  # noqa: F401
+from soothe_nano.core.events import ERROR
+from soothe_nano.core.registry import REGISTRY
 
 
 def test_error_general_event_registered() -> None:

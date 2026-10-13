@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from soothe_sdk.plugin import plugin, subagent
+from soothe_nano.plugin import plugin, subagent
 
 from .engine import (  # noqa: F401 — register soothe.subagent.planner.* on import
     PLANNER_READONLY_TOOL_NAMES,

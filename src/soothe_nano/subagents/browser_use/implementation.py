@@ -21,7 +21,6 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
-from soothe_sdk.utils.formatting import format_cli_error
 
 from soothe_nano.subagents.browser_use._preview import preview_first
 from soothe_nano.subagents.browser_use.action_format import summarize_browser_step_action
@@ -33,6 +32,7 @@ from soothe_nano.subagents.browser_use.events import (
     BrowserUseStepCompletedEvent,
 )
 from soothe_nano.utils.browser_cdp import cleanup_stale_chrome
+from soothe_nano.utils.formatting import format_cli_error
 from soothe_nano.utils.runtime import (
     cleanup_browser_temp_files,
     get_browser_extensions_dir,

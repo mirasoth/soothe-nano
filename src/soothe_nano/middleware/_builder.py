@@ -9,10 +9,10 @@ from soothe_nano.config.middleware_access import agent_middleware_config
 
 if TYPE_CHECKING:
     from langchain.agents.middleware.types import AgentMiddleware
-    from soothe_sdk.protocols.policy import PolicyProtocol
 
     from soothe_nano.config import SootheConfig
     from soothe_nano.middleware._tool_context import ToolContextRegistry, ToolTriggerRegistry
+    from soothe_nano.protocols.policy import PolicyProtocol
 
 logger = logging.getLogger(__name__)
 

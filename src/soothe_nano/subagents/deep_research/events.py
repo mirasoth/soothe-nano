@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Literal
 
 from pydantic import ConfigDict
-from soothe_sdk.core.events import SootheEvent
-from soothe_sdk.core.verbosity import VerbosityTier
 
+from soothe_nano.core.events import SootheEvent
+from soothe_nano.core.verbosity import VerbosityTier
 from soothe_nano.events.catalog import register_event
 
 SUBAGENT_DEEP_RESEARCH_STARTED = "soothe.subagent.deep_research.started"

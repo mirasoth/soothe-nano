@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from soothe_sdk.core.events import SootheEvent
-
+from soothe_nano.core.events import SootheEvent
 from soothe_nano.events.catalog import register_event
 
 logger = logging.getLogger(__name__)

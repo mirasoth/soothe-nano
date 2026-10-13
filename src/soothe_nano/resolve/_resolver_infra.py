@@ -6,13 +6,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from soothe_sdk.core.exceptions import ConfigurationError
-
 from soothe_nano.config import SootheConfig
+from soothe_nano.core.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
     from langgraph.types import Checkpointer
-    from soothe_sdk.protocols.durability import DurabilityProtocol
+
+    from soothe_nano.protocols.durability import DurabilityProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ def _resolve_sqlite_checkpointer(config: SootheConfig) -> tuple[Checkpointer | N
         The runner will create AsyncSqliteSaver from the path in async context.
     """
     try:
-        from soothe_sdk.paths import resolve_checkpoints_db_path
+        from soothe_nano.paths import resolve_checkpoints_db_path
 
         db_path = str(resolve_checkpoints_db_path())
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)

@@ -27,7 +27,6 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
-from soothe_sdk.utils.formatting import format_cli_error
 
 from soothe_nano.subagents.computer_use._preview import preview_first
 from soothe_nano.subagents.computer_use.action_format import (
@@ -46,6 +45,7 @@ from soothe_nano.subagents.computer_use.tools import (
     ComputerUseToolkit,
     _DesktopInputBackend,
 )
+from soothe_nano.utils.formatting import format_cli_error
 from soothe_nano.utils.runtime import (
     cleanup_computer_temp_files,
     get_computer_screenshots_dir,

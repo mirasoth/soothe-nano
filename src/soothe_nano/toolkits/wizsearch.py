@@ -10,9 +10,9 @@ from typing import Any
 
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
-from soothe_sdk.plugin import plugin
 
 from soothe_nano.config.models import DEFAULT_WIZSEARCH_ENGINES
+from soothe_nano.plugin import plugin
 from soothe_nano.toolkits._internal.wizsearch import (
     _run_coro,
     perform_wizsearch_crawl,

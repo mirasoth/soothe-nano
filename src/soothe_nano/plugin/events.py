@@ -5,7 +5,7 @@ Events self-register at module load time via `register_event()`.
 
 from typing import Literal
 
-from soothe_sdk.core.events import SootheEvent
+from soothe_nano.core.events import SootheEvent
 
 
 class PluginLoadedEvent(SootheEvent):
@@ -71,8 +71,7 @@ class PluginUnloadedEvent(SootheEvent):
 
 # Register all plugin events with the global registry
 # This happens at module load time
-from soothe_sdk.core.verbosity import VerbosityTier  # noqa: E402
-
+from soothe_nano.core.verbosity import VerbosityTier  # noqa: E402
 from soothe_nano.events.catalog import register_event  # noqa: E402
 
 register_event(

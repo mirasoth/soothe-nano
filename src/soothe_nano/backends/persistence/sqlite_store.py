@@ -10,7 +10,7 @@ import logging
 import sqlite3
 from typing import Any
 
-from soothe_sdk.paths import resolve_persist_db_path
+from soothe_nano.paths import resolve_persist_db_path
 
 logger = logging.getLogger(__name__)
 

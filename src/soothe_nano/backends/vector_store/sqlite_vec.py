@@ -13,8 +13,8 @@ import struct
 import uuid
 from typing import Any
 
-from soothe_sdk.paths import resolve_vectors_db_path
-from soothe_sdk.protocols.vector_store import VectorRecord
+from soothe_nano.paths import resolve_vectors_db_path
+from soothe_nano.protocols.vector_store import VectorRecord
 
 logger = logging.getLogger(__name__)
 

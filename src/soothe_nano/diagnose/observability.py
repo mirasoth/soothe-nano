@@ -9,14 +9,13 @@ import urllib.request
 from typing import Any
 from urllib.parse import urljoin
 
-from soothe_sdk.observability.langfuse import resolve_langfuse_config_str
-
 from soothe_nano.diagnose.models import (
     CategoryResult,
     CheckResult,
     CheckStatus,
     aggregate_status,
 )
+from soothe_nano.observability.langfuse import resolve_langfuse_config_str
 
 _DEFAULT_LANGFUSE_HOST = "https://cloud.langfuse.com"
 

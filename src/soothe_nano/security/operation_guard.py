@@ -8,13 +8,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from soothe_sdk.protocols.operation_security import (
+from soothe_nano.protocols.operation_security import (
     OperationSecurityContext,
     OperationSecurityDecision,
     OperationSecurityProtocol,
     OperationSecurityRequest,
 )
-
 from soothe_nano.utils import expand_path
 from soothe_nano.workspace.workspace_paths import (
     resolve_backend_os_path,
@@ -383,11 +382,11 @@ def build_operation_security_request(
     """Build an `OperationSecurityRequest` from a tool name + args.
 
     Uses `is_policy_filesystem_tool` / `extract_filesystem_path_for_policy`
-    from `soothe_sdk.tools.metadata` to classify the operation kind and
+    from `soothe_nano.tools.metadata` to classify the operation kind and
     extract the target path.
     """
-    from soothe_sdk.protocols.operation_security import OperationKind
-    from soothe_sdk.tools.metadata import (
+    from soothe_nano.protocols.operation_security import OperationKind
+    from soothe_nano.tools.metadata import (
         extract_filesystem_path_for_policy,
         get_tool_meta,
         is_policy_filesystem_tool,

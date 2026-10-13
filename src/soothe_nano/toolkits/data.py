@@ -11,8 +11,8 @@ from typing import Any
 
 from langchain_core.tools import BaseTool
 from pydantic import Field
-from soothe_sdk.plugin import plugin
 
+from soothe_nano.plugin import plugin
 from soothe_nano.toolkits._internal.local_path_resolution import resolve_toolkit_local_path
 
 logger = logging.getLogger(__name__)

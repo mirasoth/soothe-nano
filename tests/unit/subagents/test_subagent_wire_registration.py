@@ -1,12 +1,11 @@
 """Subagent wire types are owned by soothe subagent modules, not soothe-sdk constants."""
 
-import soothe_sdk.core.subagent_wire as wire
-from soothe_sdk.core.subagent_wire import (
+import soothe_nano.core.subagent_wire as wire
+from soothe_nano.core.subagent_wire import (
     get_allowlisted_subagent_event_types,
     is_emit_allowed_subagent_wire_event_type,
     register_subagent_wire_event_types,
 )
-
 from soothe_nano.subagents.academic_research import events as academic_research_events
 from soothe_nano.subagents.deep_research import events as deep_research_events
 

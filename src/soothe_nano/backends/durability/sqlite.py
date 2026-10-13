@@ -8,7 +8,7 @@ from soothe_nano.backends.durability.base import BasePersistStoreDurability
 from soothe_nano.backends.persistence.sqlite_store import SQLitePersistStore
 
 if TYPE_CHECKING:
-    from soothe_sdk.protocols.persistence import AsyncPersistStore
+    from soothe_nano.protocols.persistence import AsyncPersistStore
 
 
 class SQLiteDurability(BasePersistStoreDurability):
@@ -32,7 +32,7 @@ class SQLiteDurability(BasePersistStoreDurability):
                 Defaults to `metadata.db` for ThreadInfo storage.
         """
         if persist_store is None:
-            from soothe_sdk.paths import resolve_metadata_db_path
+            from soothe_nano.paths import resolve_metadata_db_path
 
             actual_path = db_path or str(resolve_metadata_db_path())
             persist_store = SQLitePersistStore(actual_path, namespace="durability")

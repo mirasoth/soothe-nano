@@ -10,7 +10,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from langchain_core.tools import BaseTool
-from soothe_sdk.plugin import plugin
+
+from soothe_nano.plugin import plugin
 
 if TYPE_CHECKING:
     from soothe_nano.config import SootheConfig

@@ -20,9 +20,8 @@ Give builders a production-shaped `SootheNanoAgent` in a few lines of Python.
 ```
 soothe-deepagents   agent harness (FS, shell, memory, skills base)
         ↓
-soothe-sdk          shared contracts (protocols, events)
-        ↓
 soothe-nano         SootheNanoAgent + toolkits + subagents + MCP
+                    + shared contracts (protocols, events, plugin API)
 ```
 
 ```text
@@ -161,7 +160,7 @@ async def open_sqlite_checkpointer(config: SootheConfig) -> AsyncIterator[Any | 
 
     import aiosqlite
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-    from soothe_sdk.utils.serde import create_soothe_serde
+    from soothe_nano.utils.serde import create_soothe_serde
 
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = await aiosqlite.connect(db_path)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from soothe_sdk.plugin import plugin, subagent
+from soothe_nano.plugin import plugin, subagent
 
 from . import events as _events  # noqa: F401 — register soothe.subagent.browser_use.* wire types
 from .implementation import (
@@ -29,7 +29,7 @@ class BrowserUsePlugin:
         try:
             import browser_use  # noqa: F401
         except ImportError as e:
-            from soothe_sdk.core.exceptions import PluginError
+            from soothe_nano.core.exceptions import PluginError
 
             raise PluginError(
                 "browser-use library not installed. Install with: pip install -U soothe-nano",
