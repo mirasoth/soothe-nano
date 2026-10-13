@@ -36,7 +36,7 @@ A **release** = bumping the version, making CI green, pushing the tag, and creat
 
 ### Pre-release gates
 
-1. **Verify upstream deps** — check that `soothe-sdk` and `soothe-deepagents` on PyPI are compatible with the version being released. If a floor bump is needed, release the upstream package first.
+1. **Verify upstream deps** — check that `soothe-deepagents` on PyPI is compatible with the version being released. If a floor bump is needed, release the upstream package first.
 2. **Default to patch** — release a patch bump (e.g. `1.2.21 → 1.2.22`). Do not cut minor/major unless explicitly approved.
 3. **Verify before release** — `make lint` and `make test-unit` MUST pass on the commit being tagged. CI MUST be green before creating the GitHub Release.
 
