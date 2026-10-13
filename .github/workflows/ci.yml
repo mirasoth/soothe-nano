@@ -42,9 +42,9 @@ jobs:
       - name: Sync dependencies
         run: make sync
 
-      - name: Verify soothe-sdk protocols
+      - name: Verify core contracts
         run: |
-          uv run python -c "from soothe_sdk.protocols.core_agent import CoreAgentCapabilities; print('soothe-sdk protocols OK')"
+          uv run python -c "from soothe_nano.protocols.core_agent import CoreAgentCapabilities; from soothe_nano.core.events import SootheEvent; print('soothe-nano contracts OK')"
 
       - name: Format check
         run: make format-check
