@@ -1,6 +1,7 @@
 # soothe-nano
 
 [![PyPI version](https://img.shields.io/pypi/v/soothe-nano.svg?label=PyPI&color=blue)](https://pypi.org/project/soothe-nano/)
+[![Python](https://img.shields.io/pypi/pyversions/soothe-nano.svg?label=Python)](https://pypi.org/project/soothe-nano/)
 
 A **ready-to-run coding agent** you can drop into a script, CLI, or app.
 
@@ -28,7 +29,7 @@ create_nano_agent(config)
         │
         ├─ model + middleware stack
         ├─ tools (builtin groups + yours)
-        ├─ subagents (planner, research, browser, …)
+        ├─ subagents (planner, research, browser, computer_use, …)
         ├─ skills (progressive discovery)
         └─ MCP (on-demand activation)
 ```
@@ -37,13 +38,16 @@ create_nano_agent(config)
 
 | Area | What nano provides |
 |---|---|
-| Tools | Builtin groups: shell, file ops, HTTP, search, data, image, … |
-| Subagents | Ready: plan, deep/academic research, browser |
+| Tools | Builtin groups: shell, file ops, HTTP, search, data, image, datetime |
+| Subagents | Ready: plan, deep/academic research, browser_use, computer_use |
 | Skills / tools in context | Progressive loading — activate what the turn needs |
 | Workspace | Scoped workspace + security defaults |
 | Config | YAML / `SootheConfig` factory |
 | Memory | Optional long-term memory via protocols |
 | MCP | Registry and on-demand adapters |
+| Plugins | Decorator API (`@plugin`, `@tool`, `@tool_group`, `@subagent`) with discovery, registry, and lifecycle |
+| Observability | Langfuse tracing hooks, event registry, verbosity tiers |
+| Resilience | `PersistentRetryRunner` for 429/529/transient errors with exponential backoff + model fallback |
 
 ## vs deepagents
 
@@ -51,10 +55,12 @@ create_nano_agent(config)
 |---|---|---|
 | What you get | Opinionated harness | Harness **plus** coding product defaults |
 | Tools | Bring your own | Builtin groups out of the box |
-| Subagents | You define them | Ready plan / research / browser |
+| Subagents | You define them | Ready plan / research / browser / computer_use |
 | Skills / tools in context | Base support | Progressive loading |
 | Workspace | Pluggable backends | Scoped workspace + security defaults |
 | Config | Code-first | YAML / `SootheConfig` factory |
+| Plugin authoring | — | Decorator API + discovery + registry |
+| Shared contracts | — | Protocols, events, plugin API (self-contained since 1.4) |
 
 Use **deepagents** when you want a minimal harness and full control.  
 Use **nano** when you want a coding agent that already knows how to work in a repo.
@@ -64,7 +70,8 @@ Use **nano** when you want a coding agent that already knows how to work in a re
 | Scenario | Fit |
 |---|---|
 | Coding assistant in a repo | ✅ Files, shell, plan out of the box |
-| Research / browsing agent | ✅ Deep research, academic, browser subagents |
+| Research / browsing agent | ✅ Deep research, academic, browser_use subagents |
+| Desktop GUI automation | ✅ computer_use subagent (screenshots, clicks, keyboard) |
 | Embed in your product | ✅ Library API, no daemon required |
 | One-shot / headless CLI | ✅ See [fj-ai](https://github.com/caesar0301/fj-ai) |
 | Plugin / toolkit author | ✅ Depends on nano only |
@@ -86,142 +93,44 @@ agent = create_nano_agent(SootheConfig())
 # agent.ainvoke / streaming — see examples/
 ```
 
-Library examples live in `examples/`:
-
-1. Pure model (no tools)
-2. With tools
-3. With memory
-4. With subagents
-5. Full composition
-
-```bash
-python packages/soothe-nano/examples/01_pure_nano_example.py
-```
-
-## Productive CLI (reference: fj-ai)
-
-[fj-ai](https://github.com/caesar0301/fj-ai) is a production one-shot coding CLI built only on **soothe-nano** (no soothe daemon). Use it as the integration blueprint:
-
-```bash
-pip install fj-ai   # or: uv tool install fj-ai
-fj explain this repo
-fj -f what did we decide last time?
-```
-
-### Integration pattern
-
-A headless CLI typically does four things on top of nano:
-
-1. **Load config** — `~/.soothe/config/nano.yml`, or zero-config from `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`
-2. **Force SQLite** for standalone runs (threads survive across process exits)
-3. **Build the agent** with `create_nano_agent`, pin workspace, attach a checkpointer
-4. **Stream** `agent.astream(...)` and **close** the `aiosqlite` connection on exit
-
-Minimal sketch (same shape as [fj_ai/agent.py](https://github.com/caesar0301/fj-ai/blob/main/src/fj_ai/agent.py)):
+For interactive + background execution in one runtime, use the dual-mode factory:
 
 ```python
-from __future__ import annotations
+from soothe_nano import create_dual_mode_nano_agent, InteractionMode
+from soothe_nano.config import SootheConfig
 
-import asyncio
-from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Any, AsyncIterator
-
-from soothe_nano import SootheNanoAgent, create_nano_agent
-from soothe_nano.config import SOOTHE_HOME, SootheConfig
-from soothe_nano.resolve import resolve_checkpointer
-
-
-def load_config(path: Path | None = None) -> SootheConfig:
-    cfg = path or (SOOTHE_HOME / "config" / "nano.yml")
-    if cfg.is_file():
-        return SootheConfig.from_yaml_file(str(cfg))
-    return SootheConfig()  # OPENAI_API_KEY / ANTHROPIC_API_KEY
-
-
-def apply_cli_defaults(config: SootheConfig) -> SootheConfig:
-    durability = config.agent.protocols.durability.model_copy(
-        update={"backend": "sqlite", "checkpointer": "sqlite"}
-    )
-    protocols = config.agent.protocols.model_copy(update={"durability": durability})
-    agent = config.agent.model_copy(update={"protocols": protocols})
-    persistence = config.persistence.model_copy(update={"default_backend": "sqlite"})
-    return config.model_copy(update={"agent": agent, "persistence": persistence})
-
-
-@asynccontextmanager
-async def open_sqlite_checkpointer(config: SootheConfig) -> AsyncIterator[Any | None]:
-    result = resolve_checkpointer(apply_cli_defaults(config))
-    db_path = result[1] if isinstance(result, tuple) and isinstance(result[1], str) else None
-    if not db_path:
-        yield None
-        return
-
-    import aiosqlite
-    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-    from soothe_nano.utils.serde import create_soothe_serde
-
-    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = await aiosqlite.connect(db_path)
-    checkpointer = AsyncSqliteSaver(conn, serde=create_soothe_serde())
-    await checkpointer.setup()
-    try:
-        yield checkpointer
-    finally:
-        await conn.close()  # required — aiosqlite uses a non-daemon thread
-
-
-async def build_agent(
-    config: SootheConfig,
-    *,
-    checkpointer: Any | None = None,
-) -> SootheNanoAgent:
-    agent = create_nano_agent(apply_cli_defaults(config))
-    if checkpointer is not None:
-        agent.graph.checkpointer = checkpointer
-    return agent
-
-
-async def run_once(query: str, *, thread_id: str) -> None:
-    config = load_config()
-    async with open_sqlite_checkpointer(config) as checkpointer:
-        agent = await build_agent(config, checkpointer=checkpointer)
-        async for chunk in agent.astream(
-            query,
-            config={"configurable": {"thread_id": thread_id}},
-            stream_mode=["messages", "updates", "custom"],
-        ):
-            # render tokens / tool progress to stdout (see fj_ai/stream.py)
-            _ = chunk
-
-
-if __name__ == "__main__":
-    asyncio.run(run_once("summarize this repo", thread_id="cli-demo"))
+agent = create_dual_mode_nano_agent(SootheConfig(), mode=InteractionMode.INTERACTIVE)
 ```
 
-### What fj adds on top of nano
+## Examples
 
-| Concern | fj-ai approach |
-|---|---|
-| UX | One-shot `fj <query…>`; `-f` / `-t` resume threads; `-l` list |
-| Persistence | SQLite checkpointer under `$SOOTHE_DATA_DIR` |
-| Skills | Package `builtin/` via `register_builtin_skill_root` |
-| Workspace | `SOOTHE_WORKSPACE` / cwd for file + shell tools |
-| Streaming | Quiet progress line + full final answer (`stream.py`) |
-| Setup | `fj setup` writes `~/.soothe/config/nano.yml` |
+Library examples live in `examples/`:
 
-For a full TUI / StrangeLoop host on the same stack, see [mirasoth/soothe](https://github.com/mirasoth/soothe). For the slim CLI product, clone [caesar0301/fj-ai](https://github.com/caesar0301/fj-ai).
+1. `01_pure_nano_example.py` — Pure model (no tools)
+2. `02_nano_with_tools_example.py` — With tools
+3. `03_nano_with_memory_example.py` — With memory
+4. `04_nano_with_subagents_example.py` — With subagents
+5. `05_nano_full_composition_example.py` — Full composition
+6. `06_nano_computer_use_example.py` — Desktop GUI automation
+7. `07_nano_computer_use_weixin_favorites.py` — WeChat favorites harvesting
 
-## Development
-
-From `packages/soothe-nano/`:
+LLM provider examples in `examples/llm/` (OpenAI, Gemini, OpenRouter, Anthropic, Ollama, DashScope/custom OpenAI-compatible endpoints, structured output, multi-provider factory):
 
 ```bash
-make help              # list targets
-make sync             # sync dev deps
-make format lint       # format + lint
-make test-unit         # unit tests
-make test-integration  # integration tests (--run-integration)
-make examples          # run examples
-make build             # build dist/
+python examples/01_pure_nano_example.py
 ```
+
+## Plugin authoring
+
+```python
+from soothe_nano.plugin import plugin, tool, subagent
+
+@plugin("my-toolkit")
+class MyToolkit:
+    @tool
+    def do_thing(self, x: str) -> str:
+        """Do a thing."""
+        return f"did: {x}"
+```
+
+Plugins are discovered from entry points, config, or the filesystem and loaded with dependency resolution via the `PluginLifecycleManager`.
