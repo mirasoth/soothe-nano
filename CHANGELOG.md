@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-13
+
 ### Fixed
 - `soothe_nano.ux.stream_tool_wire`: the 1.4.0 copy lazily imported `soothe_nano.ux.task_namespace`, which was not shipped — any caller of `unified_tool_update_allowed_without_args` raised `ModuleNotFoundError` at first use. `ux/task_namespace.py` (the unified tool-call ID parser) now ships in this package.
 
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.4.0...v1.4.1
 
 ## [1.4.0] - 2026-10-13
 
