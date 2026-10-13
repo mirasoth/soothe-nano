@@ -41,11 +41,6 @@ def init_tool_call_args_registry() -> None:
     _registry.set({})
 
 
-def clear_tool_call_args_registry() -> None:
-    """Drop the registry for the current context."""
-    _registry.set(None)
-
-
 def record_tool_call_args_from_request(request: ToolCallRequest) -> None:
     """Store kwargs from an in-flight tool invocation keyed by provider `tool_call_id`."""
     store = _registry.get()
@@ -73,7 +68,6 @@ def get_recorded_tool_call_args(tool_call_id: str) -> dict[str, Any]:
 
 
 __all__ = [
-    "clear_tool_call_args_registry",
     "coerce_tool_call_args",
     "get_recorded_tool_call_args",
     "init_tool_call_args_registry",

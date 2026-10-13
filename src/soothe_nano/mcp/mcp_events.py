@@ -24,11 +24,9 @@ __all__ = [
     "emit_server_disconnected",
     "emit_server_reconnecting",
     "emit_server_connect_failed",
-    "emit_list_changed",
     "emit_tool_invoked",
     "emit_tool_timeout",
     "emit_resource_read",
-    "emit_prompt_invoked",
     "emit_tool_search_queried",
 ]
 
@@ -234,17 +232,6 @@ def emit_server_connect_failed(
     return event
 
 
-def emit_list_changed(
-    server: str,
-    kind: str,
-    old_count: int,
-    new_count: int,
-) -> MCPListChangedEvent:
-    event = MCPListChangedEvent(server=server, kind=kind, old_count=old_count, new_count=new_count)
-    _emit_internal(event)
-    return event
-
-
 def emit_tool_invoked(
     server: str,
     tool: str,
@@ -280,16 +267,6 @@ def emit_resource_read(
     latency_ms: float,
 ) -> MCPResourceReadEvent:
     event = MCPResourceReadEvent(server=server, uri=uri, chars=chars, latency_ms=latency_ms)
-    _emit_internal(event)
-    return event
-
-
-def emit_prompt_invoked(
-    server: str,
-    prompt: str,
-    latency_ms: float,
-) -> MCPPromptInvokedEvent:
-    event = MCPPromptInvokedEvent(server=server, prompt=prompt, latency_ms=latency_ms)
     _emit_internal(event)
     return event
 

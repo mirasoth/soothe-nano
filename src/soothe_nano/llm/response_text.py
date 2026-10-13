@@ -84,16 +84,8 @@ __all__ = [
     "llm_response_text",
     "parse_json_object",
     "text_from_message_content",
-    "_extract_json_str_from_response",
     "_strip_json_text",
 ]
-
-
-# Back-compat alias: the old ``soothe_nano.utils.llm.wrappers._extract_json_str_from_response``
-# extracted JSON text (content → reasoning_content → fence-stripped string). ``llm_response_text``
-# does the same (content / reasoning_content, with thinking stripping); alias it so the planner
-# and any other caller can import the same behavior from the unified module.
-_extract_json_str_from_response = llm_response_text
 
 
 def _strip_json_text(raw: str) -> str:

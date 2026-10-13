@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- Dead code cleanup (no importers in `src`/`tests`/`examples`/downstream, verified by an AST import-graph sweep):
+  - `soothe_nano.utils.llm` — back-compat shim (`from soothe_nano.llm import *` plus `OpenAICompatModelWrapper` / `JsonSchemaModelWrapper` aliases). Import `soothe_nano.llm` directly.
+  - `soothe_nano.utils.embeddings_dashscope` and `soothe_nano.utils.embeddings_dashscope_openai` — unreferenced DashScope embedding implementations.
+  - MemU `config/{activity,event,profile}` config modules (`ActivityConfig` / `EventConfig` / `ProfileConfig`). The per-category `prompt.txt` files stay — they are loaded by path at runtime.
+  - `soothe_nano.filesystem.langchain_adapter` (`LangChainAdapter`) and `soothe_nano.filesystem.factory` (`FilesystemFactory`, `create_filesystem`, `FilesystemConfig`, `FilesystemType`, `PathValidationConfig`, and the filesystem-local `SecurityConfig`) — superseded by the soothe-deepagents backend layer; neither the soothe host, the daemon, the CLI, nor any other downstream consumer references them. `UnifiedFilesystem`, `LocalFilesystem`, `WorkspaceFilesystem`, `discovery_hints`, and `exceptions` stay.
+  - Unused helpers: `mcp.cleanup.cleanup_all_subprocesses`, `mcp.mcp_events.emit_list_changed` / `emit_prompt_invoked` (the event classes stay registered), `middleware.tool_call_args_registry.clear_tool_call_args_registry`, `middleware.tool_name_hints.sanitize_hallucinated_tool_name`, and the `llm.response_text._extract_json_str_from_response` back-compat alias.
+- Drop the `aiohttp`, `firecrawl-anydoc`, `dashscope`, and `httpx` runtime dependency declarations — nothing in the package imports them.
+
+### Changed
+- Tests: `tests/unit/utils/llm/` (the leftover path from the removed `soothe_nano.utils.llm` shim) merged into `tests/unit/llm/`.
+- `make examples` now also runs `example-06` (computer-use subagent) and `example-07` (computer-use WeChat Favorites harvest); both have dedicated targets.
+
 ## [1.4.1] - 2026-10-13
 
 ### Fixed

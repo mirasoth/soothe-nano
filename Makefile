@@ -10,6 +10,7 @@ UV_RUN ?= uv run
 .PHONY: sync format format-check lint lint-fix autofix \
 	test test-unit test-integration test-coverage \
 	examples example-01 example-02 example-03 example-04 example-05 \
+	example-06 example-07 \
 	build publish publish-test clean help
 
 # Default target
@@ -37,6 +38,8 @@ help:
 	@echo "  make example-03      - With memory"
 	@echo "  make example-04      - With subagents"
 	@echo "  make example-05      - Full composition"
+	@echo "  make example-06      - Computer use (desktop GUI) subagent"
+	@echo "  make example-07      - Computer use: WeChat Favorites link harvest"
 	@echo ""
 	@echo "Building & Publishing:"
 	@echo "  make build           - Build the package"
@@ -105,7 +108,7 @@ test-coverage:
 	@echo "✓ Coverage report generated in htmlcov/"
 
 # Examples
-examples: example-01 example-02 example-03 example-04 example-05
+examples: example-01 example-02 example-03 example-04 example-05 example-06 example-07
 	@echo "✓ All examples complete"
 
 example-01:
@@ -122,6 +125,14 @@ example-04:
 
 example-05:
 	$(UV_RUN) python examples/05_nano_full_composition_example.py
+
+# Desktop GUI automation: requires a display server and (macOS) Accessibility +
+# Screen Recording permissions for the terminal/IDE.
+example-06:
+	$(UV_RUN) python examples/06_nano_computer_use_example.py
+
+example-07:
+	$(UV_RUN) python examples/07_nano_computer_use_weixin_favorites.py
 
 # Build package
 build:
