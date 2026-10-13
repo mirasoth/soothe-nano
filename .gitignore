@@ -49,3 +49,4 @@ crates/Cargo.lock
 # Rust build artifacts (flat)
 target/
 **/*.rs.bk
+.soothe
