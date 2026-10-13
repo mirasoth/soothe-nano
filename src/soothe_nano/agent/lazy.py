@@ -17,7 +17,8 @@ if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
     from langgraph.pregel.base import BaseCheckpointSaver
     from soothe_deepagents.middleware.subagents import CompiledSubAgent, SubAgent
-    from soothe_sdk.protocols.core_agent import CoreAgentCapabilities
+
+    from soothe_nano.protocols.core_agent import CoreAgentCapabilities
 
 logger = logging.getLogger(__name__)
 

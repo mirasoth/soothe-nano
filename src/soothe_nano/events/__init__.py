@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from soothe_sdk.core.events import (
+from soothe_nano.core.events import (
     ERROR,
     LLM_RETRY_ATTEMPT,
     MEMORY_RECALLED,
@@ -10,7 +10,7 @@ from soothe_sdk.core.events import (
     POLICY_DENIED,
     STREAM_END,
 )
-from soothe_sdk.core.verbosity import VerbosityTier
+from soothe_nano.core.verbosity import VerbosityTier
 
 from .catalog import (
     LLM_PERSISTENT_RETRY,

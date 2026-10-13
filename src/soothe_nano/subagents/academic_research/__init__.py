@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from soothe_sdk.plugin import plugin, subagent
+from soothe_nano.plugin import plugin, subagent
 
 from . import (
     events as _events,  # noqa: F401 — register academic_research wire event types

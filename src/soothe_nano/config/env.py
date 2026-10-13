@@ -7,7 +7,7 @@ import os
 import re
 from typing import Any
 
-from soothe_sdk.paths import SOOTHE_HOME  # noqa: F401
+from soothe_nano.paths import SOOTHE_HOME  # noqa: F401
 
 # Matches ${VAR_NAME} anywhere in a string (not anchored)
 _ENV_VAR_RE = re.compile(r"\$\{(\w+)\}")

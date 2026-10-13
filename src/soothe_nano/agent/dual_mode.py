@@ -26,10 +26,11 @@ if TYPE_CHECKING:
     from langgraph.types import Checkpointer
     from soothe_deepagents.backends.protocol import BackendProtocol
     from soothe_deepagents.middleware.subagents import CompiledSubAgent, SubAgent
-    from soothe_sdk.protocols.core_agent import CoreAgentCapabilities
-    from soothe_sdk.protocols.memory import MemoryProtocol
-    from soothe_sdk.protocols.planner import PlannerProtocol
-    from soothe_sdk.protocols.policy import PolicyProtocol
+
+    from soothe_nano.protocols.core_agent import CoreAgentCapabilities
+    from soothe_nano.protocols.memory import MemoryProtocol
+    from soothe_nano.protocols.planner import PlannerProtocol
+    from soothe_nano.protocols.policy import PolicyProtocol
 
 logger = logging.getLogger(__name__)
 

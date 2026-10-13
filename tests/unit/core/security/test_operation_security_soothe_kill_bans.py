@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import pytest
-from soothe_sdk.protocols.operation_security import (
+
+from soothe_nano.protocols.operation_security import (
     OperationSecurityContext,
     OperationSecurityRequest,
 )
-
 from soothe_nano.security.operation_guard import WorkspaceToolOperationSecurity
 from soothe_nano.toolkits.execution import (
     clear_protected_kill_hooks,

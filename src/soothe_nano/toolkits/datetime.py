@@ -9,7 +9,8 @@ from __future__ import annotations
 import datetime as dt
 
 from langchain_core.tools import BaseTool
-from soothe_sdk.plugin import plugin
+
+from soothe_nano.plugin import plugin
 
 
 class CurrentDateTimeTool(BaseTool):

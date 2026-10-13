@@ -7,15 +7,14 @@ and bypass-immune paths that would otherwise be denied.
 
 from __future__ import annotations
 
-from soothe_sdk.protocols.operation_security import (
+from soothe_nano.protocols.operation_security import (
     OperationSecurityContext,
     OperationSecurityRequest,
 )
-from soothe_sdk.protocols.policy import (
+from soothe_nano.protocols.policy import (
     ActionRequest,
     PolicyContext,
 )
-
 from soothe_nano.security.operation_guard import WorkspaceToolOperationSecurity
 from soothe_nano.security.policy_profiles import (
     BYPASS_PROFILE,

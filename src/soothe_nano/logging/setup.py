@@ -13,10 +13,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from soothe_sdk.utils.logging import ShortLevelFormatter
-
 from soothe_nano.config import SOOTHE_HOME
 from soothe_nano.logging.context import get_thread_id
+from soothe_nano.utils.logging import ShortLevelFormatter
 
 if TYPE_CHECKING:
     from soothe_nano.config import SootheConfig

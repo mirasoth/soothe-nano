@@ -16,11 +16,10 @@ from soothe_nano.utils.text_preview import preview_first
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
-    from soothe_sdk.intention.models import RoutingClassification
-    from soothe_sdk.protocols.memory import MemoryItem
-
     from soothe_nano.config import SootheConfig
+    from soothe_nano.intention.models import RoutingClassification
     from soothe_nano.middleware._tool_context import ToolContextRegistry, ToolTriggerRegistry
+    from soothe_nano.protocols.memory import MemoryItem
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +128,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         Returns:
             ContextVar reset token from :func:`publish_langfuse_system_prompt_hint`, or None.
         """
-        from soothe_sdk.observability.langfuse.system_hint import (
+        from soothe_nano.observability.langfuse.system_hint import (
             publish_langfuse_system_prompt_hint,
         )
 
@@ -676,7 +675,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         Returns:
             Model response from handler.
         """
-        from soothe_sdk.observability.langfuse.system_hint import (
+        from soothe_nano.observability.langfuse.system_hint import (
             clear_langfuse_system_prompt_hint,
         )
 
@@ -702,7 +701,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         Returns:
             Model response from handler.
         """
-        from soothe_sdk.observability.langfuse.system_hint import (
+        from soothe_nano.observability.langfuse.system_hint import (
             clear_langfuse_system_prompt_hint,
         )
 

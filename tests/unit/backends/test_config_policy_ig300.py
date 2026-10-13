@@ -3,13 +3,12 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from soothe_sdk.protocols.policy import (
+from soothe_nano.protocols.policy import (
     ActionRequest,
     Permission,
     PermissionSet,
     PolicyContext,
 )
-
 from soothe_nano.security.policy_profiles import (
     ConfigDrivenPolicy,
     _extract_required_permission,

@@ -57,7 +57,7 @@ def build_traced_invoke_config(
 
     # ── 2. Standalone Langfuse tracing ────────────────────────────────────────
     if soothe_config is not None:
-        from soothe_sdk.observability.langfuse import SootheLangfuse
+        from soothe_nano.observability.langfuse import SootheLangfuse
 
         return SootheLangfuse(soothe_config).traced_llm(
             purpose=purpose,

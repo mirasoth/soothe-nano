@@ -103,7 +103,7 @@ def test_build_config_soothe_langfuse_path() -> None:
             return sentinel
 
     with patch(
-        "soothe_sdk.observability.langfuse.SootheLangfuse",
+        "soothe_nano.observability.langfuse.SootheLangfuse",
         lambda _cfg: _StubTracer(),
     ):
         cfg = build_traced_invoke_config(

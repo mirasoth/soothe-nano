@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from soothe_sdk.plugin import PluginManifest
-
+from soothe_nano.plugin.manifest import PluginManifest
 from soothe_nano.plugin.registry import PluginRegistry
 
 

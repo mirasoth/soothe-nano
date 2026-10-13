@@ -6,9 +6,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from packaging.requirements import Requirement
-from soothe_sdk.plugin import PluginManifest
 
 from soothe_nano.plugin.exceptions import DependencyError, DiscoveryError, ValidationError
+from soothe_nano.plugin.manifest import PluginManifest
 
 if TYPE_CHECKING:
     from soothe_nano.config.settings import SootheConfig

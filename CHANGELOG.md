@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Absorb the shared-contract layer formerly shipped as the separate `soothe-sdk` package (the SDK is being dissolved; soothe-nano is the canonical home for the agent-side contracts):
+  - `soothe_nano.plugin` now owns the plugin-author decorator API: `@plugin`, `@tool`, `@tool_group`, `@subagent`, `PluginManifest`, `PluginContext`, `SootheConfigProtocol`, `PluginHealth`, `library`, `emit_progress`, `set_stream_writer`, `register_event`.
+  - `soothe_nano.core` — event contracts (`SootheEvent` and friends), the event registry (`REGISTRY`), verbosity tiers, exceptions, subagent wire helpers.
+  - `soothe_nano.protocols` — CoreAgent, planner, policy, memory, durability, persistence, vector store, identity, operation security, concurrency (`workspace_sync` stays in the soothe host; only the host consumes it).
+  - `soothe_nano.paths` — `SOOTHE_HOME` / `SOOTHE_DATA_DIR` and the SQLite store path resolvers (now owned directly, previously re-exported).
+  - `soothe_nano.tools` — tool metadata used by security classification (`get_tool_meta`, operation kinds).
+  - `soothe_nano.observability.langfuse` — Langfuse client/merge/tracer/system-hint helpers.
+  - `soothe_nano.intention` — routing classification models; `soothe_nano.ux.stream_tool_wire` — streaming tool-call wire constants.
+  - `soothe_nano.utils` — `formatting`, `serde` (`create_soothe_serde`), and the `ShortLevelFormatter` logging helper.
+
+### Changed
+- Drop the `soothe-sdk` dependency — soothe-nano is now self-contained (only first-party runtime dep: `soothe-deepagents`, which never depended on the SDK).
+- **Plugin authors**: the canonical import for the decorator API is now `from soothe_nano.plugin import plugin, tool, subagent` (previously `soothe_sdk.plugin`). Migrate `soothe_sdk.*` imports for the absorbed modules to their `soothe_nano.*` equivalents; `soothe-sdk` is deprecated as a separate package.
+- Host consumers (soothe / soothe-daemon): until the host migrates to `soothe_nano.core.events` / `soothe_nano.core.registry`, event metadata registered by nano lives in the nano-owned registry singleton — plan the host cutover in the same deploy window.
+
 ## [1.3.3] - 2026-10-12
 
 ### Fixed

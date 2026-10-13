@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Literal
 
 from pydantic import ConfigDict
-from soothe_sdk.core.events import SubagentEvent
-from soothe_sdk.core.verbosity import VerbosityTier
 
+from soothe_nano.core.events import SubagentEvent
+from soothe_nano.core.verbosity import VerbosityTier
 from soothe_nano.events.catalog import register_event
 
 # Event type constants defined locally (self-contained pattern)

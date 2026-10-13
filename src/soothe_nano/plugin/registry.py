@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from soothe_sdk.plugin import PluginManifest
+from soothe_nano.plugin.manifest import PluginManifest
 
 logger = logging.getLogger(__name__)
 

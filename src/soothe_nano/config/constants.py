@@ -3,7 +3,7 @@
 Centralizing defaults keeps tool timeouts and output caps consistent.
 """
 
-from soothe_sdk.paths import DEFAULT_EXECUTE_TIMEOUT  # noqa: F401
+from soothe_nano.paths import DEFAULT_EXECUTE_TIMEOUT  # noqa: F401
 
 __all__ = [
     "DEFAULT_CODE_EXEC_MAX_OUTPUT_CHARS",
@@ -27,7 +27,7 @@ __all__ = [
 
 # Default timeout for shell command execution
 # Used by execution tools (run_command) and TUI display logic
-# Canonical home is ``soothe_sdk.paths`` (shared with host/CLI/daemon).
+# Canonical home is ``soothe_nano.paths`` (shared with host/CLI/daemon).
 
 # Upper bound for per-call run_command timeout (LLM arg and middleware ceiling)
 MAX_EXECUTE_TIMEOUT = 18000  # 5 hours

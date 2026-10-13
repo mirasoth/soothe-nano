@@ -342,8 +342,7 @@ class TestPluginOnLoadSoftFail:
 
     @pytest.mark.asyncio
     async def test_non_macos_missing_pyautogui_raises(self) -> None:
-        from soothe_sdk.core.exceptions import PluginError
-
+        from soothe_nano.core.exceptions import PluginError
         from soothe_nano.subagents.computer_use import ComputerUsePlugin
 
         plugin = ComputerUsePlugin()
