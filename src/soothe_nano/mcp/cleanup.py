@@ -18,7 +18,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["cleanup_subprocess", "cleanup_all_subprocesses"]
+__all__ = ["cleanup_subprocess"]
 
 # Cleanup ladder timings (mirrors Claude Code)
 SIGINT_WAIT_MS = 100  # Wait after SIGINT before escalating
@@ -163,34 +163,3 @@ async def cleanup_subprocess(
                 logger.error("[MCP] Process survived kill()")
     except ProcessLookupError:
         logger.debug("[MCP] PID %d terminated after SIGKILL", pid)
-
-
-async def cleanup_all_subprocesses(
-    processes: dict[str, asyncio.subprocess.Process | Any],
-    aggregate_timeout_seconds: float = 5.0,
-) -> dict[str, str]:
-    """Clean up multiple subprocesses with aggregate deadline.
-
-    Args:
-        processes: Dict mapping server name to process.
-        aggregate_timeout_seconds: Total deadline for all cleanups.
-
-    Returns:
-        Dict mapping server name to cleanup result ("clean", "forced", "error").
-    """
-    deadline = asyncio.get_event_loop().time() + aggregate_timeout_seconds
-    results = {}
-
-    for name, process in processes.items():
-        remaining = deadline - asyncio.get_event_loop().time()
-        if remaining <= 0:
-            remaining = 0.1
-
-        try:
-            await cleanup_subprocess(process, timeout_seconds=remaining)
-            results[name] = "clean"
-        except Exception as e:
-            logger.error("[MCP] Cleanup error for %s: %s", name, e)
-            results[name] = "error"
-
-    return results
