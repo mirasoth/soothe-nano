@@ -138,6 +138,10 @@ class SqliteStoreRuntime:
         finally:
             self._reader_semaphore.release()
 
+    # ------------------------------------------------------------------
+    # Write / read operations
+    # ------------------------------------------------------------------
+
     def run_write_sync(self, sync_fn: Callable[[sqlite3.Connection], T]) -> T:
         """Run ``sync_fn`` under an exclusive IMMEDIATE write transaction."""
         with self._writer_lock:

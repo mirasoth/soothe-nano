@@ -1,4 +1,8 @@
 //! PyO3 bindings for `soothe-nano-events`.
+//!
+//! Only `custom_event` is exposed — it's the only event function called from
+//! production Python. Event constructor bindings (stream_end_event, etc.) were
+//! removed because they were never called from production code.
 
 use pyo3::prelude::*;
 
@@ -21,5 +25,14 @@ fn custom_event(py: Python<'_>, data: &str) -> PyResult<PyObject> {
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(custom_event, m)?)?;
+
+    // Event type constants (matching Python's events/catalog.py)
+    m.add("MODEL_FALLBACK", "soothe.cognition.llm.model_fallback")?;
+    m.add(
+        "LLM_PERSISTENT_RETRY",
+        "soothe.cognition.llm.persistent_retry",
+    )?;
+    m.add("STREAM_END", "soothe.stream.end")?;
+
     Ok(())
 }

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{PersistError, SqliteStoreRuntime};
 
-/// Async persist store trait (mirrors `soothe_sdk.protocols.persistence`).
+/// Async persist store trait (mirrors `soothe_nano.protocols.persistence`).
 #[async_trait]
 pub trait AsyncPersistStore: Send + Sync {
     async fn save(&self, key: &str, value: Value) -> Result<(), PersistError>;

@@ -8,3 +8,6 @@ description = "System prompt templates and context XML (ported from prompts/*.py
 [dependencies]
 soothe-nano-config = { path = "../soothe-nano-config" }
 serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -19,15 +19,15 @@ mod bindings;
 /// module name `soothe_nano._rust` so that PyO3 generates `PyInit__rust`.
 #[pymodule]
 fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    bindings::security::register(m)?;
     bindings::workspace::register(m)?;
     bindings::tokens::register(m)?;
     bindings::utils::register(m)?;
-    bindings::filesystem::register(m)?;
     bindings::config::register(m)?;
     bindings::prompts::register(m)?;
     bindings::events::register(m)?;
+    bindings::security::register(m)?;
     bindings::persist::register(m)?;
+    bindings::filesystem::register(m)?;
     bindings::skills::register(m)?;
 
     Ok(())

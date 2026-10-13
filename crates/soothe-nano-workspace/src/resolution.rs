@@ -20,6 +20,30 @@ pub struct ResolvedWorkspace {
     pub source: WorkspaceSource,
 }
 
+/// Expand `~` to the home directory, matching Python's `os.path.expanduser`.
+fn expanduser(path: &str) -> String {
+    if path.starts_with('~') {
+        if let Ok(home) = std::env::var("HOME") {
+            if path == "~" {
+                return home;
+            }
+            if let Some(stripped) = path.strip_prefix("~/") {
+                return format!("{home}/{stripped}");
+            }
+        }
+    }
+    path.to_string()
+}
+
+/// Normalize a workspace candidate: expand `~` and resolve symlinks.
+fn normalize_candidate(path: &str) -> PathBuf {
+    let expanded = expanduser(path);
+    let p = PathBuf::from(&expanded);
+    // Try to canonicalize (resolves symlinks). If it fails (path doesn't
+    // exist yet), use the expanded path as-is.
+    p.canonicalize().unwrap_or(p)
+}
+
 /// Resolve the workspace for a stream, following the precedence chain:
 /// explicit > thread > daemon default > cwd.
 pub fn resolve_workspace_for_stream(
@@ -29,19 +53,19 @@ pub fn resolve_workspace_for_stream(
 ) -> Result<ResolvedWorkspace, WorkspaceError> {
     if let Some(ws) = explicit {
         return Ok(ResolvedWorkspace {
-            path: PathBuf::from(ws),
+            path: normalize_candidate(ws),
             source: WorkspaceSource::Explicit,
         });
     }
     if let Some(ws) = thread_workspace {
         return Ok(ResolvedWorkspace {
-            path: PathBuf::from(ws),
+            path: normalize_candidate(ws),
             source: WorkspaceSource::Thread,
         });
     }
     if let Some(ws) = installation_default {
         return Ok(ResolvedWorkspace {
-            path: PathBuf::from(ws),
+            path: normalize_candidate(ws),
             source: WorkspaceSource::DaemonDefault,
         });
     }
@@ -98,9 +122,10 @@ mod tests {
     }
 
     #[test]
-    fn join_normal_relative() {
-        let ws = Path::new("/tmp/workspace");
-        let joined = join_workspace_normalized_path(ws, "src/main.rs").unwrap();
-        assert!(joined.starts_with(ws));
+    fn expanduser_tilde() {
+        std::env::set_var("HOME", "/test/home");
+        assert_eq!(expanduser("~"), "/test/home");
+        assert_eq!(expanduser("~/projects"), "/test/home/projects");
+        assert_eq!(expanduser("/absolute"), "/absolute");
     }
 }

@@ -1,12 +1,15 @@
 """Unified text preview utility for consistent truncation across the codebase.
 
 Provides char-based, line-based, and full-output preview modes with
-configurable markers. Replaces ad-hoc `text[:N]` slicing and `%.Ns` formatting.
+configurable markers. Delegates to the Rust ``preview_full`` implementation
+via PyO3; convenience wrappers compose the Rust-backed core.
 """
 
 from __future__ import annotations
 
 from typing import Literal
+
+from soothe_nano._rust_compat import preview_full_rust, text_preview_rust
 
 # ---------------------------------------------------------------------------
 # Default constants
@@ -24,28 +27,6 @@ DEFAULT_MARKER_TEMPLATE: str = "[...{count} {unit} abbr...]"
 Available variables: `{count}` (number of omitted units) and `{unit}`
 (`"chars"` or `"lines"`).
 """
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-_ELLIPSIS = "..."
-
-
-def _build_marker(count: int, unit: str, marker: str | None) -> str:
-    """Return the truncation marker string.
-
-    Args:
-        count: Number of omitted chars/lines.
-        unit: `"chars"` or `"lines"`.
-        marker: Custom marker.  `None` uses the default template.
-
-    Returns:
-        Marker string.
-    """
-    if marker is not None:
-        return marker
-    return DEFAULT_MARKER_TEMPLATE.format(count=count, unit=unit)
 
 
 # ---------------------------------------------------------------------------
@@ -79,30 +60,10 @@ def preview(
 
     Returns:
         Previewed text with optional truncation marker.
-
-    Examples:
-        >>> preview("Hello world", mode="chars", first=5)
-        'Hello[...6 chars abbr...]'
-
-        >>> preview("Line1\\nLine2\\nLine3\\nLine4", mode="lines", first=1, last=1)
-        'Line1\\n[...2 lines abbr...]\\nLine4'
-
-        >>> preview("Any text", mode="full")
-        'Any text'
-
-    Note:
-        In line mode, the truncation marker appears on its own single line
-        between the first and last sections, formatted as:
-        `first_lines\\n[...N lines abbr...]\\nlast_lines`
     """
     if mode == "full" or not text:
         return text
-
-    if mode == "chars":
-        return _preview_chars(text, first=first, last=last, marker=marker)
-
-    # mode == "lines"
-    return _preview_lines(text, first=first, last=last, marker=marker)
+    return preview_full_rust(text, mode=mode, first=first, last=last, marker=marker)
 
 
 # ---------------------------------------------------------------------------
@@ -111,17 +72,7 @@ def preview(
 
 
 def preview_first(text: str, chars: int = DEFAULT_PREVIEW_CHARS) -> str:
-    """Preview the first N characters.
-
-    This is the most common pattern for logging and display.
-
-    Args:
-        text: Input text.
-        chars: Maximum number of characters to include.
-
-    Returns:
-        Previewed text with default marker if truncated.
-    """
+    """Preview the first N characters."""
     return preview(text, mode="chars", first=chars)
 
 
@@ -130,37 +81,15 @@ def preview_lines(
     first: int = DEFAULT_PREVIEW_LINES,
     last: int = 0,
 ) -> str:
-    """Preview the first N lines and optionally the last M lines.
-
-    Args:
-        text: Input text.
-        first: Number of leading lines.
-        last: Number of trailing lines.  `0` means no trailing lines.
-
-    Returns:
-        Previewed text with default marker if truncated.
-    """
+    """Preview the first N lines and optionally the last M lines."""
     return preview(text, mode="lines", first=first, last=last if last > 0 else None)
 
 
 def log_preview(text: str, chars: int = DEFAULT_PREVIEW_CHARS) -> str:
-    """Logger-optimized preview with a minimal `"..."` marker.
-
-    Intended for `logger.debug()` and `logger.info()` calls where the
-    default `[...N chars abbr...]` marker is too verbose.
-
-    Args:
-        text: Input text.
-        chars: Maximum number of characters.
-
-    Returns:
-        Previewed text with `"..."` marker if truncated.
-
-    Examples:
-        >>> log_preview("Debug output here", chars=5)
-        'Debug...'
-    """
-    return preview(text, mode="chars", first=chars, marker=_ELLIPSIS)
+    """Logger-optimized preview with a minimal `"..."` marker."""
+    if not text:
+        return text
+    return text_preview_rust(text, chars)
 
 
 # Hosts may append extracted file bodies after these markers.
@@ -201,95 +130,6 @@ def goal_description_for_log(
             return ""
 
     return log_preview(text, chars=max_chars)
-
-
-# ---------------------------------------------------------------------------
-# Internal implementations
-# ---------------------------------------------------------------------------
-
-
-def _preview_chars(
-    text: str,
-    *,
-    first: int | None,
-    last: int | None,
-    marker: str | None,
-) -> str:
-    """Char-based preview implementation."""
-    first_n = first if first is not None else DEFAULT_PREVIEW_CHARS
-    last_n = last if last is not None else 0
-
-    total = len(text)
-
-    # No truncation needed
-    if total <= first_n:
-        return text
-
-    # Only first portion requested
-    if last_n <= 0:
-        omitted = total - first_n
-        m = _build_marker(omitted, "chars", marker)
-        return text[:first_n] + m
-
-    # First + last: check overlap
-    if first_n + last_n >= total:
-        return text
-
-    omitted = total - first_n - last_n
-    m = _build_marker(omitted, "chars", marker)
-    return text[:first_n] + m + text[total - last_n :]
-
-
-def _preview_lines(
-    text: str,
-    *,
-    first: int | None,
-    last: int | None,
-    marker: str | None,
-) -> str:
-    """Line-based preview implementation."""
-    first_n = first if first is not None else DEFAULT_PREVIEW_LINES
-    last_n = last if last is not None else 0
-
-    # Split preserving line endings for faithful reconstruction
-    lines = text.splitlines(keepends=True)
-    total = len(lines)
-
-    # No truncation needed
-    if total <= first_n:
-        return text
-
-    # Only first portion requested
-    if last_n <= 0:
-        omitted = total - first_n
-        m = _build_marker(omitted, "lines", marker)
-        # Ensure marker is on its own line after first lines
-        first_part = "".join(lines[:first_n])
-        # Add newline before marker if first part doesn't end with newline
-        if first_part and not first_part.endswith("\n"):
-            first_part += "\n"
-        return first_part + m
-
-    # First + last: check overlap
-    if first_n + last_n >= total:
-        return text
-
-    omitted = total - first_n - last_n
-    m = _build_marker(omitted, "lines", marker)
-    # Build result with proper formatting: first lines \n [marker] \n last lines
-    first_part = "".join(lines[:first_n])
-    last_part = "".join(lines[total - last_n :])
-
-    # Ensure newline between first part and marker
-    if first_part and not first_part.endswith("\n"):
-        first_part += "\n"
-
-    # Ensure newline between marker and last part
-    result = first_part + m
-    if last_part:
-        result += "\n"
-
-    return result + last_part
 
 
 # ---------------------------------------------------------------------------

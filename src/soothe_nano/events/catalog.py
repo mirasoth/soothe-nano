@@ -29,6 +29,15 @@ LLM_PERSISTENT_RETRY = "soothe.cognition.llm.persistent_retry"
 
 def custom_event(data: dict[str, Any]) -> StreamChunk:
     """Build a soothe protocol custom event chunk."""
+    from soothe_nano._rust_compat import is_rust_available
+
+    if is_rust_available():
+        from soothe_nano._rust_compat import custom_event_rust
+
+        result = custom_event_rust(data)
+        if result is not None:
+            return result
+
     return ((), "custom", data)
 
 

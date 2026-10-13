@@ -1,14 +1,11 @@
 """Token counting utilities with model-aware tokenizer selection.
 
-`count_tokens` accepts an optional `model` hint and selects the encoding via
-`tiktoken.encoding_for_model` for OpenAI models, falls back to `cl100k_base`
-for Claude/Gemini/local models whose native tokenizers aren't in tiktoken,
-and uses `len // 4` only behind a genuine import failure.
+`count_tokens` delegates to the Rust tiktoken-rs extension via PyO3.
+When ``use_tiktoken=False``, returns ``len(text) // 4`` estimation.
 """
 
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Any, Literal
 
 ComplexityLevel = Literal["simple", "medium", "complex"]  # Simplified: merged trivial into simple
@@ -37,88 +34,24 @@ def estimate_content_chars(content: Any) -> int:
     return len(str(content))
 
 
-@lru_cache(maxsize=32)
-def _get_encoding_for_model(model: str | None) -> Any:
-    """Return a cached tiktoken encoding for the given model hint.
-
-    Selection order:
-    1. `tiktoken.encoding_for_model(model)` for OpenAI-family models
-       (gpt-4*, gpt-3.5-turbo, o1*, etc.).
-    2. `cl100k_base` as a documented approximation for Claude / Gemini /
-       local models whose native tokenizers are not available via tiktoken.
-    3. `cl100k_base` when no model hint is provided (preserves the prior
-       default behavior).
-    """
-    import tiktoken
-
-    if model:
-        try:
-            return tiktoken.encoding_for_model(model)
-        except Exception:
-            # Unknown / non-OpenAI model (Claude, Gemini, local). Their
-            # native tokenizers are not in tiktoken; cl100k_base is the
-            # best-available approximation. This is a documented caveat,
-            # not false precision.
-            return tiktoken.get_encoding("cl100k_base")
-    return tiktoken.get_encoding("cl100k_base")
-
-
-@lru_cache(maxsize=8)
-def _get_default_encoding() -> Any:
-    """Return the cached default (cl100k_base) tiktoken encoding."""
-    import tiktoken
-
-    return tiktoken.get_encoding("cl100k_base")
-
-
 def count_tokens(
     text: str,
     *,
     model: str | None = None,
     use_tiktoken: bool = True,
 ) -> int:
-    """Count tokens using offline tokenizers.
-
-    Priority:
-    1. Rust tiktoken-rs via PyO3 (when ``_rust`` extension is compiled)
-    2. Python tiktoken with model-aware encoding selection (most accurate)
-    3. Estimation (len // 4) as fallback - zero dependency
+    """Count tokens using the Rust tiktoken-rs extension.
 
     Args:
         text: Text to count tokens for.
-        model: Optional model name hint for encoding selection. When provided
-            and the model is in the OpenAI family, `tiktoken.encoding_for_model`
-            selects the exact encoding. For Claude / Gemini / local models
-            whose native tokenizers are not in tiktoken, `cl100k_base` is
-            used as a documented approximation. `None` preserves the prior
-            default (`cl100k_base`).
-        use_tiktoken: Try to use tiktoken if available (default: True).
+        model: Optional model name hint for encoding selection. GPT-4o/o1/o3
+            models use ``o200k_base``; all others use ``cl100k_base`` as a
+            documented approximation for Claude/Gemini/local models.
+        use_tiktoken: When ``False``, returns ``len(text) // 4`` estimation.
 
     Returns:
-        Estimated token count.
-
-    Examples:
-        >>> count_tokens("Hello world")  # With tiktoken
-        2
-        >>> count_tokens("Hello world", use_tiktoken=False)
-        3  # Estimation: len("Hello world") // 4
+        Token count.
     """
-    # Try Rust tiktoken-rs first (native, no GIL, no import overhead).
-    if use_tiktoken:
-        from soothe_nano._rust_compat import is_rust_available
+    from soothe_nano._rust_compat import count_tokens_rust
 
-        if is_rust_available():
-            from soothe_nano._rust_compat import count_tokens_rust
-
-            return count_tokens_rust(text, model)
-
-    # Try Python tiktoken next (most accurate offline)
-    if use_tiktoken:
-        try:
-            encoding = _get_encoding_for_model(model)
-            return len(encoding.encode(text))
-        except ImportError:
-            pass  # Fall through to estimation
-
-    # Fallback: simple estimation (very fast)
-    return len(text) // 4
+    return count_tokens_rust(text, model, use_tiktoken)

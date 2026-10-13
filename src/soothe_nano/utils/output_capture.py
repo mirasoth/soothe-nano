@@ -16,6 +16,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("soothe_nano.utils.output_capture")
 
 
+def truncate_output(output: str, max_bytes: int) -> str:
+    """Truncate output to a max byte length, appending an ellipsis indicator."""
+    from soothe_nano._rust_compat import truncate_output_rust
+
+    return truncate_output_rust(output, max_bytes)
+
+
 class OutputCapture:
     """Context manager to capture and redirect stdout/stderr output.
 

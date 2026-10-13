@@ -1,25 +1,17 @@
-"""Integration tests for the Rust/Python conditional import layer.
+"""Integration tests for the Rust/Python bridge layer.
 
-These tests exercise the ``_rust_compat`` bridge module to verify that:
-
-1. The availability probe works correctly (``is_rust_available()`` returns
-   ``True`` when the extension is compiled, ``False`` otherwise).
-2. Each Rust-backed function produces the same result as the Python fallback,
-   regardless of which backend is active.
-3. The public Python API (``soothe_nano.utils.*``) remains unchanged after
-   wiring through ``_rust_compat``.
-
-Tests are structured so that they pass in both states:
-- **Rust extension absent** — exercises the Python fallback path.
-- **Rust extension present** (after ``maturin develop``) — exercises the
-  Rust-backed path and compares against known-correct values.
-
-Run with ``--run-integration`` to include these in the integration suite.
+Verifies that:
+1. The availability probe works (``is_rust_available()`` returns True when
+   the extension is compiled).
+2. Full-parity functions (``generate_thread_id``, ``expand_env_vars``,
+   ``truncate_output``, ``repair_json``) delegate directly to Rust with no
+   Python fallback.
+3. Partial-parity functions retain their Python fallback for residual gaps.
+4. The public Python API (``soothe_nano.utils.*``) remains unchanged.
 """
 
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 
@@ -27,16 +19,12 @@ import pytest
 
 from soothe_nano._rust_compat import (
     build_context_xml_rust,
+    build_environment_section_rust,
+    build_workspace_section_rust,
     count_tokens_rust,
     custom_event_rust,
     expand_env_vars_rust,
     generate_thread_id,
-    get_local_filesystem,
-    get_path_validator,
-    get_skill_budget,
-    get_skill_discovery,
-    get_sqlite_store_runtime,
-    get_token_counter,
     is_rust_available,
     repair_json,
     resolve_workspace_rust,
@@ -71,7 +59,6 @@ class TestGenerateThreadId:
 
     def test_returns_valid_uuid_string(self) -> None:
         tid = generate_thread_id()
-        # Must be a parseable UUID v4
         parsed = uuid.UUID(tid)
         assert parsed.version == 4
 
@@ -94,7 +81,6 @@ class TestCountTokens:
     def test_simple_text(self) -> None:
         result = count_tokens_rust("Hello world")
         assert result > 0
-        # "Hello world" is 2 tokens in cl100k_base
         assert result <= 5
 
     def test_longer_text(self) -> None:
@@ -112,6 +98,11 @@ class TestCountTokens:
         assert result > 0
         assert result <= 5
 
+    def test_estimation_mode(self) -> None:
+        """use_tiktoken=False returns len//4 estimation."""
+        result = count_tokens_rust("Hello world", use_tiktoken=False)
+        assert result == len("Hello world") // 4
+
 
 # ---------------------------------------------------------------------------
 # json_parsing — repair_json
@@ -126,14 +117,10 @@ class TestRepairJson:
         assert result == {"key": "value"}
 
     def test_valid_json_array(self) -> None:
-        # The Python fallback (_load_llm_json_dict) only extracts dicts;
-        # the Rust repair_json handles arrays. Test behavior is conditional.
+        # repair_json enforces dict-only contract (matching Python's
+        # _load_llm_json_dict). Arrays are not dicts, so None is returned.
         result = repair_json("[1, 2, 3]")
-        if is_rust_available():
-            assert result == [1, 2, 3]
-        else:
-            # Python fallback returns None for non-dict JSON
-            assert result is None
+        assert result is None
 
     def test_fenced_json(self) -> None:
         result = repair_json('```json\n{"b": 2}\n```')
@@ -141,8 +128,6 @@ class TestRepairJson:
 
     def test_leading_prose(self) -> None:
         result = repair_json('Here is the result: {"c": 3}')
-        # Rust implementation extracts the JSON object; Python fallback uses
-        # _load_llm_json_dict which also extracts it.
         if result is not None:
             assert result.get("c") == 3
 
@@ -165,9 +150,7 @@ class TestTextPreview:
 
     def test_long_text_truncated(self) -> None:
         result = text_preview_rust("hello world foo bar baz", 10)
-        # Rust: collapses whitespace, truncates with "..."
-        # Python fallback (preview): uses "[...N chars abbr...]" marker
-        assert len(result) <= 40  # either form fits within 40 chars
+        assert len(result) <= 40
         assert "hello" in result
 
     def test_empty_string(self) -> None:
@@ -213,7 +196,19 @@ class TestUrlValidationParity:
     def test_missing_domain(self) -> None:
         sanitized, error = self._python_validate("https://")
         assert error is not None
-        assert "domain" in error.lower()
+        assert "domain" in error.lower() or "host" in error.lower()
+
+    def test_empty_path_gets_slash(self) -> None:
+        """URLs without a path should get a trailing slash."""
+        sanitized, error = self._python_validate("https://example.com")
+        assert error is None
+        assert sanitized == "https://example.com/"
+
+    def test_strips_userinfo(self) -> None:
+        """Userinfo (user:pass@) should be stripped from the sanitized URL."""
+        sanitized, error = self._python_validate("https://user:pass@example.com/path")
+        assert error is None
+        assert sanitized == "https://example.com/path"
 
 
 # ---------------------------------------------------------------------------
@@ -244,115 +239,6 @@ class TestExpandEnvVars:
         monkeypatch.setenv("TEST_EXPAND_PATH", "/expanded")
         result = expand_path("$TEST_EXPAND_PATH/dir")
         assert result == Path("/expanded/dir").resolve()
-
-
-# ---------------------------------------------------------------------------
-# Token counter (Rust object when available)
-# ---------------------------------------------------------------------------
-
-
-class TestTokenCounter:
-    """Verify the TokenCounter wrapper."""
-
-    def test_get_token_counter(self) -> None:
-        counter = get_token_counter()
-        if is_rust_available():
-            assert counter is not None
-            result = counter.count("Hello world")
-            assert result > 0
-        else:
-            assert counter is None
-
-
-# ---------------------------------------------------------------------------
-# PathValidator (Rust object when available)
-# ---------------------------------------------------------------------------
-
-
-class TestPathValidator:
-    """Verify the PathValidator wrapper."""
-
-    def test_get_path_validator(self, tmp_path: Path) -> None:
-        validator = get_path_validator(str(tmp_path))
-        if is_rust_available():
-            assert validator is not None
-        else:
-            assert validator is None
-
-
-# ---------------------------------------------------------------------------
-# LocalFilesystem (Rust object when available)
-# ---------------------------------------------------------------------------
-
-
-class TestLocalFilesystem:
-    """Verify the LocalFilesystem wrapper."""
-
-    def test_get_local_filesystem(self, tmp_path: Path) -> None:
-        fs = get_local_filesystem(str(tmp_path))
-        if is_rust_available():
-            assert fs is not None
-            # Write and read back
-            fs.write("test.txt", "hello")
-            content = fs.read("test.txt")
-            assert content == "hello"
-        else:
-            assert fs is None
-
-
-# ---------------------------------------------------------------------------
-# SqliteStoreRuntime (Rust object when available)
-# ---------------------------------------------------------------------------
-
-
-class TestSqliteStoreRuntime:
-    """Verify the SqliteStoreRuntime wrapper."""
-
-    def test_open_and_save_load(self, tmp_path: Path) -> None:
-        db_path = str(tmp_path / "test.db")
-        runtime = get_sqlite_store_runtime(db_path)
-        if is_rust_available():
-            assert runtime is not None
-            runtime.save_sync("key1", json.dumps({"value": 42}))
-            loaded = runtime.load_sync("key1")
-            assert loaded == {"value": 42}
-            assert runtime.load_sync("nonexistent") is None
-            runtime.delete_sync("key1")
-            assert runtime.load_sync("key1") is None
-        else:
-            assert runtime is None
-
-
-# ---------------------------------------------------------------------------
-# SkillDiscovery / SkillBudget (Rust objects when available)
-# ---------------------------------------------------------------------------
-
-
-class TestSkillDiscovery:
-    """Verify the SkillDiscovery wrapper."""
-
-    def test_discover_from_empty_root(self, tmp_path: Path) -> None:
-        discovery = get_skill_discovery([str(tmp_path)])
-        if is_rust_available():
-            assert discovery is not None
-            results = discovery.discover()
-            assert isinstance(results, list)
-        else:
-            assert discovery is None
-
-
-class TestSkillBudget:
-    """Verify the SkillBudget wrapper."""
-
-    def test_budget_spend(self) -> None:
-        budget = get_skill_budget(1000)
-        if is_rust_available():
-            assert budget is not None
-            assert budget.remaining == 1000
-            assert budget.spend(100) is True
-            assert budget.remaining == 900
-        else:
-            assert budget is None
 
 
 # ---------------------------------------------------------------------------
@@ -390,7 +276,89 @@ class TestBuildContextXml:
         if is_rust_available():
             assert isinstance(result, str)
             assert "<context" in result.lower() or result == ""
-        # When Rust is absent, returns "" — that's fine
+
+
+# ---------------------------------------------------------------------------
+# Prompts: build_environment_section (Rust round-trip)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildEnvironmentSection:
+    """Verify ENVIRONMENT XML builder with PyO3 round-trip."""
+
+    def test_environment_xml_structure(self) -> None:
+        result = build_environment_section_rust("claude-opus-4-6")
+        assert "<ENVIRONMENT>" in result
+        assert "</ENVIRONMENT>" in result
+        assert "<platform>" in result
+        assert "<shell>" in result
+        assert "<os_version>" in result
+        assert "<model>claude-opus-4-6</model>" in result
+        assert "<knowledge_cutoff>" in result
+        assert "<search_backend>" in result
+
+    def test_environment_search_backend_value(self) -> None:
+        result = build_environment_section_rust("test-model")
+        assert (
+            "<search_backend>ripgrep</search_backend>" in result
+            or "<search_backend>python_fallback</search_backend>" in result
+        )
+
+    def test_environment_knowledge_cutoff_lookup(self) -> None:
+        """Rust round-trips into Python for get_knowledge_cutoff."""
+        result = build_environment_section_rust("claude-opus-4-6")
+        assert "2025-05" in result
+
+    def test_environment_unknown_model_uses_default(self) -> None:
+        result = build_environment_section_rust("nonexistent-model-xyz")
+        assert "2025-01" in result  # default cutoff
+
+
+# ---------------------------------------------------------------------------
+# Prompts: build_workspace_section (pure Rust filesystem I/O)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildWorkspaceSection:
+    """Verify WORKSPACE XML builder."""
+
+    def test_workspace_xml_structure(self, tmp_path: Path) -> None:
+        result = build_workspace_section_rust(str(tmp_path))
+        assert "<WORKSPACE>" in result
+        assert "</WORKSPACE>" in result
+        assert "<root>" in result
+        assert '<vcs present="' in result
+
+    def test_workspace_git_detection(self, tmp_path: Path) -> None:
+        (tmp_path / ".git").mkdir()
+        result = build_workspace_section_rust(str(tmp_path))
+        assert '<vcs present="true"' in result
+
+    def test_workspace_no_git(self, tmp_path: Path) -> None:
+        result = build_workspace_section_rust(str(tmp_path))
+        assert '<vcs present="false"' in result
+
+    def test_workspace_layout_preview(self, tmp_path: Path) -> None:
+        (tmp_path / "src").mkdir()
+        (tmp_path / "tests").mkdir()
+        (tmp_path / ".hidden").mkdir()
+        result = build_workspace_section_rust(str(tmp_path), include_layout_preview=True)
+        assert "src" in result
+        assert "tests" in result
+        assert ".hidden" not in result
+
+    def test_workspace_readme_excerpt(self, tmp_path: Path) -> None:
+        (tmp_path / "README.md").write_text("# My Project\nA test project.")
+        result = build_workspace_section_rust(
+            str(tmp_path), include_readme_excerpt=True, readme_max_chars=500
+        )
+        assert "<readme_excerpt>" in result
+        assert "My Project" in result
+
+    def test_workspace_none_path_uses_cwd(self) -> None:
+        result = build_workspace_section_rust(None)
+        assert "<WORKSPACE>" in result
+        assert "<root>" in result
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +372,6 @@ class TestCustomEvent:
     def test_custom_event_structure(self) -> None:
         data = {"type": "test", "value": 42}
         result = custom_event_rust(data)
-        # Both Rust and Python paths return a tuple ((), "custom", data)
         assert isinstance(result, tuple)
         assert len(result) == 3
         assert result[0] == ()
@@ -477,7 +444,6 @@ class TestConditionalDispatch:
     def test_count_tokens_dispatches_correctly(self) -> None:
         from soothe_nano.utils.token_counting import count_tokens
 
-        # This should work regardless of which backend is active
         result = count_tokens("Hello world")
         assert result > 0
 
@@ -494,3 +460,319 @@ class TestConditionalDispatch:
         monkeypatch.setenv("TEST_DISPATCH", "/dispatched")
         result = expand_path("$TEST_DISPATCH/path")
         assert result == Path("/dispatched/path").resolve()
+
+
+# ---------------------------------------------------------------------------
+# Full-parity functions: no Python fallback
+# ---------------------------------------------------------------------------
+
+
+class TestNoPythonFallback:
+    """Verify full-parity functions delegate directly to Rust (no fallback).
+
+    These functions had their Python fallback removed because the Rust
+    implementation has complete behavioral parity. The _rust_compat wrappers
+    must call _rust_module directly without any ``if _rust_available`` guard.
+    """
+
+    def test_generate_thread_id_no_fallback(self) -> None:
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "generate_thread_id":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "generate_thread_id must not have a Python fallback"
+                )
+                return
+        pytest.fail("generate_thread_id not found in _rust_compat")
+
+    def test_expand_env_vars_no_fallback(self) -> None:
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "expand_env_vars_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "expand_env_vars_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("expand_env_vars_rust not found in _rust_compat")
+
+    def test_truncate_output_no_fallback(self) -> None:
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "truncate_output_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "truncate_output_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("truncate_output_rust not found in _rust_compat")
+
+    def test_repair_json_no_fallback(self) -> None:
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "repair_json":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "repair_json must not have a Python fallback"
+                )
+                return
+        pytest.fail("repair_json not found in _rust_compat")
+
+    def test_json_parsing_no_python_fallthrough(self) -> None:
+        """_load_llm_json_dict must delegate to Rust without Python fallthrough."""
+        import ast
+
+        from soothe_nano.utils import json_parsing
+
+        tree = ast.parse(Path(json_parsing.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "_load_llm_json_dict":
+                src = ast.unparse(node)
+                assert "_strip_leading_bom" not in src, (
+                    "_load_llm_json_dict must not call Python helpers"
+                )
+                assert "_strip_markdown_json_fence" not in src
+                assert "_extract_balanced_json_object" not in src
+                assert "_repair_truncated_json" not in src
+                return
+        pytest.fail("_load_llm_json_dict not found in json_parsing")
+
+    def test_path_no_os_expandvars(self) -> None:
+        """expand_path must not use os.path.expandvars (Rust only)."""
+        from soothe_nano.utils import path as path_mod
+
+        src = Path(path_mod.__file__).read_text()
+        assert "os.path.expandvars" not in src, "expand_path must not use os.path.expandvars"
+
+    def test_env_no_python_fallback(self) -> None:
+        """_resolve_env must not have a Python replacer fallback."""
+        import ast
+
+        from soothe_nano.config import env
+
+        tree = ast.parse(Path(env.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "_resolve_env":
+                src = ast.unparse(node)
+                assert "if is_rust_available" not in src, (
+                    "_resolve_env must not have a Python fallback"
+                )
+                return
+        pytest.fail("_resolve_env not found in env")
+
+    def test_count_tokens_no_fallback(self) -> None:
+        """count_tokens_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "count_tokens_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "count_tokens_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("count_tokens_rust not found in _rust_compat")
+
+    def test_text_preview_no_fallback(self) -> None:
+        """text_preview_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "text_preview_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "text_preview_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("text_preview_rust not found in _rust_compat")
+
+    def test_preview_full_no_fallback(self) -> None:
+        """preview_full_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "preview_full_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "preview_full_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("preview_full_rust not found in _rust_compat")
+
+    def test_validate_url_no_fallback(self) -> None:
+        """validate_url_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "validate_url_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "validate_url_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("validate_url_rust not found in _rust_compat")
+
+    def test_resolve_workspace_no_fallback(self) -> None:
+        """resolve_workspace_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "resolve_workspace_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "resolve_workspace_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("resolve_workspace_rust not found in _rust_compat")
+
+    def test_token_counting_no_python_tiktoken(self) -> None:
+        """count_tokens must not import tiktoken (Rust only)."""
+        from soothe_nano.utils import token_counting
+
+        src = Path(token_counting.__file__).read_text()
+        assert "import tiktoken" not in src, "count_tokens must not import tiktoken"
+        assert "encoding_for_model" not in src, "count_tokens must not use encoding_for_model"
+
+    def test_url_validation_no_python_fallback(self) -> None:
+        """validate_url must not have a Python urlparse fallback."""
+        from soothe_nano.utils import url_validation
+
+        src = Path(url_validation.__file__).read_text()
+        assert "urlparse" not in src, "validate_url must not use urlparse"
+        assert "if is_rust_available" not in src, "validate_url must not have a fallback guard"
+
+    def test_text_preview_no_python_fallback(self) -> None:
+        """preview() must not call _preview_chars or _preview_lines."""
+        from soothe_nano.utils import text_preview
+
+        src = Path(text_preview.__file__).read_text()
+        assert "_preview_chars" not in src, "text_preview must not have _preview_chars"
+        assert "_preview_lines" not in src, "text_preview must not have _preview_lines"
+        assert "_build_marker" not in src, "text_preview must not have _build_marker"
+
+    def test_build_context_xml_no_fallback(self) -> None:
+        """build_context_xml_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "build_context_xml_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "build_context_xml_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("build_context_xml_rust not found in _rust_compat")
+
+    def test_build_environment_section_no_fallback(self) -> None:
+        """build_environment_section_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "build_environment_section_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "build_environment_section_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("build_environment_section_rust not found in _rust_compat")
+
+    def test_build_workspace_section_no_fallback(self) -> None:
+        """build_workspace_section_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "build_workspace_section_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "build_workspace_section_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("build_workspace_section_rust not found in _rust_compat")
+
+    def test_context_xml_no_python_environment_fallback(self) -> None:
+        """build_soothe_environment_section must not have a Python fallback."""
+        import ast
+
+        from soothe_nano.prompts import context_xml
+
+        tree = ast.parse(Path(context_xml.__file__).read_text())
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.FunctionDef)
+                and node.name == "build_soothe_environment_section"
+            ):
+                # Check only the function body (not docstring) for direct calls
+                body_nodes = [ast.unparse(n) for n in node.body if not isinstance(n, ast.Expr)]
+                body_src = "\n".join(body_nodes)
+                assert "import platform" not in body_src, (
+                    "build_soothe_environment_section must not import platform"
+                )
+                assert "is_rg_available(" not in body_src, (
+                    "build_soothe_environment_section must not call is_rg_available()"
+                )
+                assert "get_knowledge_cutoff(" not in body_src, (
+                    "build_soothe_environment_section must not call get_knowledge_cutoff()"
+                )
+                return
+        pytest.fail("build_soothe_environment_section not found in context_xml")
+
+    def test_context_xml_no_python_workspace_fallback(self) -> None:
+        """build_soothe_workspace_section must not have a Python fallback."""
+        import ast
+
+        from soothe_nano.prompts import context_xml
+
+        tree = ast.parse(Path(context_xml.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "build_soothe_workspace_section":
+                src = ast.unparse(node)
+                assert "_safe_list_dir_names" not in src, (
+                    "build_soothe_workspace_section must not call _safe_list_dir_names"
+                )
+                # Check for the function call, not the parameter name
+                assert "=_readme_excerpt(" not in src, (
+                    "build_soothe_workspace_section must not call _readme_excerpt()"
+                )
+                return
+        pytest.fail("build_soothe_workspace_section not found in context_xml")

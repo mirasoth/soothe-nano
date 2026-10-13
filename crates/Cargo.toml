@@ -58,6 +58,9 @@ dashmap = "6"
 # Env config
 envy = "0.5"
 
+# Testing
+tempfile = "3"
+
 # PyO3 (only used by soothe-nano-sys)
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
 

@@ -70,6 +70,7 @@ class CircuitBreaker:
     def state(self) -> CircuitBreakerState:
         """Current state of the circuit breaker."""
         with self._lock:
+            self._update_state()
             return self._state
 
     @property

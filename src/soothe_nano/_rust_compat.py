@@ -1,13 +1,26 @@
 """Conditional import layer for Rust-backed implementations.
 
-Centralizes the ``try: from _rust import ... except ImportError: ...`` pattern
-so that each Python module can delegate to the compiled PyO3 extension when
-available, and fall back to the pure-Python implementation when it is not.
+Exposes the compiled PyO3 extension (``soothe_nano._rust``) to Python modules.
 
-During Phase 1 migration, the Rust extension (``soothe_nano._rust``) is
-optional.  When built via maturin, it is importable as a CPython extension
-module.  When absent (e.g. during development without ``maturin develop``),
-every function transparently falls back to the Python original.
+**Full-parity functions (no Python fallback):**
+- ``generate_thread_id`` — UUID v4 generation
+- ``expand_env_vars`` — ``$VAR``/``${VAR}`` expansion
+- ``truncate_output`` — byte-safe truncation
+- ``repair_json`` — JSON repair/extraction with dict-only contract
+- ``count_tokens`` — tiktoken-rs with model-aware encoding + estimation mode
+- ``text_preview`` / ``preview_full`` — 3-mode truncation with markers
+- ``validate_url`` — URL validation with query/fragment preservation
+- ``resolve_workspace`` — workspace resolution with expanduser + canonicalize
+- ``build_context_xml`` — file-list context XML (pure Rust)
+- ``build_environment_section`` — ENVIRONMENT XML (Rust assembly + PyO3 round-trip
+  for ``is_rg_available()`` and ``get_knowledge_cutoff()``)
+- ``build_workspace_section`` — WORKSPACE XML (pure Rust filesystem I/O)
+
+**Partial-parity (permanent gaps):**
+- ``custom_event`` — returns the tuple, but the event catalog (Pydantic models,
+  ``soothe_nano`` registry) stays Python-only
+- ``load_project_instructions`` — Rust does file discovery, Python does
+  headline extraction, paragraph boundaries, and progressive disclosure
 """
 
 from __future__ import annotations
@@ -41,114 +54,59 @@ def get_rust_module() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Utils: thread_id
+# Full-parity functions (no Python fallback)
 # ---------------------------------------------------------------------------
 
 
 def generate_thread_id() -> str:
-    """Generate a UUID v4 thread ID (Rust-accelerated when available)."""
-    if _rust_available:
-        return _rust_module.generate_thread_id()
-    # Python fallback
-    import uuid
-
-    return str(uuid.uuid4())
-
-
-# ---------------------------------------------------------------------------
-# Utils: json_parsing / repair_json
-# ---------------------------------------------------------------------------
+    """Generate a UUID v4 thread ID (Rust-backed, no fallback)."""
+    return _rust_module.generate_thread_id()
 
 
 def repair_json(raw: str) -> Any:
-    """Repair/extract JSON from LLM output (Rust-accelerated when available).
+    """Repair/extract JSON from LLM output (Rust-backed, no fallback).
 
-    Returns a Python object (dict/list/None) matching the Python implementation.
+    Enforces dict-only contract: returns ``None`` for non-dict or unparseable
+    results.
     """
-    if _rust_available:
-        result = _rust_module.repair_json(raw)
-        return result  # PyO3 already converts to Python dict/list/None
-    # Python fallback — use the full implementation
-    from soothe_nano.utils.json_parsing import _load_llm_json_dict
-
-    try:
-        return _load_llm_json_dict(raw)
-    except (ValueError, TypeError, json.JSONDecodeError):
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Utils: text_preview (simple truncation)
-# ---------------------------------------------------------------------------
+    return _rust_module.repair_json(raw)
 
 
 def text_preview_rust(text: str, max_chars: int) -> str:
-    """Single-line text preview truncated to *max_chars* (Rust when available).
+    """Single-line text preview truncated to *max_chars* (Rust-backed, no fallback)."""
+    return _rust_module.text_preview(text, max_chars)
 
-    This is the *simple* variant used by the Rust binding.  The full Python
-    ``preview()`` function supports modes, markers, and first/last — those
-    stay Python-only until the Rust crate gains feature parity.
+
+def preview_full_rust(
+    text: str,
+    mode: str = "chars",
+    first: int | None = None,
+    last: int | None = None,
+    marker: str | None = None,
+) -> str:
+    """Full preview() API with 3 modes, head+tail, custom markers (Rust-backed, no fallback)."""
+    return _rust_module.preview_full(text, mode, first, last, marker)
+
+
+def validate_url_rust(url: str) -> tuple[str, str | None]:
+    """Validate and sanitize URL (Rust-backed, no fallback).
+
+    Returns ``(sanitized_url, error_message_or_None)``.
     """
-    if _rust_available:
-        return _rust_module.text_preview(text, max_chars)
-    # Python fallback — delegate to the full implementation in "chars" mode
-    from soothe_nano.utils.text_preview import preview
-
-    return preview(text, mode="chars", first=max_chars)
+    return _rust_module.validate_url_py(url)
 
 
-# ---------------------------------------------------------------------------
-# Tokens: count_tokens
-# ---------------------------------------------------------------------------
+def truncate_output_rust(output: str, max_bytes: int) -> str:
+    """Truncate output to max bytes (Rust-backed, no fallback)."""
+    return _rust_module.truncate_output(output, max_bytes)
 
 
-def count_tokens_rust(text: str, model: str | None = None) -> int:
-    """Count tokens via tiktoken-rs (Rust) when available.
+def count_tokens_rust(text: str, model: str | None = None, use_tiktoken: bool = True) -> int:
+    """Count tokens via tiktoken-rs with model-aware encoding (Rust-backed, no fallback).
 
-    Falls back to the Python ``count_tokens`` when the extension is absent.
+    When ``use_tiktoken=False``, returns ``len(text) // 4`` estimation.
     """
-    if _rust_available:
-        return _rust_module.count_tokens(text, model)
-    # Python fallback
-    from soothe_nano.utils.token_counting import count_tokens
-
-    return count_tokens(text, model=model, use_tiktoken=True)
-
-
-def get_token_counter() -> Any:
-    """Return a Rust ``TokenCounter`` when available, else ``None``."""
-    if _rust_available:
-        return _rust_module.TokenCounter()
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Security: PathValidator
-# ---------------------------------------------------------------------------
-
-
-def get_path_validator(workspace: str = ".") -> Any:
-    """Return a Rust ``PathValidator`` when available, else ``None``."""
-    if _rust_available:
-        return _rust_module.PathValidator(workspace)
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Filesystem: LocalFilesystem
-# ---------------------------------------------------------------------------
-
-
-def get_local_filesystem(workspace: str) -> Any:
-    """Return a Rust ``LocalFilesystem`` when available, else ``None``."""
-    if _rust_available:
-        return _rust_module.LocalFilesystem(workspace)
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Workspace: resolve_workspace
-# ---------------------------------------------------------------------------
+    return _rust_module.count_tokens(text, model, use_tiktoken)
 
 
 def resolve_workspace_rust(
@@ -156,78 +114,74 @@ def resolve_workspace_rust(
     thread_workspace: str | None = None,
     installation_default: str | None = None,
 ) -> Any:
-    """Resolve workspace for stream (Rust when available, else ``None``)."""
-    if _rust_available:
-        return _rust_module.resolve_workspace(explicit, thread_workspace, installation_default)
-    return None
+    """Resolve workspace for stream (Rust-backed, no fallback).
 
-
-# ---------------------------------------------------------------------------
-# Config: expand_env_vars
-# ---------------------------------------------------------------------------
+    Performs ``expanduser()`` + ``canonicalize()`` (symlink resolution).
+    """
+    return _rust_module.resolve_workspace(explicit, thread_workspace, installation_default)
 
 
 def expand_env_vars_rust(s: str) -> str:
-    """Expand ``$VAR``/``${VAR}`` in a string (Rust when available)."""
-    if _rust_available:
-        return _rust_module.expand_env_vars(s)
-    # Python fallback
-    import os
-
-    return os.path.expandvars(s)
+    """Expand ``$VAR``/``${VAR}`` in a string (Rust-backed, no fallback)."""
+    return _rust_module.expand_env_vars(s)
 
 
 # ---------------------------------------------------------------------------
-# Persist: SqliteStoreRuntime
-# ---------------------------------------------------------------------------
-
-
-def get_sqlite_store_runtime(path: str) -> Any:
-    """Return a Rust ``SqliteStoreRuntime`` when available, else ``None``."""
-    if _rust_available:
-        return _rust_module.SqliteStoreRuntime.open(path)
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Skills: SkillDiscovery, SkillBudget
-# ---------------------------------------------------------------------------
-
-
-def get_skill_discovery(roots: list[str]) -> Any:
-    """Return a Rust ``SkillDiscovery`` when available, else ``None``."""
-    if _rust_available:
-        return _rust_module.SkillDiscovery(roots)
-    return None
-
-
-def get_skill_budget(initial: int) -> Any:
-    """Return a Rust ``SkillBudget`` when available, else ``None``."""
-    if _rust_available:
-        return _rust_module.SkillBudget(initial)
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Prompts: build_context_xml
+# Full-parity functions (no Python fallback) — prompts
 # ---------------------------------------------------------------------------
 
 
 def build_context_xml_rust(workspace: str, files: list[tuple[str, int, int]]) -> str:
-    """Build context XML from file list (Rust when available)."""
+    """Build file-list context XML (Rust-backed, no fallback)."""
+    return _rust_module.build_context_xml(workspace, files)
+
+
+def build_environment_section_rust(model: str) -> str:
+    """Build ENVIRONMENT XML block (Rust-backed, no fallback).
+
+    Round-trips into Python for ``is_rg_available()`` and
+    ``get_knowledge_cutoff(model)``; all XML assembly and platform
+    introspection is done in Rust.
+    """
+    return _rust_module.build_environment_section(model)
+
+
+def build_workspace_section_rust(
+    workspace_path: str | None,
+    *,
+    include_layout_preview: bool = False,
+    max_layout_entries: int = 40,
+    include_readme_excerpt: bool = False,
+    readme_max_chars: int = 500,
+) -> str:
+    """Build WORKSPACE XML block (Rust-backed, no fallback)."""
+    return _rust_module.build_workspace_section(
+        workspace_path,
+        include_layout_preview,
+        max_layout_entries,
+        include_readme_excerpt,
+        readme_max_chars,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Partial-parity functions (permanent gaps — Python fallback retained)
+# ---------------------------------------------------------------------------
+
+
+def load_project_instructions_rust(workspace: str) -> str | None:
+    """Load project instructions via Rust file discovery (or None if unavailable).
+
+    Used as a fast-path for file existence checking. The Python path handles
+    headline extraction, paragraph boundaries, and progressive disclosure.
+    """
     if _rust_available:
-        return _rust_module.build_context_xml(workspace, files)
-    return ""
-
-
-# ---------------------------------------------------------------------------
-# Events: custom_event
-# ---------------------------------------------------------------------------
+        return _rust_module.load_project_instructions(workspace)
+    return None
 
 
 def custom_event_rust(data: dict[str, Any]) -> Any:
-    """Build a soothe protocol custom event chunk (Rust when available)."""
+    """Build a custom event chunk via Rust (returns tuple or None if unavailable)."""
     if _rust_available:
         return _rust_module.custom_event(json.dumps(data))
-    # Python fallback
-    return ((), "custom", data)
+    return None

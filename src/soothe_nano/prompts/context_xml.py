@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import os
-import platform as platform_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from soothe_nano._rust_compat import (
+    build_context_xml_rust,
+    build_environment_section_rust,
+    build_workspace_section_rust,
+)
 from soothe_nano.utils.text_preview import preview_first
 
 if TYPE_CHECKING:
@@ -27,7 +30,9 @@ def _xml_attr(value: object) -> str:
 def build_soothe_environment_section(*, model: str) -> str:
     """Build nested ENVIRONMENT XML block (no SOOTHE_ prefix).
 
-    Optimized for prompt caching - removed version attribute.
+    Delegates to Rust for XML assembly and platform introspection.
+    The Rust binding round-trips into Python for ``is_rg_available()``
+    and ``get_knowledge_cutoff(model)``.
 
     Args:
         model: Resolved default model id (e.g. from `config.resolve_model` for the default role).
@@ -35,54 +40,7 @@ def build_soothe_environment_section(*, model: str) -> str:
     Returns:
         Single XML section string.
     """
-    from soothe_deepagents.backends.grep_search import is_rg_available
-
-    from soothe_nano.config.models import get_knowledge_cutoff
-
-    platform_name = platform_module.system()
-    shell = os.environ.get("SHELL", "unknown")
-    os_version = platform_module.platform()
-    cutoff = get_knowledge_cutoff(model)
-    search_backend = "ripgrep" if is_rg_available() else "python_fallback"
-    inner = "\n".join(
-        [
-            f"<platform>{_xml_text(platform_name)}</platform>",
-            f"<shell>{_xml_text(shell)}</shell>",
-            f"<os_version>{_xml_text(os_version)}</os_version>",
-            f"<model>{_xml_text(model)}</model>",
-            f"<knowledge_cutoff>{_xml_text(cutoff)}</knowledge_cutoff>",
-            f"<search_backend>{_xml_text(search_backend)}</search_backend>",
-        ]
-    )
-    # Removed version attribute for cache optimization.
-    return f"<ENVIRONMENT>\n{inner}\n</ENVIRONMENT>"
-
-
-def _safe_list_dir_names(root: Path, *, max_entries: int) -> str | None:
-    try:
-        names = sorted(p.name for p in root.iterdir() if not p.name.startswith("."))
-    except OSError:
-        return None
-    if not names:
-        return None
-    preview = names[:max_entries]
-    joined = ", ".join(preview)
-    if len(names) > max_entries:
-        joined += ", …"
-    return joined
-
-
-def _readme_excerpt(root: Path, *, max_chars: int) -> str | None:
-    for name in ("README.md", "README.rst", "README.txt", "README"):
-        path = root / name
-        if path.is_file():
-            try:
-                raw = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                return None
-            excerpt = raw[:max_chars].strip()
-            return excerpt or None
-    return None
+    return build_environment_section_rust(model)
 
 
 def build_soothe_workspace_section(
@@ -95,7 +53,7 @@ def build_soothe_workspace_section(
 ) -> str:
     """Build nested WORKSPACE XML block (no SOOTHE_ prefix).
 
-    Optimized for prompt caching - omits `recent_commits` in this section.
+    Delegates to Rust for directory listing, README reading, and XML assembly.
 
     Args:
         workspace: Project root; when None, the process current working directory is used.
@@ -107,31 +65,14 @@ def build_soothe_workspace_section(
     Returns:
         Single XML section string.
     """
-    root = workspace or Path.cwd()
-    cwd = str(root.resolve())
-    is_git = (root / ".git").exists()
-    present = "true" if is_git else "false"
-
-    lines: list[str] = [
-        f"<root>{_xml_text(cwd)}</root>",
-        f'<vcs present="{present}"/>',
-    ]
-
-    if include_layout_preview and root.is_dir():
-        preview = _safe_list_dir_names(root, max_entries=max_layout_entries)
-        if preview:
-            lines.append(
-                f'<layout_preview max_entries="{max_layout_entries}">{_xml_text(preview)}</layout_preview>'
-            )
-
-    if include_readme_excerpt and root.is_dir():
-        excerpt = _readme_excerpt(root, max_chars=readme_max_chars)
-        if excerpt:
-            lines.append(f"<readme_excerpt>{_xml_text(excerpt)}</readme_excerpt>")
-
-    inner = "\n".join(lines)
-    # Removed version attribute for cache optimization.
-    return f"<WORKSPACE>\n{inner}\n</WORKSPACE>"
+    ws_str = str(workspace) if workspace is not None else None
+    return build_workspace_section_rust(
+        ws_str,
+        include_layout_preview=include_layout_preview,
+        max_layout_entries=max_layout_entries,
+        include_readme_excerpt=include_readme_excerpt,
+        readme_max_chars=readme_max_chars,
+    )
 
 
 def build_soothe_thread_section(thread_context: dict[str, Any]) -> str:
@@ -226,3 +167,8 @@ def build_context_sections_for_complexity(
         if proto:
             sections.append(proto)
     return sections
+
+
+def build_context_xml(workspace: str, files: list[tuple[str, int, int]]) -> str:
+    """Build a simple context XML from workspace path and file list."""
+    return build_context_xml_rust(workspace, files)

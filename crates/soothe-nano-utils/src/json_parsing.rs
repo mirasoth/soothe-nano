@@ -209,7 +209,11 @@ fn repair_truncated_json(text: &str) -> String {
         }
     }
 
-    let base = if last_char == ',' { &text[..text.len() - 1] } else { text };
+    let base = if last_char == ',' {
+        &text[..text.len() - 1]
+    } else {
+        text
+    };
     format!("{base}{repair}")
 }
 

@@ -1,55 +1,65 @@
 //! PyO3 bindings for `soothe-nano-persist`.
+//!
+//! Exposes `SqliteStoreRuntime` as a Python class providing sync KV operations
+//! (save, load, delete, keys). This is a standalone KV store backed by bundled
+//! SQLite with WAL mode — it does not replace the Python connection pool manager
+//! but provides a fast path for simple key-value persistence.
 
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use soothe_nano_persist::SqliteStoreRuntime;
-use std::sync::Arc;
 
 #[pyclass(name = "SqliteStoreRuntime")]
 pub struct PySqliteStoreRuntime {
-    inner: Arc<SqliteStoreRuntime>,
+    inner: SqliteStoreRuntime,
 }
 
 #[pymethods]
 impl PySqliteStoreRuntime {
-    #[staticmethod]
-    fn open(path: &str) -> PyResult<Self> {
-        let runtime =
-            SqliteStoreRuntime::open(path).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Ok(Self {
-            inner: Arc::new(runtime),
-        })
+    /// Open or create a SQLite DB at `path` with WAL mode + busy_timeout.
+    #[new]
+    fn new(path: &str) -> PyResult<Self> {
+        let runtime = SqliteStoreRuntime::open(path)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        Ok(Self { inner: runtime })
     }
 
+    /// Save a key-value pair (JSON-serializable value).
     fn save_sync(&self, key: &str, value: &str) -> PyResult<()> {
-        let val: serde_json::Value =
-            serde_json::from_str(value).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let json_val: serde_json::Value = serde_json::from_str(value)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
         self.inner
-            .save_sync(key, &val)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            .save_sync(key, &json_val)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
-    fn load_sync(&self, py: Python<'_>, key: &str) -> PyResult<PyObject> {
+    /// Load a value by key. Returns JSON string or None.
+    fn load_sync(&self, key: &str) -> PyResult<Option<String>> {
         let result = self
             .inner
             .load_sync(key)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
         match result {
-            Some(value) => {
-                let json_str = serde_json::to_string(&value)
-                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-                let json_mod = py.import_bound("json")?;
-                let result = json_mod.call_method("loads", (json_str,), None)?;
-                Ok(result.into())
+            Some(val) => {
+                let s = serde_json::to_string(&val)
+                    .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+                Ok(Some(s))
             }
-            None => Ok(py.None()),
+            None => Ok(None),
         }
     }
 
+    /// Delete a key.
     fn delete_sync(&self, key: &str) -> PyResult<()> {
         self.inner
             .delete_sync(key)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// List keys matching prefix.
+    fn keys_sync(&self, prefix: &str) -> PyResult<Vec<String>> {
+        self.inner
+            .keys_sync(prefix)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 }
 

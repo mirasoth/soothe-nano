@@ -17,8 +17,8 @@ soothe-nano-events = { path = "../soothe-nano-events" }
 soothe-nano-tokens = { path = "../soothe-nano-tokens" }
 soothe-nano-workspace = { path = "../soothe-nano-workspace" }
 soothe-nano-config = { path = "../soothe-nano-config" }
-soothe-nano-security = { path = "../soothe-nano-security" }
 soothe-nano-prompts = { path = "../soothe-nano-prompts" }
+soothe-nano-security = { path = "../soothe-nano-security" }
 soothe-nano-persist = { path = "../soothe-nano-persist" }
 soothe-nano-filesystem = { path = "../soothe-nano-filesystem" }
 soothe-nano-skills = { path = "../soothe-nano-skills" }

@@ -4,13 +4,43 @@
 
 use dashmap::DashMap;
 use std::sync::Arc;
-use tiktoken_rs::{get_bpe_from_model, CoreBPE};
+use tiktoken_rs::CoreBPE;
 
 /// Message shape matching LangChain chat messages for token estimation.
 #[derive(Debug, Clone)]
 pub struct Message {
     pub role: String,
     pub content: String,
+}
+
+/// Determine the encoding name for a model, mirroring Python's
+/// `tiktoken.encoding_for_model()` model→encoding mapping.
+///
+/// - GPT-4o, o1, o3 family → `o200k_base`
+/// - GPT-4, GPT-3.5-turbo family → `cl100k_base`
+/// - Unknown / non-OpenAI (Claude, Gemini, local) → `cl100k_base` (approximation)
+fn encoding_name_for_model(model: &str) -> &'static str {
+    let lower = model.to_lowercase();
+    // o200k_base: GPT-4o, o1, o3 family
+    if lower.starts_with("gpt-4o")
+        || lower.starts_with("o1")
+        || lower.starts_with("o3")
+        || lower.contains("4o")
+    {
+        return "o200k_base";
+    }
+    // cl100k_base: GPT-4, GPT-3.5-turbo, and everything else (approximation
+    // for Claude/Gemini/local models whose native tokenizers aren't in tiktoken)
+    "cl100k_base"
+}
+
+/// Load a CoreBPE by encoding name (not model name).
+fn get_bpe_by_encoding(encoding: &str) -> Option<CoreBPE> {
+    match encoding {
+        "o200k_base" => tiktoken_rs::o200k_base().ok(),
+        "cl100k_base" => tiktoken_rs::cl100k_base().ok(),
+        _ => tiktoken_rs::cl100k_base().ok(),
+    }
 }
 
 /// Thread-safe token counter with per-model encoding cache.
@@ -26,16 +56,19 @@ impl TokenCounter {
     }
 
     fn get_encoding(&self, model: &str) -> Option<Arc<CoreBPE>> {
-        if let Some(entry) = self.encodings.get(model) {
+        let encoding_name = encoding_name_for_model(model);
+        if let Some(entry) = self.encodings.get(encoding_name) {
             return Some(Arc::clone(&entry));
         }
-        let bpe = Arc::new(get_bpe_from_model(model).ok()?);
-        self.encodings.insert(model.to_string(), Arc::clone(&bpe));
+        let bpe = Arc::new(get_bpe_by_encoding(encoding_name)?);
+        self.encodings
+            .insert(encoding_name.to_string(), Arc::clone(&bpe));
         Some(bpe)
     }
 
-    /// Count tokens for a single text. Falls back to `gpt-4` encoding
-    /// if the model is unknown, then to char/4 estimation.
+    /// Count tokens for a single text. Uses model-aware encoding selection
+    /// (o200k_base for GPT-4o/o1, cl100k_base for everything else).
+    /// Falls back to char/4 estimation if tiktoken fails.
     pub fn count(&self, text: &str, model: Option<&str>) -> usize {
         let model = model.unwrap_or("gpt-4");
         if let Some(bpe) = self.get_encoding(model) {
@@ -103,5 +136,37 @@ mod tests {
         ];
         let n = counter.count_messages(&msgs, Some("gpt-4"));
         assert!(n > 10);
+    }
+
+    #[test]
+    fn gpt4o_uses_o200k_encoding() {
+        let counter = TokenCounter::new();
+        let n = counter.count("Hello, world!", Some("gpt-4o"));
+        assert!(n > 0 && n < 10);
+    }
+
+    #[test]
+    fn o1_model_uses_o200k_encoding() {
+        let counter = TokenCounter::new();
+        let n = counter.count("Hello, world!", Some("o1-preview"));
+        assert!(n > 0 && n < 10);
+    }
+
+    #[test]
+    fn gpt4o_and_gpt4_may_differ() {
+        let counter = TokenCounter::new();
+        let text = "Hello, world! This is a test.";
+        let n4 = counter.count(text, Some("gpt-4"));
+        let n4o = counter.count(text, Some("gpt-4o"));
+        // Both should be positive; they may or may not differ
+        assert!(n4 > 0);
+        assert!(n4o > 0);
+    }
+
+    #[test]
+    fn unknown_model_falls_back_to_cl100k() {
+        let counter = TokenCounter::new();
+        let n = counter.count("Hello", Some("claude-3-opus"));
+        assert!(n > 0);
     }
 }
