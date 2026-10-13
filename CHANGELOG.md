@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-13
+
 ### Added
 - Absorb the shared-contract layer formerly shipped as the separate `soothe-sdk` package (the SDK is being dissolved; soothe-nano is the canonical home for the agent-side contracts):
   - `soothe_nano.plugin` now owns the plugin-author decorator API: `@plugin`, `@tool`, `@tool_group`, `@subagent`, `PluginManifest`, `PluginContext`, `SootheConfigProtocol`, `PluginHealth`, `library`, `emit_progress`, `set_stream_writer`, `register_event`.
@@ -22,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Drop the `soothe-sdk` dependency — soothe-nano is now self-contained (only first-party runtime dep: `soothe-deepagents`, which never depended on the SDK).
 - **Plugin authors**: the canonical import for the decorator API is now `from soothe_nano.plugin import plugin, tool, subagent` (previously `soothe_sdk.plugin`). Migrate `soothe_sdk.*` imports for the absorbed modules to their `soothe_nano.*` equivalents; `soothe-sdk` is deprecated as a separate package.
 - Host consumers (soothe / soothe-daemon): until the host migrates to `soothe_nano.core.events` / `soothe_nano.core.registry`, event metadata registered by nano lives in the nano-owned registry singleton — plan the host cutover in the same deploy window.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.3.3...v1.4.0
 
 ## [1.3.3] - 2026-10-12
 
