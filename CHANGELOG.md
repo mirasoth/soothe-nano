@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-10-13
+
 ### Removed
 - Dead code cleanup (no importers in `src`/`tests`/`examples`/downstream, verified by an AST import-graph sweep):
   - `soothe_nano.utils.llm` — back-compat shim (`from soothe_nano.llm import *` plus `OpenAICompatModelWrapper` / `JsonSchemaModelWrapper` aliases). Import `soothe_nano.llm` directly.
@@ -19,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Tests: `tests/unit/utils/llm/` (the leftover path from the removed `soothe_nano.utils.llm` shim) merged into `tests/unit/llm/`.
 - `make examples` now also runs `example-06` (computer-use subagent) and `example-07` (computer-use WeChat Favorites harvest); both have dedicated targets.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.4.1...v1.4.2
 
 ## [1.4.1] - 2026-10-13
 
