@@ -40,3 +40,12 @@ env/
 # Legacy tool backups; current default is .soothe/backups/
 .backups/
 uv.lock
+
+# Rust
+crates/target/
+crates/Cargo.lock
+*.rs.bk
+
+# Rust build artifacts (flat)
+target/
+**/*.rs.bk

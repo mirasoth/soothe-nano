@@ -1,0 +1,10 @@
+[package]
+name = "soothe-nano-events"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Event type definitions as serde structs (ported from events/catalog.py)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

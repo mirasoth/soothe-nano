@@ -1,0 +1,11 @@
+[package]
+name = "soothe-nano-tokens"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Token counting via tiktoken-rs (ported from utils/token_counting.py)"
+
+[dependencies]
+tiktoken-rs.workspace = true
+dashmap.workspace = true
+serde.workspace = true

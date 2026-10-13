@@ -80,8 +80,9 @@ def count_tokens(
     """Count tokens using offline tokenizers.
 
     Priority:
-    1. tiktoken with model-aware encoding selection (most accurate)
-    2. Estimation (len // 4) as fallback - zero dependency
+    1. Rust tiktoken-rs via PyO3 (when ``_rust`` extension is compiled)
+    2. Python tiktoken with model-aware encoding selection (most accurate)
+    3. Estimation (len // 4) as fallback - zero dependency
 
     Args:
         text: Text to count tokens for.
@@ -102,7 +103,16 @@ def count_tokens(
         >>> count_tokens("Hello world", use_tiktoken=False)
         3  # Estimation: len("Hello world") // 4
     """
-    # Try tiktoken first (most accurate offline)
+    # Try Rust tiktoken-rs first (native, no GIL, no import overhead).
+    if use_tiktoken:
+        from soothe_nano._rust_compat import is_rust_available
+
+        if is_rust_available():
+            from soothe_nano._rust_compat import count_tokens_rust
+
+            return count_tokens_rust(text, model)
+
+    # Try Python tiktoken next (most accurate offline)
     if use_tiktoken:
         try:
             encoding = _get_encoding_for_model(model)

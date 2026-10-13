@@ -1,0 +1,18 @@
+[package]
+name = "soothe-nano-filesystem"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Local filesystem operations: read, write, edit, grep, glob (ported from filesystem/*.py, toolkits/file_ops.py)"
+
+[dependencies]
+soothe-nano-security = { path = "../soothe-nano-security" }
+soothe-nano-workspace = { path = "../soothe-nano-workspace" }
+soothe-nano-utils = { path = "../soothe-nano-utils" }
+ignore.workspace = true
+globset = "0.4"
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

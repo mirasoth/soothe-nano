@@ -1,0 +1,12 @@
+[package]
+name = "soothe-nano-workspace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Path resolution and workspace isolation (ported from workspace/*.py, paths/sqlite_paths.py)"
+
+[dependencies]
+soothe-nano-utils = { path = "../soothe-nano-utils" }
+camino.workspace = true
+thiserror.workspace = true
+serde.workspace = true

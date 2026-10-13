@@ -1,0 +1,66 @@
+[workspace]
+resolver = "2"
+members = [
+    "soothe-nano-utils",
+    "soothe-nano-events",
+    "soothe-nano-tokens",
+    "soothe-nano-workspace",
+    "soothe-nano-config",
+    "soothe-nano-security",
+    "soothe-nano-prompts",
+    "soothe-nano-persist",
+    "soothe-nano-filesystem",
+    "soothe-nano-skills",
+    "soothe-nano-sys",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.75"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Error / logging
+thiserror = "2"
+tracing = "0.1"
+
+# Path handling
+camino = "1"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Tokenizer
+tiktoken-rs = "0.6"
+
+# Filesystem traversal
+ignore = "0.4"
+
+# Regex
+regex = "1"
+
+# IDs
+uuid = { version = "1", features = ["v4"] }
+
+# Concurrency
+dashmap = "6"
+
+# Env config
+envy = "0.5"
+
+# PyO3 (only used by soothe-nano-sys)
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py311"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"

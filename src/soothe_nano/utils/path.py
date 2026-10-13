@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from soothe_nano._rust_compat import is_rust_available
+
 
 def expand_path(path: str | Path) -> Path:
     """Expand and resolve a filesystem path.
@@ -34,8 +36,14 @@ def expand_path(path: str | Path) -> Path:
     # Convert to string if Path object
     path_str = str(path)
 
-    # Expand environment variables first (handles $HOME, ${HOME}, etc.)
-    expanded = os.path.expandvars(path_str)
+    # Use Rust env-var expansion when available (compiled regex, no GIL)
+    if is_rust_available():
+        from soothe_nano._rust_compat import expand_env_vars_rust
+
+        expanded = expand_env_vars_rust(path_str)
+    else:
+        # Expand environment variables first (handles $HOME, ${HOME}, etc.)
+        expanded = os.path.expandvars(path_str)
 
     # Expand home directory (~ and ~user) and convert to Path
     expanded_path = Path(expanded).expanduser()

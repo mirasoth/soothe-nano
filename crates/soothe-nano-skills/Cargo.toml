@@ -1,0 +1,15 @@
+[package]
+name = "soothe-nano-skills"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Skill discovery, corpus matching, budget tracking (ported from skills/*.py)"
+
+[dependencies]
+soothe-nano-tokens = { path = "../soothe-nano-tokens" }
+soothe-nano-filesystem = { path = "../soothe-nano-filesystem" }
+soothe-nano-utils = { path = "../soothe-nano-utils" }
+ignore.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
