@@ -1,14 +1,17 @@
 //! Pure-logic utilities ported from `utils/*.py`.
 
 pub mod circuit_breaker;
+pub mod formatting;
 pub mod json_parsing;
 pub mod output_capture;
 pub mod path;
+pub mod prompt_clock;
 pub mod text_preview;
 pub mod thread_id;
 pub mod url_validation;
 
 pub use circuit_breaker::{CircuitBreaker, CircuitState};
+pub use formatting::{convert_and_abbreviate_path, format_cli_error, log_preview};
 pub use json_parsing::repair_json;
 pub use output_capture::OutputCapture;
 pub use path::normalize_relative;

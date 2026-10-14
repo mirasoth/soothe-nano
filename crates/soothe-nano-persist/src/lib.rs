@@ -1,7 +1,4 @@
 //! SQLite runtime, persist stores, durability.
-//!
-//! Ports: `persistence/sqlite_runtime.py`, `backends/persistence/sqlite_store.py`,
-//! `backends/persistence/postgres_store.py`, `backends/durability/`.
 
 pub mod durability;
 pub mod persist_store;

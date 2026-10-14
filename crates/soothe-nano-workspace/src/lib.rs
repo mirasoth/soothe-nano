@@ -1,8 +1,4 @@
 //! Path resolution and workspace isolation.
-//!
-//! Ports: `workspace/workspace_api.py`, `workspace/workspace_paths.py`,
-//! `workspace/workspace_policy.py`, `workspace/workspace_runtime.py`,
-//! `paths/sqlite_paths.py`.
 
 pub mod policy;
 pub mod resolution;

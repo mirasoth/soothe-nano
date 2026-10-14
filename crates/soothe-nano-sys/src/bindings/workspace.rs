@@ -2,7 +2,9 @@
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use soothe_nano_workspace::{resolve_workspace_for_stream, ResolvedWorkspace, WorkspaceSource};
+use soothe_nano_workspace::{
+    resolve_workspace_for_stream, ResolvedWorkspace, WorkspacePolicy, WorkspaceSource,
+};
 
 #[pyclass(name = "ResolvedWorkspace")]
 pub struct PyResolvedWorkspace {
@@ -44,8 +46,53 @@ fn resolve_workspace(
     Ok(result.into())
 }
 
+// ── WorkspacePolicy ───────────────────────────────────────────
+
+#[pyclass(name = "WorkspacePolicy")]
+pub struct PyWorkspacePolicy {
+    inner: WorkspacePolicy,
+}
+
+#[pymethods]
+impl PyWorkspacePolicy {
+    /// Create a policy rooted at `root` with defaults.
+    #[new]
+    fn new(root: &str) -> Self {
+        Self {
+            inner: WorkspacePolicy::new(root),
+        }
+    }
+
+    /// Whether writes are permitted.
+    #[getter]
+    fn can_write(&self) -> bool {
+        self.inner.can_write()
+    }
+
+    /// Workspace root as a string.
+    #[getter]
+    fn root(&self) -> String {
+        self.inner.root.to_string_lossy().to_string()
+    }
+
+    /// Check if `path` is within the workspace root.
+    fn is_within(&self, path: &str) -> bool {
+        self.inner.is_within(std::path::Path::new(path))
+    }
+}
+
+/// Construct a `WorkspacePolicy` rooted at `root`.
+#[pyfunction]
+fn workspace_policy_new(root: &str) -> PyWorkspacePolicy {
+    PyWorkspacePolicy {
+        inner: WorkspacePolicy::new(root),
+    }
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyResolvedWorkspace>()?;
+    m.add_class::<PyWorkspacePolicy>()?;
     m.add_function(wrap_pyfunction!(resolve_workspace, m)?)?;
+    m.add_function(wrap_pyfunction!(workspace_policy_new, m)?)?;
     Ok(())
 }

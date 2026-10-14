@@ -1,15 +1,13 @@
 //! Path validation, policy evaluation, rate limiting, operation guards.
-//!
-//! Ports: `security/path_security.py`, `security/policy_models.py`,
-//! `security/policy_profiles.py`, `security/security_enforcer.py`,
-//! `security/operation_guard.py`.
 
+pub mod command_guard;
 pub mod operation_guard;
 pub mod path_security;
 pub mod policy_models;
 pub mod policy_profiles;
 pub mod rate_limiter;
 
+pub use command_guard::{dangerous_command_rule_id, rule_family};
 pub use operation_guard::{OperationGuard, OperationRecord};
 pub use path_security::{PathValidator, ValidationResult, ViolationType};
 pub use policy_models::{PolicyAction, PolicyRule, SecurityPolicy};

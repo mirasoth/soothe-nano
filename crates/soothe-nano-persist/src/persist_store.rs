@@ -1,5 +1,4 @@
-//! Persist store trait + SQLite implementation
-//! (ported from `backends/persistence/sqlite_store.py`).
+//! Persist store trait + SQLite implementation (ported from `backends/persistence/sqlite_store.py`).
 
 use async_trait::async_trait;
 use serde_json::Value;

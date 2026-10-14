@@ -51,9 +51,48 @@ def format_skills_within_budget(
     full descriptions, others share the remainder), ``names_only`` (extreme
     case; non-built-ins become names only).
 
+    Delegates to the Rust extension when available; falls back to the Python
+    implementation otherwise.
+
     Returns:
         Tuple of (formatted_text, telemetry).
     """
+    from soothe_nano._rust_compat import format_skills_within_budget_rust
+
+    tuples = [
+        (e.name, e.description or "", (e.when_to_use or "").strip(), e.source) for e in entries
+    ]
+    result = format_skills_within_budget_rust(
+        tuples,
+        budget_chars=budget_chars,
+        per_entry_cap_chars=per_entry_cap_chars,
+        min_per_entry_chars=min_per_entry_chars,
+    )
+    if result is not None:
+        text, tel = result
+        return text, BudgetTelemetry(
+            included_count=tel["included_count"],
+            truncated_count=tel["truncated_count"],
+            mode=tel["mode"],
+            budget_chars=tel["budget_chars"],
+            actual_chars=tel["actual_chars"],
+        )
+    return _format_skills_within_budget_py(
+        entries,
+        budget_chars=budget_chars,
+        per_entry_cap_chars=per_entry_cap_chars,
+        min_per_entry_chars=min_per_entry_chars,
+    )
+
+
+def _format_skills_within_budget_py(
+    entries: Sequence[SkillIndexEntry],
+    *,
+    budget_chars: int,
+    per_entry_cap_chars: int = 250,
+    min_per_entry_chars: int = 20,
+) -> tuple[str, BudgetTelemetry]:
+    """Python fallback for budgeted skill-listing formatting."""
     if not entries:
         return "", BudgetTelemetry(
             included_count=0,

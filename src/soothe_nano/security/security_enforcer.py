@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from soothe_nano._rust_compat import is_rust_available, rust_rate_limiter_new
 from soothe_nano.workspace.workspace_paths import join_workspace_normalized_path
 
 from .path_security import PathValidator, ValidationSeverity
@@ -108,6 +109,16 @@ class SecurityEnforcer:
         self.enable_rate_limiting = enable_rate_limiting
         self.violation_callback = violation_callback
         self.rate_limiter = RateLimiter() if enable_rate_limiting else None
+        # Rust token-bucket fast-path for per-operation rate limiting. Acts as
+        # a reject-only short-circuit: when it denies, the Python sliding-window
+        # limiter is skipped; when it allows, the Python limiter still runs to
+        # apply its per-path semantics and audit stats.
+        self._rust_rate_limiter: Any = None
+        if enable_rate_limiting and is_rust_available():
+            self._rust_rate_limiter = rust_rate_limiter_new(
+                capacity=self.policy.max_operations_per_minute,
+                refill_per_minute=self.policy.max_operations_per_minute,
+            )
         self.audit_log: list[OperationRecord] = []
         self.max_audit_entries = 10000
         logger.info(
@@ -164,16 +175,19 @@ class SecurityEnforcer:
         policy_decision = self.policy.evaluate(path, operation, context)
 
         if self.enable_rate_limiting and self.rate_limiter:
-            allowed, count = self.rate_limiter.check_rate(
-                operation,
-                self.policy.max_operations_per_minute,
-                path=None,
-            )
-            if not allowed:
+            # Rust token-bucket fast-path: atomic check+consume keyed by
+            # operation. A denial short-circuits; an allowance skips the
+            # Python per-operation ``check_rate`` (Rust already confirmed
+            # capacity) but the per-path check and ``record`` still run so
+            # audit stats and per-path semantics are preserved.
+            rust_denied = False
+            if self._rust_rate_limiter is not None:
+                rust_denied = not self._rust_rate_limiter.try_consume(operation)
+            if rust_denied:
                 violation = PolicyViolation(
                     policy_name=self.policy.name,
                     violation_type="rate_limit_exceeded",
-                    message=f"Rate limit exceeded: {count} operations",
+                    message="Rate limit exceeded (Rust fast-path)",
                     path=path,
                     operation=operation,
                     severity="high",
@@ -191,6 +205,37 @@ class SecurityEnforcer:
                     except Exception as e:
                         logger.error("Violation callback failed: %s", e)
                 return decision
+
+            # Python sliding-window fallback (only when Rust is absent or
+            # did not consume — Rust already accounted for the token).
+            if self._rust_rate_limiter is None:
+                allowed, count = self.rate_limiter.check_rate(
+                    operation,
+                    self.policy.max_operations_per_minute,
+                    path=None,
+                )
+                if not allowed:
+                    violation = PolicyViolation(
+                        policy_name=self.policy.name,
+                        violation_type="rate_limit_exceeded",
+                        message=f"Rate limit exceeded: {count} operations",
+                        path=path,
+                        operation=operation,
+                        severity="high",
+                    )
+                    decision = PathPolicyDecision(
+                        allowed=False,
+                        action=PolicyAction.DENY,
+                        reason="Rate limit exceeded",
+                        violations=[violation],
+                    )
+                    self._log_operation(path, operation, decision)
+                    if self.violation_callback:
+                        try:
+                            self.violation_callback(violation)
+                        except Exception as e:
+                            logger.error("Violation callback failed: %s", e)
+                    return decision
 
             if path and self.policy.per_path_rate_limit:
                 path_allowed, path_count = self.rate_limiter.check_rate(
@@ -344,6 +389,12 @@ class SecurityEnforcer:
         old_name = self.policy.name
         self.policy = policy
         self.validator = self._default_validator()
+        # Rebuild the Rust token bucket to match the new policy's capacity.
+        if self.enable_rate_limiting and is_rust_available():
+            self._rust_rate_limiter = rust_rate_limiter_new(
+                capacity=self.policy.max_operations_per_minute,
+                refill_per_minute=self.policy.max_operations_per_minute,
+            )
         logger.info("Security policy updated: %s -> %s", old_name, policy.name)
 
 

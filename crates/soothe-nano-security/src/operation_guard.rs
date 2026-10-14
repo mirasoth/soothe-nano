@@ -1,6 +1,4 @@
 //! Operation guard (ported from `security/operation_guard.py`).
-//!
-//! Guards each file operation against security policy + rate limits.
 
 use crate::path_security::{PathValidator, ValidationResult};
 use crate::policy_models::PolicyAction;
@@ -35,15 +33,12 @@ impl OperationGuard {
         }
     }
 
-    /// Check an operation. Returns Ok(ValidationResult) if allowed,
-    /// Err(SecurityError) if denied.
+    /// Check an operation against rate limit, policy, and path validation.
     pub fn check(&self, op: &OperationRecord) -> Result<ValidationResult, crate::SecurityError> {
-        // Rate limit check
         if !self.rate_limiter.try_consume(&op.operation) {
             return Err(crate::SecurityError::RateLimited);
         }
 
-        // Policy check
         let action = self.policy.evaluate_path(&op.path);
         if action == PolicyAction::Deny {
             return Err(crate::SecurityError::PolicyDeny(format!(
@@ -52,7 +47,6 @@ impl OperationGuard {
             )));
         }
 
-        // Path validation
         let result = self.validator.validate(&op.path);
         if !result.is_valid {
             return Err(crate::SecurityError::PathValidation(result.message));

@@ -7,13 +7,15 @@ leased reader connections, uniform WAL / busy_timeout pragmas.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
+from soothe_nano._rust_compat import is_rust_available, rust_sqlite_store_new
 from soothe_nano.config.models import SqliteRuntimeConfig
 
 logger = logging.getLogger(__name__)
@@ -70,6 +72,15 @@ class SqliteStoreRuntime:
         self._reader_semaphore = threading.Semaphore(self._config.reader_pool_size)
         self._closed = False
         self._init_lock = threading.Lock()
+        # Rust fast-path for simple KV ops (file-based DBs only; :memory:
+        # cannot be shared across the separate Rust SQLite connection).
+        self._rust_store: Any = None
+        if is_rust_available() and not self._is_memory:
+            try:
+                self._rust_store = rust_sqlite_store_new(str(self.db_path))
+            except Exception:
+                logger.warning("Rust SqliteStoreRuntime init failed; using Python fallback")
+                self._rust_store = None
 
     def _ensure_not_closed(self) -> None:
         if self._closed:
@@ -173,6 +184,57 @@ class SqliteStoreRuntime:
     async def run_read(self, sync_fn: Callable[[sqlite3.Connection], T]) -> T:
         """Async wrapper around ``run_read_sync``."""
         return await asyncio.to_thread(self.run_read_sync, sync_fn)
+
+    # ------------------------------------------------------------------
+    # Simple KV fast-path (Rust SqliteStoreRuntime delegation)
+    # ------------------------------------------------------------------
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Load a JSON value by *key* (Rust fast-path, Python fallback).
+
+        Uses the Rust ``SqliteStoreRuntime.load_sync`` when available;
+        falls back to a Python ``run_read_sync`` query otherwise.
+        """
+        if self._rust_store is not None:
+            raw = self._rust_store.load_sync(key)
+            if raw is None:
+                return default
+            try:
+                return json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return default
+
+        # Python fallback
+        def _load(conn: sqlite3.Connection) -> Any:
+            row = conn.execute("SELECT value FROM soothe_kv WHERE key = ?", (key,)).fetchone()
+            if row is None:
+                return default
+            try:
+                return json.loads(row[0])
+            except (json.JSONDecodeError, TypeError):
+                return default
+
+        return self.run_read_sync(_load)
+
+    def put(self, key: str, value: Any) -> None:
+        """Save a JSON-serializable *value* under *key* (Rust fast-path, Python fallback).
+
+        Uses the Rust ``SqliteStoreRuntime.save_sync`` when available;
+        falls back to a Python ``run_write_sync`` upsert otherwise.
+        """
+        if self._rust_store is not None:
+            self._rust_store.save_sync(key, json.dumps(value))
+            return
+        # Python fallback
+        serialized = json.dumps(value)
+
+        def _save(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                "INSERT OR REPLACE INTO soothe_kv (key, value) VALUES (?, ?)",
+                (key, serialized),
+            )
+
+        self.run_write_sync(_save)
 
     def close_sync(self) -> None:
         """Close connections; optionally truncate WAL."""

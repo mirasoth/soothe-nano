@@ -1,6 +1,4 @@
 //! Path validation (ported from `security/path_security.py`).
-//!
-//! Compiled regex at startup (no per-call compile), zero-cost enum dispatch.
 
 use regex::Regex;
 use std::path::{Path, PathBuf};
@@ -73,12 +71,10 @@ impl PathValidator {
 
     /// Validate a path string against security rules.
     pub fn validate(&self, path: &str) -> ValidationResult {
-        // Check for null bytes
         if path.contains('\0') {
             return ValidationResult::invalid(ViolationType::NullByte, "null byte in path");
         }
 
-        // Check dangerous patterns
         for re in dangerous_patterns() {
             if re.is_match(path) {
                 if path.starts_with('/') {
@@ -96,7 +92,7 @@ impl PathValidator {
             }
         }
 
-        // Normalize and join to workspace
+        // Normalize and join to workspace.
         match soothe_nano_utils::normalize_relative(path) {
             Ok(normalized) => {
                 let joined = self.workspace_root.join(&normalized);

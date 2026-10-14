@@ -1,6 +1,4 @@
 //! Token counting via tiktoken-rs (ported from `utils/token_counting.py`).
-//!
-//! Uses native Rust tiktoken — no Python GIL, no import overhead.
 
 use dashmap::DashMap;
 use std::sync::Arc;
@@ -13,15 +11,10 @@ pub struct Message {
     pub content: String,
 }
 
-/// Determine the encoding name for a model, mirroring Python's
-/// `tiktoken.encoding_for_model()` model→encoding mapping.
-///
-/// - GPT-4o, o1, o3 family → `o200k_base`
-/// - GPT-4, GPT-3.5-turbo family → `cl100k_base`
-/// - Unknown / non-OpenAI (Claude, Gemini, local) → `cl100k_base` (approximation)
+/// Determine the encoding name for a model.
 fn encoding_name_for_model(model: &str) -> &'static str {
     let lower = model.to_lowercase();
-    // o200k_base: GPT-4o, o1, o3 family
+    // o200k_base: GPT-4o, o1, o3 family.
     if lower.starts_with("gpt-4o")
         || lower.starts_with("o1")
         || lower.starts_with("o3")
@@ -29,8 +22,7 @@ fn encoding_name_for_model(model: &str) -> &'static str {
     {
         return "o200k_base";
     }
-    // cl100k_base: GPT-4, GPT-3.5-turbo, and everything else (approximation
-    // for Claude/Gemini/local models whose native tokenizers aren't in tiktoken)
+    // cl100k_base: everything else (approximation for non-OpenAI models).
     "cl100k_base"
 }
 
@@ -66,9 +58,7 @@ impl TokenCounter {
         Some(bpe)
     }
 
-    /// Count tokens for a single text. Uses model-aware encoding selection
-    /// (o200k_base for GPT-4o/o1, cl100k_base for everything else).
-    /// Falls back to char/4 estimation if tiktoken fails.
+    /// Count tokens for a single text. Falls back to char/4 if tiktoken fails.
     pub fn count(&self, text: &str, model: Option<&str>) -> usize {
         let model = model.unwrap_or("gpt-4");
         if let Some(bpe) = self.get_encoding(model) {

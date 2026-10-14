@@ -1,11 +1,4 @@
 //! PyO3 bindings for `soothe-nano-prompts`.
-//!
-//! Exposes:
-//! - `build_context_xml` — file-list XML (pure Rust)
-//! - `load_project_instructions` — file discovery (pure Rust)
-//! - `build_environment_section` — ENVIRONMENT XML (round-trips into Python
-//!   for `is_rg_available()` and `get_knowledge_cutoff()`)
-//! - `build_workspace_section` — WORKSPACE XML (pure Rust filesystem I/O)
 
 use pyo3::prelude::*;
 use soothe_nano_prompts::context_xml::FileInfo;
@@ -27,28 +20,20 @@ fn load_project_instructions(workspace: &str) -> Option<String> {
     soothe_nano_prompts::load_project_instructions(std::path::Path::new(workspace))
 }
 
-/// Build the ENVIRONMENT XML block.
-///
-/// Round-trips into Python for:
-/// - `soothe_deepagents.backends.grep_search.is_rg_available()`
-/// - `soothe_nano.config.models.get_knowledge_cutoff(model)`
-///
-/// Platform/shell introspection and XML assembly are done in Rust.
+/// Build the ENVIRONMENT XML block. Round-trips into Python for `is_rg_available()`
+/// and `get_knowledge_cutoff(model)`.
 #[pyfunction]
 fn build_environment_section(py: Python<'_>, model: &str) -> PyResult<String> {
-    // Platform introspection (pure Rust)
     let platform_name = std::env::consts::OS;
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "unknown".to_string());
     let os_version = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
 
-    // Round-trip: is_rg_available
     let is_rg = py
         .import_bound("soothe_deepagents.backends.grep_search")?
         .getattr("is_rg_available")?
         .call0()?
         .is_truthy()?;
 
-    // Round-trip: get_knowledge_cutoff
     let cutoff_obj = py
         .import_bound("soothe_nano.config.models")?
         .getattr("get_knowledge_cutoff")?

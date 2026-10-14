@@ -1,6 +1,4 @@
 //! Rate limiter (ported from security rate limiting logic).
-//!
-//! Token bucket per-operation rate limiting.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -35,7 +33,6 @@ impl RateLimiter {
             last_refill: Instant::now(),
         });
 
-        // Refill based on elapsed time
         let elapsed = bucket.last_refill.elapsed();
         let refill = (elapsed.as_secs_f64() / 60.0) * self.refill_per_minute as f64;
         bucket.tokens = (bucket.tokens + refill).min(self.capacity as f64);

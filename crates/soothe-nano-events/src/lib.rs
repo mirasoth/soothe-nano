@@ -1,11 +1,8 @@
-//! Event type definitions ported from `events/catalog.py`.
-//!
-//! Each event is a `serde`-serializable struct that maps 1:1 to the
-//! Python `StreamChunk` / custom event schema.
+//! Event types ported from `events/catalog.py`.
 
 use serde::{Deserialize, Serialize};
 
-/// A chunk emitted during streaming, serialized to JSON for the Python bridge.
+/// A chunk emitted during streaming.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum StreamChunk {

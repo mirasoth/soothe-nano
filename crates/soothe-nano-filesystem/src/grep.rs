@@ -1,5 +1,4 @@
-//! Grep implementation using the `ignore` crate for traversal
-//! and `regex` for matching.
+//! Grep using `ignore` for traversal and `regex` for matching.
 
 use serde::Serialize;
 use std::fs::File;

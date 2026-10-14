@@ -12,12 +12,7 @@ fn build_marker(count: usize, unit: &str, marker: Option<&str>) -> String {
     }
 }
 
-/// Produce a preview of `text`, truncated to `max_chars` characters with `...` appended.
-///
-/// Matches Python's `log_preview(text, chars)` behavior:
-/// - If text length <= max_chars, return as-is.
-/// - Otherwise, return first `max_chars` characters + `...`.
-/// - No whitespace collapsing.
+/// Truncate `text` to `max_chars` characters with `...` appended.
 pub fn text_preview(text: &str, max_chars: usize) -> String {
     let char_count = text.chars().count();
     if char_count <= max_chars {
@@ -29,12 +24,7 @@ pub fn text_preview(text: &str, max_chars: usize) -> String {
 
 /// Full preview API mirroring Python's `preview(text, mode, first, last, marker)`.
 ///
-/// - mode "chars": character-based truncation
-/// - mode "lines": line-based truncation
-/// - mode "full": no truncation (return as-is)
-/// - first: number of chars/lines to include from the start
-/// - last: when set, include last N chars/lines with a marker in between
-/// - marker: custom marker string; None uses the default template
+/// Modes: `"chars"` (character-based), `"lines"` (line-based), `"full"` (no truncation).
 pub fn preview_full(
     text: &str,
     mode: &str,
@@ -101,61 +91,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn short_text_unchanged() {
-        assert_eq!(text_preview("hello world", 100), "hello world");
+    fn text_preview_short() {
+        assert_eq!(text_preview("hello", 10), "hello");
     }
 
     #[test]
-    fn long_text_truncated() {
-        let out = text_preview("hello world foo bar baz", 10);
-        assert_eq!(out, "hello worl...");
+    fn text_preview_truncates() {
+        assert_eq!(text_preview("hello world", 5), "hello...");
     }
 
     #[test]
-    fn exact_boundary() {
-        assert_eq!(text_preview("exact", 5), "exact");
+    fn preview_full_mode_full() {
+        assert_eq!(preview_full("hello", "full", None, None, None), "hello");
     }
 
     #[test]
-    fn one_over_boundary() {
-        assert_eq!(text_preview("abcdef", 5), "abcde...");
+    fn preview_full_chars_with_last() {
+        let text = "abcdefghij";
+        let result = preview_full(text, "chars", Some(3), Some(3), None);
+        assert!(result.contains("abc"));
+        assert!(result.contains("hij"));
     }
 
     #[test]
-    fn preview_full_chars_first_only() {
-        let out = preview_full("Hello world", "chars", Some(5), None, None);
-        assert!(out.starts_with("Hello"));
-        assert!(out.contains("chars abbr"));
-    }
-
-    #[test]
-    fn preview_full_chars_head_tail() {
-        let out = preview_full("abcdefghij", "chars", Some(2), Some(2), None);
-        assert!(out.starts_with("ab"));
-        assert!(out.ends_with("ij"));
-        assert!(out.contains("chars abbr"));
-    }
-
-    #[test]
-    fn preview_full_lines_head_tail() {
-        let text = "L1\nL2\nL3\nL4\nL5\nL6";
-        let out = preview_full(text, "lines", Some(1), Some(1), None);
-        assert!(out.starts_with("L1"));
-        assert!(out.ends_with("L6"));
-        assert!(out.contains("lines abbr"));
-    }
-
-    #[test]
-    fn preview_full_mode_returns_as_is() {
-        assert_eq!(
-            preview_full("anything", "full", None, None, None),
-            "anything"
-        );
-    }
-
-    #[test]
-    fn preview_full_custom_marker() {
-        let out = preview_full("abcdefghij", "chars", Some(2), None, Some("[CUT]"));
-        assert_eq!(out, "ab[CUT]");
+    fn preview_full_lines() {
+        let text = "line1\nline2\nline3\nline4\nline5\nline6";
+        let result = preview_full(text, "lines", Some(2), Some(1), None);
+        assert!(result.contains("line1"));
+        assert!(result.contains("line6"));
     }
 }

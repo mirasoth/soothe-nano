@@ -1,8 +1,4 @@
-//! Environment and workspace XML section builders.
-//!
-//! Ports: `prompts/context_xml.py::build_soothe_environment_section` and
-//! `build_soothe_workspace_section`. The environment section calls back into
-//! Python via PyO3 for `is_rg_available()` and `get_knowledge_cutoff()`.
+//! Environment and workspace XML section builders (ported from `prompts/context_xml.py`).
 
 use std::path::Path;
 
@@ -13,10 +9,8 @@ fn escape_xml(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Build the ENVIRONMENT XML block.
-///
-/// `is_rg` and `knowledge_cutoff` are passed in (obtained via PyO3 round-trip
-/// from Python) so this function stays pure Rust and testable without Python.
+/// Build the ENVIRONMENT XML block. `is_rg` and `knowledge_cutoff` are passed in
+/// (obtained via PyO3 round-trip) so this function stays pure Rust.
 pub fn build_environment_section(
     platform_name: &str,
     shell: &str,
@@ -44,10 +38,6 @@ pub fn build_environment_section(
 }
 
 /// Build the WORKSPACE XML block.
-///
-/// `workspace_path` is the resolved root. When `include_layout` is true,
-/// lists top-level directory entries (max `max_layout_entries`). When
-/// `include_readme` is true, reads a short README excerpt.
 pub fn build_workspace_section(
     workspace_path: &Path,
     include_layout: bool,

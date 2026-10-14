@@ -52,6 +52,10 @@ regex = "1"
 # IDs
 uuid = { version = "1", features = ["v4"] }
 
+# Date/time
+chrono = "0.4"
+chrono-tz = "0.10"
+
 # Concurrency
 dashmap = "6"
 

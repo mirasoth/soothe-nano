@@ -3,7 +3,7 @@
 use crate::WorkspaceError;
 use std::path::{Path, PathBuf};
 
-/// Where the workspace came from — mirrors the Python precedence chain.
+/// Where the workspace came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceSource {
     Explicit,
@@ -20,7 +20,7 @@ pub struct ResolvedWorkspace {
     pub source: WorkspaceSource,
 }
 
-/// Expand `~` to the home directory, matching Python's `os.path.expanduser`.
+/// Expand `~` to the home directory.
 fn expanduser(path: &str) -> String {
     if path.starts_with('~') {
         if let Ok(home) = std::env::var("HOME") {
@@ -39,13 +39,10 @@ fn expanduser(path: &str) -> String {
 fn normalize_candidate(path: &str) -> PathBuf {
     let expanded = expanduser(path);
     let p = PathBuf::from(&expanded);
-    // Try to canonicalize (resolves symlinks). If it fails (path doesn't
-    // exist yet), use the expanded path as-is.
     p.canonicalize().unwrap_or(p)
 }
 
-/// Resolve the workspace for a stream, following the precedence chain:
-/// explicit > thread > daemon default > cwd.
+/// Resolve workspace for a stream: explicit > thread > daemon default > cwd.
 pub fn resolve_workspace_for_stream(
     explicit: Option<&str>,
     thread_workspace: Option<&str>,
@@ -75,8 +72,7 @@ pub fn resolve_workspace_for_stream(
     })
 }
 
-/// Join a workspace root with a relative path, ensuring the result
-/// does not escape the workspace boundary.
+/// Join a workspace root with a relative path, ensuring no escape.
 pub fn join_workspace_normalized_path(
     workspace: &Path,
     relative: &str,

@@ -1,8 +1,4 @@
 //! Environment variable expansion (ported from `config/env.py`).
-//!
-//! Expands `${VAR}` and `$VAR` patterns in strings using process env.
-//! Matches Python's `os.path.expandvars` behavior: unset variables are
-//! left unchanged (e.g. `$UNSET/path` stays `$UNSET/path`).
 
 /// Expand `${VAR}` and `$VAR` patterns in a string.
 pub fn expand_env_vars(input: &str) -> String {
@@ -12,12 +8,10 @@ pub fn expand_env_vars(input: &str) -> String {
     while i < chars.len() {
         if chars[i] == '$' && i + 1 < chars.len() {
             if chars[i + 1] == '{' {
-                // ${VAR} form
                 if let Some(end) = chars[i + 2..].iter().position(|&c| c == '}') {
                     let var_name: String = chars[i + 2..i + 2 + end].iter().collect();
                     match std::env::var(&var_name) {
                         Ok(val) => result.push_str(&val),
-                        // Leave unset vars unchanged (matches os.path.expandvars)
                         Err(_) => {
                             let original: String = chars[i..i + 2 + end + 1].iter().collect();
                             result.push_str(&original);
@@ -27,7 +21,6 @@ pub fn expand_env_vars(input: &str) -> String {
                     continue;
                 }
             } else if chars[i + 1].is_ascii_alphabetic() || chars[i + 1] == '_' {
-                // $VAR form — read until non-identifier char
                 let start = i + 1;
                 let mut end = start;
                 while end < chars.len() && (chars[end].is_ascii_alphanumeric() || chars[end] == '_')
@@ -37,7 +30,6 @@ pub fn expand_env_vars(input: &str) -> String {
                 let var_name: String = chars[start..end].iter().collect();
                 match std::env::var(&var_name) {
                     Ok(val) => result.push_str(&val),
-                    // Leave unset vars unchanged (matches os.path.expandvars)
                     Err(_) => {
                         let original: String = chars[i..end].iter().collect();
                         result.push_str(&original);
@@ -79,7 +71,6 @@ mod tests {
     #[test]
     fn unset_var_left_unchanged() {
         std::env::remove_var("UNSET_VAR_XYZ");
-        // Matches os.path.expandvars: unset vars stay as-is
         assert_eq!(
             expand_env_vars("${UNSET_VAR_XYZ}/path"),
             "${UNSET_VAR_XYZ}/path"

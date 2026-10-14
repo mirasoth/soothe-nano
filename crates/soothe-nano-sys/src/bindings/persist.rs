@@ -1,9 +1,4 @@
 //! PyO3 bindings for `soothe-nano-persist`.
-//!
-//! Exposes `SqliteStoreRuntime` as a Python class providing sync KV operations
-//! (save, load, delete, keys). This is a standalone KV store backed by bundled
-//! SQLite with WAL mode — it does not replace the Python connection pool manager
-//! but provides a fast path for simple key-value persistence.
 
 use pyo3::prelude::*;
 use soothe_nano_persist::SqliteStoreRuntime;

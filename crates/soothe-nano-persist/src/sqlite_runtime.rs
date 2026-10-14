@@ -1,7 +1,4 @@
 //! SQLite runtime with connection pooling (ported from `persistence/sqlite_runtime.py`).
-//!
-//! Uses `rusqlite` with bundled SQLite. WAL mode + busy_timeout set at pool init.
-//! `tokio::task::spawn_blocking` wraps sync SQLite calls for async callers.
 
 use rusqlite::{params, Connection};
 use std::path::PathBuf;
@@ -24,12 +21,11 @@ impl SqliteStoreRuntime {
         let path = path.into();
         let conn = Connection::open(&path)?;
 
-        // Set pragmas
+        // Pragmas
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "busy_timeout", 5000)?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
 
-        // Create table if not exists
         conn.execute(
             "CREATE TABLE IF NOT EXISTS nano_kv (
                 key TEXT PRIMARY KEY,
@@ -93,8 +89,6 @@ impl SqliteStoreRuntime {
 
     /// Async save (wraps sync in spawn_blocking).
     pub async fn save(&self, key: String, value: serde_json::Value) -> Result<(), PersistError> {
-        // For simplicity in the skeleton, we call sync directly.
-        // In production: tokio::task::spawn_blocking with Arc clone.
         self.save_sync(&key, &value)
     }
 

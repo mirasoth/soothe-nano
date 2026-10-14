@@ -1,10 +1,4 @@
 //! PyO3 bindings for `soothe-nano-filesystem`.
-//!
-//! Exposes `LocalFilesystem` as a Python class providing read/write/edit/glob/grep
-//! operations with workspace isolation and path validation. This is a standalone
-//! utility — it does not participate in deepagents edit locks and should not be
-//! used for operations that require concurrency safety. Use the Python
-//! `LocalFilesystem` for production file operations.
 
 use pyo3::prelude::*;
 use soothe_nano_filesystem::LocalFilesystem;

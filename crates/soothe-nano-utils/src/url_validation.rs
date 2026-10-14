@@ -91,7 +91,7 @@ pub fn validate_url(raw: &str) -> Result<ValidatedUrl, UrlValidationError> {
     })
 }
 
-/// Reconstruct the full sanitized URL string from a ValidatedUrl.
+/// Reconstruct the sanitized URL string.
 impl ValidatedUrl {
     pub fn to_url_string(&self) -> String {
         let path = if self.path.is_empty() {

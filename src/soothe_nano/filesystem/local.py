@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import aiofiles
 import wcmatch.glob as wcglob
@@ -36,6 +37,7 @@ from soothe_deepagents.backends.protocol import (
     WriteResult,
 )
 
+from soothe_nano._rust_compat import is_rust_available, rust_local_filesystem_new
 from soothe_nano.workspace.workspace_paths import WORKSPACE_BACKUP_DIR
 
 from .exceptions import (
@@ -95,6 +97,14 @@ class LocalFilesystem(UnifiedFilesystem):
             max_file_size_mb=max_file_size_mb,
             backup_dir=backup_dir,
         )
+        # Rust fast-path for read/glob/grep (standalone utility; does not
+        # participate in edit locks — used only for read-only operations).
+        self._rust_fs: Any = None
+        if is_rust_available():
+            try:
+                self._rust_fs = rust_local_filesystem_new(str(self._workspace))
+            except Exception:
+                self._rust_fs = None
 
     def _resolve_path(self, path: str, *, allow_host_absolute: bool = False) -> Path:
         """Resolve path within workspace.
@@ -294,7 +304,25 @@ class LocalFilesystem(UnifiedFilesystem):
         limit: int | None = None,
         encoding: str = "utf-8",
     ) -> ReadResult:
-        """Read file contents."""
+        """Read file contents.
+
+        When the Rust extension is available and the read is a simple full-file
+        UTF-8 read (no offset/limit), delegates to the Rust
+        ``LocalFilesystem.read`` fast-path.
+        """
+        # Rust fast-path for simple full-file reads.
+        if self._rust_fs is not None and not offset and limit is None and encoding == "utf-8":
+            try:
+                import json
+
+                raw_json = self._rust_fs.read(path)
+                data = json.loads(raw_json)
+                content = data.get("content", "")
+                file_encoding = data.get("encoding", "utf-8")
+                return ReadResult(file_data=FileData(content=content, encoding=file_encoding))
+            except Exception:
+                pass  # fall through to full Python implementation
+
         resolved = self._resolve_path(path, allow_host_absolute=True)
 
         if not resolved.exists():
@@ -1172,10 +1200,25 @@ class LocalFilesystem(UnifiedFilesystem):
         """Glob pattern matching (files and directories).
 
         Trailing `/` means directories only. Uses `fd` when available, otherwise
-        `os.scandir` with pattern depth bounding.
+        `os.scandir` with pattern depth bounding. When the Rust extension is
+        available and the pattern is a simple file glob (no trailing ``/``,
+        no ``include_ignored``), delegates to the Rust ``LocalFilesystem.glob``
+        fast-path.
         """
         if pattern.startswith("/"):
             pattern = pattern.lstrip("/")
+
+        # Rust fast-path for simple file globs.
+        if self._rust_fs is not None and not include_ignored and not pattern.endswith("/"):
+            try:
+                rust_files = self._rust_fs.glob(pattern)
+                matches = [{"path": f, "is_dir": False} for f in rust_files if f and f != "."]
+                matches.sort(key=lambda m: m["path"])
+                if matches:
+                    return GlobResult(matches=matches)
+                # Rust returned empty — fall through to Python which may use fd.
+            except Exception:
+                pass  # fall through to full Python implementation
 
         resolved = self._resolve_path(path)
         if not resolved.is_dir():
@@ -1258,7 +1301,9 @@ class LocalFilesystem(UnifiedFilesystem):
     ) -> GrepResult | list[str] | str:
         """Search for pattern in files via deepagents public search API.
 
-        Uses `FilesystemBackend.grep` (ripgrep + Python fallback). Paths in
+        Uses `FilesystemBackend.grep` (ripgrep + Python fallback). When the
+        Rust extension is available and no ``glob`` filter is specified,
+        delegates to the Rust ``LocalFilesystem.grep`` fast-path. Paths in
         results are normalized to the same workspace-relative / absolute form
         as other LocalFilesystem operations.
 
@@ -1271,6 +1316,22 @@ class LocalFilesystem(UnifiedFilesystem):
         Returns:
             GrepResult, or simplified list[str] / str for files_with_matches / count modes.
         """
+        # Rust fast-path for literal pattern search (no glob filter).
+        if self._rust_fs is not None and glob is None:
+            try:
+                rust_matches = self._rust_fs.grep(pattern, path)
+                matches: list[dict[str, object]] = [
+                    {"path": f, "line": ln, "text": txt} for f, ln, txt in rust_matches
+                ]
+                if output_mode == "content":
+                    return GrepResult(matches=matches)
+                if output_mode == "count":
+                    return str(len(matches))
+                seen = list(dict.fromkeys(m["path"] for m in matches if m["path"]))
+                return seen
+            except Exception:
+                pass  # fall through to full Python implementation
+
         resolved = self._resolve_path(path, allow_host_absolute=True)
 
         if not resolved.is_dir() and not resolved.is_file():

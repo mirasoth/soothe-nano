@@ -1,7 +1,4 @@
 //! System prompt templates and context XML assembly.
-//!
-//! Ports: `prompts/system_templates.py`, `prompts/context_xml.py`,
-//! `prompts/identity.py`, `prompts/project_instructions.py`.
 
 pub mod context_xml;
 pub mod environment;

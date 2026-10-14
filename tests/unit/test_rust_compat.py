@@ -776,3 +776,241 @@ class TestNoPythonFallback:
                 )
                 return
         pytest.fail("build_soothe_workspace_section not found in context_xml")
+
+    # --- corpus_match / prompt_clock / command_guard no-fallback tests --------
+
+    def test_compact_rust_no_fallback(self) -> None:
+        """compact_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "compact_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "compact_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("compact_rust not found in _rust_compat")
+
+    def test_earliest_corpus_match_rust_no_fallback(self) -> None:
+        """earliest_corpus_match_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "earliest_corpus_match_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "earliest_corpus_match_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("earliest_corpus_match_rust not found in _rust_compat")
+
+    def test_dangerous_command_rule_id_rust_no_fallback(self) -> None:
+        """dangerous_command_rule_id_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "dangerous_command_rule_id_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "dangerous_command_rule_id_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("dangerous_command_rule_id_rust not found in _rust_compat")
+
+    def test_rule_family_rust_no_fallback(self) -> None:
+        """rule_family_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "rule_family_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "rule_family_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("rule_family_rust not found in _rust_compat")
+
+    def test_local_date_str_rust_no_fallback(self) -> None:
+        """local_date_str_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "local_date_str_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "local_date_str_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("local_date_str_rust not found in _rust_compat")
+
+    def test_prompt_datetime_context_rust_no_fallback(self) -> None:
+        """prompt_datetime_context_rust must not have a Python fallback."""
+        import ast
+
+        from soothe_nano import _rust_compat
+
+        tree = ast.parse(Path(_rust_compat.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == "prompt_datetime_context_rust":
+                src = ast.unparse(node)
+                assert "if _rust_available" not in src, (
+                    "prompt_datetime_context_rust must not have a Python fallback"
+                )
+                return
+        pytest.fail("prompt_datetime_context_rust not found in _rust_compat")
+
+    def test_corpus_match_py_no_fallback(self) -> None:
+        """corpus_match.py must not have a Python fallback."""
+        from soothe_nano.skills import corpus_match
+
+        src = Path(corpus_match.__file__).read_text()
+        assert "if is_rust_available" not in src, (
+            "corpus_match.py must not have a Rust-availability guard"
+        )
+        assert "import re" not in src, "corpus_match.py must not import re"
+
+    def test_operation_guard_no_python_fallback(self) -> None:
+        """operation_guard.py must not have a Python fallback for rule matching."""
+        from soothe_nano.security import operation_guard
+
+        src = Path(operation_guard.__file__).read_text()
+        assert "if is_rust_available" not in src, (
+            "operation_guard.py must not have a Rust-availability guard"
+        )
+        assert "_BANNED_COMMAND_PATTERNS" not in src, (
+            "operation_guard.py must not define _BANNED_COMMAND_PATTERNS"
+        )
+        assert "_RULE_FAMILIES" not in src, "operation_guard.py must not define _RULE_FAMILIES"
+
+    def test_prompt_clock_no_python_fallback(self) -> None:
+        """prompt_clock.py must not have a Python fallback for the 6 formatters."""
+        from soothe_nano.utils import prompt_clock
+
+        src = Path(prompt_clock.__file__).read_text()
+        assert "if is_rust_available" not in src, (
+            "prompt_clock.py must not have a Rust-availability guard"
+        )
+        assert "_from_timestamp" not in src, (
+            "prompt_clock.py must not have a Python _from_timestamp fallback"
+        )
+
+
+# ---------------------------------------------------------------------------
+# CircuitBreaker fast-path wrappers
+# ---------------------------------------------------------------------------
+
+
+class TestCircuitBreakerWrappers:
+    """Verify the Rust CircuitBreaker fast-path wrapper functions."""
+
+    def test_new_returns_instance_or_none(self) -> None:
+        from soothe_nano._rust_compat import is_rust_available, rust_circuit_breaker_new
+
+        breaker = rust_circuit_breaker_new(
+            failure_threshold=3, success_threshold=2, timeout_seconds=5.0
+        )
+        if is_rust_available():
+            assert breaker is not None
+            assert hasattr(breaker, "is_open")
+        else:
+            assert breaker is None
+
+    def test_is_open_returns_bool_or_none(self) -> None:
+        from soothe_nano._rust_compat import rust_circuit_breaker_is_open, rust_circuit_breaker_new
+
+        breaker = rust_circuit_breaker_new(
+            failure_threshold=3, success_threshold=2, timeout_seconds=5.0
+        )
+        result = rust_circuit_breaker_is_open(breaker)
+        assert result in (True, False, None)
+
+    def test_state_returns_str_or_none(self) -> None:
+        from soothe_nano._rust_compat import (
+            is_rust_available,
+            rust_circuit_breaker_new,
+            rust_circuit_breaker_state,
+        )
+
+        breaker = rust_circuit_breaker_new(
+            failure_threshold=3, success_threshold=2, timeout_seconds=5.0
+        )
+        result = rust_circuit_breaker_state(breaker)
+        if is_rust_available():
+            assert result in ("closed", "open", "half_open")
+        else:
+            assert result is None
+
+    def test_is_open_with_none_breaker(self) -> None:
+        """When Rust is unavailable, is_open returns None (graceful fallback)."""
+        from soothe_nano._rust_compat import rust_circuit_breaker_is_open
+
+        result = rust_circuit_breaker_is_open(None)
+        assert result is None
+
+    def test_state_with_none_breaker(self) -> None:
+        """When Rust is unavailable, state returns None (graceful fallback)."""
+        from soothe_nano._rust_compat import rust_circuit_breaker_state
+
+        result = rust_circuit_breaker_state(None)
+        assert result is None
+
+    def test_open_after_threshold_failures(self) -> None:
+        """Rust breaker reports OPEN after enough failures."""
+        from soothe_nano._rust_compat import (
+            is_rust_available,
+            rust_circuit_breaker_is_open,
+            rust_circuit_breaker_new,
+            rust_circuit_breaker_state,
+        )
+
+        if not is_rust_available():
+            pytest.skip("Rust extension not available")
+
+        breaker = rust_circuit_breaker_new(
+            failure_threshold=3, success_threshold=2, timeout_seconds=60.0
+        )
+        assert rust_circuit_breaker_is_open(breaker) is False
+        breaker.record_failure()
+        breaker.record_failure()
+        assert rust_circuit_breaker_is_open(breaker) is False
+        breaker.record_failure()
+        assert rust_circuit_breaker_is_open(breaker) is True
+        assert rust_circuit_breaker_state(breaker) == "open"
+
+    def test_success_resets_rust_breaker(self) -> None:
+        """record_success resets the Rust breaker to closed."""
+        from soothe_nano._rust_compat import (
+            is_rust_available,
+            rust_circuit_breaker_is_open,
+            rust_circuit_breaker_new,
+            rust_circuit_breaker_state,
+        )
+
+        if not is_rust_available():
+            pytest.skip("Rust extension not available")
+
+        breaker = rust_circuit_breaker_new(
+            failure_threshold=2, success_threshold=2, timeout_seconds=60.0
+        )
+        breaker.record_failure()
+        breaker.record_failure()
+        assert rust_circuit_breaker_is_open(breaker) is True
+        breaker.record_success()
+        assert rust_circuit_breaker_is_open(breaker) is False
+        assert rust_circuit_breaker_state(breaker) == "closed"

@@ -1,9 +1,4 @@
 //! PyO3 extension module — the bridge between Rust crates and Python.
-//!
-//! This is the **only** crate that depends on `pyo3`.
-//! All other crates are pure Rust libraries.
-//!
-//! Python imports this as: `from soothe_nano._rust import ...`
 
 // PyO3's `map_err(...)?` pattern triggers clippy::useless_conversion because
 // `map_err` already yields `PyErr` and `?` does an identity `From<PyErr> for PyErr`.
@@ -14,9 +9,6 @@ use pyo3::prelude::*;
 mod bindings;
 
 /// Entry point for the `soothe_nano._rust` extension module.
-///
-/// The function name `_rust` must match the final path component of the
-/// module name `soothe_nano._rust` so that PyO3 generates `PyInit__rust`.
 #[pymodule]
 fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     bindings::workspace::register(m)?;

@@ -1,11 +1,4 @@
 //! Config models, env expansion, YAML loading.
-//!
-//! Ports: `config/models.py`, `config/settings.py`, `config/env.py`,
-//! `config/constants.py`.
-//!
-//! The Rust crate owns the canonical struct definitions. Post-migration,
-//! Python reads config through the PyO3-exposed struct — no Pydantic
-//! model duplication.
 
 pub mod constants;
 pub mod env;

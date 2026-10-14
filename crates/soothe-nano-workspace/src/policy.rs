@@ -41,7 +41,7 @@ impl WorkspacePolicy {
         canonical_path.starts_with(&canonical_root)
     }
 
-    /// Check if a write operation is permitted.
+    /// Whether writes are permitted.
     pub fn can_write(&self) -> bool {
         !self.read_only
     }

@@ -1,8 +1,4 @@
 //! PyO3 bindings for `soothe-nano-tokens`.
-//!
-//! Only the `count_tokens` function is exposed. The `TokenCounter` class
-//! is omitted — `get_token_counter()` is never called from production
-//! Python code (the function-level `count_tokens` is used instead).
 
 use pyo3::prelude::*;
 

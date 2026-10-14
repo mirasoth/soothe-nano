@@ -9,6 +9,7 @@ description = "Path validation, policy evaluation, rate limiting, operation guar
 soothe-nano-workspace = { path = "../soothe-nano-workspace" }
 soothe-nano-utils = { path = "../soothe-nano-utils" }
 regex.workspace = true
+fancy-regex = "0.13"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

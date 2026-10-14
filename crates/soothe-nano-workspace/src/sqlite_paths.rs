@@ -4,8 +4,7 @@
 
 use std::path::PathBuf;
 
-/// Resolve `SOOTHE_HOME` — the installation data directory.
-/// Precedence: `SOOTHE_HOME` env var > `~/.soothe`.
+/// Resolve `SOOTHE_HOME`. Precedence: env var > `~/.soothe`.
 pub fn soothe_home() -> PathBuf {
     if let Ok(dir) = std::env::var("SOOTHE_HOME") {
         return PathBuf::from(dir);

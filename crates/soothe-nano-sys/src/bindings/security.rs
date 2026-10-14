@@ -1,10 +1,4 @@
 //! PyO3 bindings for `soothe-nano-security`.
-//!
-//! Exposes `PathValidator`, `RateLimiter`, `SecurityPolicy`, and `OperationGuard`
-//! as Python classes. These are standalone security utilities — they do not
-//! replace the full Python `PathValidator` (which has suspicious patterns,
-//! symlink detection, severity levels) but provide compiled-regex fast paths
-//! and rate-limiting that Python can delegate to.
 
 use pyo3::prelude::*;
 use soothe_nano_security::{
@@ -84,7 +78,7 @@ impl PyRateLimiter {
         }
     }
 
-    /// Try to consume one token for `key`. Returns True if allowed.
+    /// Try to consume one token for `key`.
     fn try_consume(&self, key: &str) -> bool {
         self.inner.try_consume(key)
     }
@@ -106,7 +100,7 @@ impl PySecurityPolicy {
         }
     }
 
-    /// Evaluate a path against all rules, returning the action name.
+    /// Evaluate a path against all rules.
     fn evaluate_path(&self, path: &str) -> String {
         match self.inner.evaluate_path(path) {
             PolicyAction::Allow => "allow",
@@ -139,7 +133,7 @@ impl PyOperationGuard {
         }
     }
 
-    /// Check an operation. Returns ValidationResult on success, raises on deny.
+    /// Check an operation against security rules.
     fn check(&self, operation: &str, path: &str) -> PyResult<PyValidationResult> {
         let record = OperationRecord {
             operation: operation.to_string(),
@@ -153,11 +147,27 @@ impl PyOperationGuard {
     }
 }
 
+// ── Banned-command matching (fast path) ───────────────────────
+
+/// Return the first banned pattern's rule_id matching `command`, or None.
+#[pyfunction]
+fn dangerous_command_rule_id(py: Python<'_>, command: &str) -> Option<String> {
+    py.allow_threads(|| soothe_nano_security::dangerous_command_rule_id(command))
+}
+
+/// Return all rule ids in the same family as `rule_id` (inclusive).
+#[pyfunction]
+fn rule_family(py: Python<'_>, rule_id: &str) -> Vec<String> {
+    py.allow_threads(|| soothe_nano_security::rule_family(rule_id))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyValidationResult>()?;
     m.add_class::<PyPathValidator>()?;
     m.add_class::<PyRateLimiter>()?;
     m.add_class::<PySecurityPolicy>()?;
     m.add_class::<PyOperationGuard>()?;
+    m.add_function(wrap_pyfunction!(dangerous_command_rule_id, m)?)?;
+    m.add_function(wrap_pyfunction!(rule_family, m)?)?;
     Ok(())
 }
