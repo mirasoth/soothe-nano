@@ -1,4 +1,4 @@
-//! Context XML builder (ported from `prompts/context_xml.py`).
+//! Context XML builder.
 
 /// File info for context XML.
 #[derive(Debug, Clone)]

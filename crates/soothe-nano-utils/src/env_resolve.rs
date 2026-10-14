@@ -1,4 +1,4 @@
-//! Environment variable resolution (ported from `observability/langfuse/_client.py`).
+//! Environment variable resolution.
 
 use regex::Regex;
 use std::sync::OnceLock;

@@ -1,4 +1,4 @@
-//! URL validation (ported from `utils/url_validation.py`).
+//! URL validation.
 
 use thiserror::Error;
 

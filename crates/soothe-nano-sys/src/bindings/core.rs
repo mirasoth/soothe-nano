@@ -1,9 +1,7 @@
 //! PyO3 bindings for `soothe-nano-core`.
 //!
 //! Exposes the pure-logic core models (verbosity tiers, event priorities,
-//! domain classification, event type constants) to Python. The Python
-//! ``core/`` modules delegate to these for the pure-data portions and retain
-//! Pydantic models + Pydantic-driven registration on the Python side.
+//! domain classification, event type constants) to Python.
 
 use pyo3::prelude::*;
 use soothe_nano_core::{classification, constants, priority, verbosity};
@@ -245,7 +243,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(split_domain, m)?)?;
     m.add_function(wrap_pyfunction!(parse_verbosity_alias, m)?)?;
 
-    // Event type constants (matching Python's core/events.py)
+    // Event type constants
     m.add("PLAN_CREATED", constants::PLAN_CREATED)?;
     m.add("STRANGE_LOOP_STARTED", constants::STRANGE_LOOP_STARTED)?;
     m.add("STRANGE_LOOP_COMPLETED", constants::STRANGE_LOOP_COMPLETED)?;

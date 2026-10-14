@@ -1,4 +1,4 @@
-//! Text preview with truncation (ported from `utils/text_preview.py`).
+//! Text preview with truncation.
 
 const DEFAULT_MARKER_TEMPLATE: &str = "[...{count} {unit} abbr...]";
 
@@ -22,7 +22,7 @@ pub fn text_preview(text: &str, max_chars: usize) -> String {
     format!("{truncated}...")
 }
 
-/// Full preview API mirroring Python's `preview(text, mode, first, last, marker)`.
+/// Full preview API.
 ///
 /// Modes: `"chars"` (character-based), `"lines"` (line-based), `"full"` (no truncation).
 pub fn preview_full(

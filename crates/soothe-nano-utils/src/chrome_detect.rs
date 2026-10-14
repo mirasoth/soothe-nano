@@ -1,4 +1,4 @@
-//! Chrome/Electron process detection helpers (ported from `utils/browser_cdp.py`).
+//! Chrome/Electron process detection helpers.
 //!
 //! Pure string-pattern logic for identifying Chrome-like processes and
 //! extracting metadata from process command lines.

@@ -143,7 +143,7 @@ fn format_skills_within_budget(
     Ok((text, telemetry_to_py(py, tel)))
 }
 
-/// Convert `BudgetTelemetry` into a Python dict.
+/// Convert `BudgetTelemetry` into a dict.
 fn telemetry_to_py(py: Python<'_>, tel: BudgetFormatTelemetry) -> PyObject {
     use pyo3::types::PyDict;
     let d = PyDict::new_bound(py);

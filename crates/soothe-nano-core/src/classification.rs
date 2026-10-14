@@ -1,13 +1,8 @@
-//! Domain classification logic — ported from `core/registry.py`.
-//!
-//! Extracts the domain/component/action from a ``soothe.<domain>.<component>.<action>``
-//! type string and resolves the default verbosity tier per domain.
+//! Event type classification and domain verbosity resolution.
 
 use crate::verbosity::VerbosityTier;
 
 /// Return the default verbosity tier for a top-level domain.
-///
-/// Mirrors the ``_DOMAIN_DEFAULT_TIER`` dict in ``registry.py``.
 pub fn domain_default_tier(domain: &str) -> VerbosityTier {
     match domain {
         "internal" => VerbosityTier::Internal,
@@ -24,11 +19,10 @@ pub fn domain_default_tier(domain: &str) -> VerbosityTier {
     }
 }
 
-/// Return the domain from an event type string via ``split('.')[1]``.
+/// Extract the domain segment from an event type string.
 ///
-/// Mirrors ``EventRegistry::classify`` in ``registry.py``. When the second
-/// segment is ``internal``, the domain is ``internal`` regardless of further
-/// segments. Strings with fewer than 2 segments return ``"unknown"``.
+/// For `internal` domains, returns `"internal"` regardless of further segments.
+/// Strings with fewer than two segments return `"unknown"`.
 pub fn classify(event_type: &str) -> String {
     let segments: Vec<&str> = event_type.split('.').collect();
     const MIN_SEGMENTS: usize = 2;
@@ -42,18 +36,15 @@ pub fn classify(event_type: &str) -> String {
     }
 }
 
-/// Return the verbosity tier for an event type, using the domain default.
-///
-/// Mirrors ``EventRegistry::get_verbosity`` for the unregistered fallback path.
+/// Resolve the verbosity tier for an event type using the domain default.
 pub fn get_verbosity(event_type: &str) -> VerbosityTier {
     let domain = classify(event_type);
     domain_default_tier(&domain)
 }
 
-/// Split a type string into ``(domain, component, action, default_tier)``.
+/// Split a type string into `(domain, component, action, default_tier)`.
 ///
-/// Mirrors the ``_split_domain`` helper in ``registry.py``. For the
-/// ``internal`` domain, component/action are extracted from segments 2/3+.
+/// For the `internal` domain, component/action are extracted from segments 2/3+.
 /// For other domains, component is segment 2 and action is segment 3.
 pub fn split_domain(type_string: &str) -> (String, String, String, VerbosityTier) {
     let parts: Vec<&str> = type_string.split('.').collect();

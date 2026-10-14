@@ -22,11 +22,11 @@ pub struct MemoryItem {
 }
 
 fn default_id() -> String {
-    // Placeholder; Python assigns a UUID. Rust struct is used for serde only.
+    // Placeholder; caller assigns a UUID. Struct is used for serde only.
     String::new()
 }
 fn default_created_at() -> String {
-    // Placeholder; Python assigns now(UTC). Rust struct is used for serde only.
+    // Placeholder; caller assigns now(UTC). Struct is used for serde only.
     String::new()
 }
 fn default_importance() -> f64 {

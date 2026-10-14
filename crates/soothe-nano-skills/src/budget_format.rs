@@ -1,4 +1,4 @@
-//! Budgeted skill-listing formatter (ported from `skills/budget.py`).
+//! Budgeted skill-listing formatter.
 
 /// A skill entry to format.
 #[derive(Debug, Clone)]

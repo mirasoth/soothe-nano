@@ -1,4 +1,4 @@
-//! Policy profiles (ported from `security/policy_profiles.py`).
+//! Policy profiles.
 
 use crate::policy_models::{PolicyAction, PolicyRule, SecurityPolicy};
 
@@ -29,11 +29,6 @@ fn path_rule(name: &str, pattern: &str, desc: &str) -> PolicyRule {
 }
 
 /// Strict policy: maximum security, blocks all dangerous operations.
-///
-/// Mirrors `STRICT_POLICY` in `policy_profiles.py`. The full Python policy
-/// has many fields (blocked_extensions, blocked_patterns, blocked_paths)
-/// that are data-driven; the Rust `SecurityPolicy` struct is the rule-based
-/// subset. This constructor returns the rule-based representation.
 pub fn strict_policy() -> SecurityPolicy {
     SecurityPolicy {
         rules: vec![

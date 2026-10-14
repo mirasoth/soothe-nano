@@ -1,4 +1,4 @@
-//! Project instructions loader (ported from `prompts/project_instructions.py`).
+//! Project instructions loader.
 
 use std::path::Path;
 

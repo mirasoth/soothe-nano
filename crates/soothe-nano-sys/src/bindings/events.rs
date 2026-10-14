@@ -38,7 +38,7 @@ fn truncate_wire_str(py: Python<'_>, value: &str, max_len: usize) -> String {
 
 /// Copy the dict and truncate known string fields for wire safety.
 ///
-/// Accepts a Python dict with mixed value types; only string values for known
+/// Accepts a dict with mixed value types; only string values for known
 /// fields are truncated. Non-string values and unknown keys pass through unchanged.
 #[pyfunction]
 fn clip_wire_event_payload(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<PyObject> {
@@ -58,7 +58,7 @@ fn clip_wire_event_payload(py: Python<'_>, data: &Bound<'_, PyAny>) -> PyResult<
 
     let clipped = py.allow_threads(|| wire_protocol::clip_wire_event_payload(&string_map));
 
-    // Reassemble into a Python dict.
+    // Reassemble into a dict.
     let out = pyo3::types::PyDict::new_bound(py);
     for (k, v) in &clipped {
         out.set_item(k, v)?;
@@ -76,7 +76,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(truncate_wire_str, m)?)?;
     m.add_function(wrap_pyfunction!(clip_wire_event_payload, m)?)?;
 
-    // Event type constants (matching Python's events/catalog.py)
+    // Event type constants
     m.add("MODEL_FALLBACK", "soothe.cognition.llm.model_fallback")?;
     m.add(
         "LLM_PERSISTENT_RETRY",

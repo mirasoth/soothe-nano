@@ -1,4 +1,4 @@
-//! System prompt assembly (ported from `prompts/system_templates.py`).
+//! System prompt assembly.
 
 use soothe_nano_config::SootheConfig;
 

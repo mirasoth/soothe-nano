@@ -1,4 +1,4 @@
-//! Skill budget tracking (ported from `skills/budget.py`).
+//! Skill budget tracking.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 

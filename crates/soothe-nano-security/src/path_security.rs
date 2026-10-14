@@ -1,4 +1,4 @@
-//! Path validation (ported from `security/path_security.py`).
+//! Path validation.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-/// Severity levels for validation violations (mirrors `ValidationSeverity`).
+/// Severity levels for validation violations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum ValidationSeverity {
     #[default]
@@ -16,7 +16,7 @@ pub enum ValidationSeverity {
     Critical = 4,
 }
 
-/// Violation type label returned to Python (string convention).
+/// Violation type label.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ViolationType {
     None,
@@ -36,7 +36,7 @@ pub enum ViolationType {
 }
 
 impl ViolationType {
-    /// Python-convention label for the violation.
+    /// String label for the violation.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::None => "none",
@@ -57,7 +57,7 @@ impl ViolationType {
     }
 }
 
-/// Result of path validation (mirrors the Python `ValidationResult` dataclass).
+/// Result of path validation.
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
     pub is_valid: bool,
@@ -132,7 +132,7 @@ static SUSPICIOUS_PATTERNS: OnceLock<Vec<SuspiciousPattern>> = OnceLock::new();
 
 fn traversal_patterns() -> &'static Vec<TraversalPattern> {
     TRAVERSAL_PATTERNS.get_or_init(|| {
-        // (pattern, name) — order matches Python TRAVERSAL_PATTERNS.
+        // (pattern, name)
         let raw: &[(&str, &str)] = &[
             (r"\.\./", "dot_dot_slash"),
             (r"\.\.\\", "dot_dot_backslash"),
@@ -157,7 +157,7 @@ fn traversal_patterns() -> &'static Vec<TraversalPattern> {
 
 fn suspicious_patterns() -> &'static Vec<SuspiciousPattern> {
     SUSPICIOUS_PATTERNS.get_or_init(|| {
-        // (pattern, name, severity) — order matches Python SUSPICIOUS_PATTERNS.
+        // (pattern, name, severity)
         let raw: &[(&str, &str, ValidationSeverity)] = &[
             (r"\x00", "null_byte", ValidationSeverity::Critical),
             (r"\n", "newline", ValidationSeverity::High),
@@ -280,7 +280,7 @@ impl PathValidator {
         }
     }
 
-    /// Create a fully-configured validator mirroring the Python constructor.
+    /// Create a fully-configured validator.
     pub fn with_config(
         workspace: impl Into<PathBuf>,
         allow_absolute: bool,
@@ -324,11 +324,11 @@ impl PathValidator {
             ));
         }
 
-        // Traversal: check only forward-slash patterns (the original
-        // fast-path scope). Backslash traversal falls through to Python.
+        // Traversal: check only forward-slash patterns (the fast-path scope).
+        // Backslash traversal falls through to the full validation path.
         for tp in traversal_patterns() {
             // Skip backslash and URL-encoded patterns — they fall through
-            // to the Python regex pipeline.
+            // to the full validation path.
             if tp.name.contains("backslash") || tp.name.contains("url_encoded") {
                 continue;
             }
@@ -392,7 +392,7 @@ impl PathValidator {
         }
 
         // Traversal patterns (full check — redundant with fast_check but
-        // matches Python which runs both; the fast_check already rejected).
+        // both are run; the fast_check already rejected).
         if let Some(result) = self.check_traversal_patterns(path) {
             return result;
         }

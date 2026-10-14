@@ -1,4 +1,4 @@
-//! Workspace resolution logic (ported from `workspace/workspace_api.py`).
+//! Workspace resolution logic.
 
 use crate::WorkspaceError;
 use std::path::{Path, PathBuf};

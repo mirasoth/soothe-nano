@@ -1,4 +1,4 @@
-//! Event priority levels — ported from `core/registry.py::EventPriority`.
+//! Event priority levels for queue overflow management.
 //!
 //! Higher priority events are processed first and less likely to be dropped
 //! when queues are near capacity.
@@ -23,12 +23,12 @@ pub enum EventPriority {
 }
 
 impl EventPriority {
-    /// Return the discriminant value (matches the Python `Enum` value).
+    /// Return the discriminant value.
     pub const fn as_int(self) -> u8 {
         self as u8
     }
 
-    /// Return the discriminant as `i64` (for PyO3 interop).
+    /// Return the discriminant as `i64`.
     pub const fn to_i64(self) -> i64 {
         self as u8 as i64
     }
@@ -44,7 +44,7 @@ impl EventPriority {
         }
     }
 
-    /// Return the string name (matches the Python `Enum` member name).
+    /// Return the string name.
     pub const fn name(self) -> &'static str {
         match self {
             EventPriority::Critical => "CRITICAL",

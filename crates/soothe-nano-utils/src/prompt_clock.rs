@@ -1,4 +1,4 @@
-//! Local wall-clock helpers for LLM prompts (ported from `utils/prompt_clock.py`).
+//! Local wall-clock helpers for LLM prompts.
 
 use chrono::{DateTime, Datelike, Local, Utc};
 use chrono_tz::Tz;

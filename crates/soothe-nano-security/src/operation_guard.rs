@@ -1,4 +1,4 @@
-//! Operation guard (ported from `security/operation_guard.py`).
+//! Operation guard: path validation, policy, and rate limiting.
 
 use crate::command_guard::rule_family;
 use crate::path_security::{PathValidator, ValidationResult};
@@ -60,8 +60,7 @@ impl OperationGuard {
     }
 }
 
-/// Bypass-immune dangerous path components (mirrors
-/// `WorkspaceToolOperationSecurity._DANGEROUS_PATH_COMPONENTS`).
+/// Bypass-immune dangerous path components.
 static DANGEROUS_PATH_COMPONENTS: OnceLock<HashSet<&'static str>> = OnceLock::new();
 
 fn dangerous_path_components() -> &'static HashSet<&'static str> {
@@ -89,9 +88,8 @@ fn dangerous_path_components() -> &'static HashSet<&'static str> {
     })
 }
 
-/// Check if a path contains a dangerous component.
+/// Find a dangerous path component in `path`.
 ///
-/// Mirrors the bypass-immune check in `WorkspaceToolOperationSecurity::_check_filesystem`.
 /// Returns `Some(component)` when a dangerous component is found.
 pub fn find_dangerous_path_component(path: &str) -> Option<&'static str> {
     for part in path.split('/') {
@@ -146,8 +144,6 @@ fn kill_invocation_regex() -> &'static Regex {
 }
 
 /// Parse numeric PIDs from `kill` argument text (skip signal tokens).
-///
-/// Mirrors `WorkspaceToolOperationSecurity::_pids_from_kill_args`.
 pub fn pids_from_kill_args(args: &str) -> Vec<i64> {
     let mut pids: Vec<i64> = Vec::new();
     let tokens: Vec<&str> = args.split_whitespace().collect();
@@ -172,8 +168,6 @@ pub fn pids_from_kill_args(args: &str) -> Vec<i64> {
 }
 
 /// Find all `kill <pid>` invocations in a command string and return their PIDs.
-///
-/// Mirrors the matching loop in `_protected_kill_in_shell`.
 pub fn kill_invocation_pids(command: &str) -> Vec<i64> {
     let re = kill_invocation_regex();
     let mut pids: Vec<i64> = Vec::new();
@@ -187,12 +181,11 @@ pub fn kill_invocation_pids(command: &str) -> Vec<i64> {
 
 /// Check if a command was already approved by an allowlist entry.
 ///
-/// Mirrors `command_approved_by_allowlist`. An allowlist entry is either:
+/// An allowlist entry is either:
 /// - `{"tool": "run_command", "signature": "<exact command>"}` — exact match
 /// - `{"rule": "<rule_id>"}` — rule family match
 ///
-/// `allowlist` is a list of `(tool, signature, rule)` tuples (Python dicts
-/// are passed as tuples via the PyO3 binding).
+/// `allowlist` is a list of `(tool, signature, rule)` tuples.
 pub fn command_approved_by_allowlist(
     command: &str,
     rule_id: Option<&str>,
@@ -224,9 +217,6 @@ pub fn command_approved_by_allowlist(
 }
 
 /// Simple fnmatch-style glob matcher (supports `*` and `?`).
-///
-/// Mirrors the `fnmatch.fnmatch` + `startswith` fallback in
-/// `_path_matches_pattern`.
 pub fn glob_match(pattern: &str, path: &str) -> bool {
     if path.starts_with(pattern.trim_end_matches('*')) {
         return true;
@@ -234,7 +224,7 @@ pub fn glob_match(pattern: &str, path: &str) -> bool {
     fnmatch(pattern, path)
 }
 
-/// fnmatch implementation (case-sensitive on Unix, matching Python's default).
+/// fnmatch implementation (case-sensitive on Unix).
 fn fnmatch(pattern: &str, text: &str) -> bool {
     let pat: Vec<char> = pattern.chars().collect();
     let txt: Vec<char> = text.chars().collect();

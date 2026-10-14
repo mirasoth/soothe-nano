@@ -1,4 +1,4 @@
-//! Path utilities (ported from `utils/path.py`).
+//! Path utilities.
 
 use std::path::{Path, PathBuf};
 

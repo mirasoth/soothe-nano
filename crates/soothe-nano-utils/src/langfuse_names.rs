@@ -1,4 +1,4 @@
-//! Langfuse trace/run display-name helpers (ported from `observability/langfuse/_names.py`).
+//! Langfuse trace/run display-name helpers.
 
 const ROOT_GRAPH_RUN_NAME: &str = "nanoagent-graph";
 const EXECUTE_STEP_RUN_NAME: &str = "execute-step";

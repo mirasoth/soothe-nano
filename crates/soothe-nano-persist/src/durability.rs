@@ -1,4 +1,4 @@
-//! Durability layer — thread lifecycle CRUD (ported from `backends/durability/`).
+//! Thread lifecycle persistence.
 
 use crate::{AsyncPersistStore, PersistError};
 use std::sync::Arc;

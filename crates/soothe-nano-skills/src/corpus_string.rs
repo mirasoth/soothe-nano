@@ -1,5 +1,4 @@
-//! Pure string-matching helpers for skill name/tag prefetch
-//! (ported from `skills/corpus_match.py`).
+//! String-matching helpers for skill name/tag prefetch.
 
 /// Maximum length for a token to require word-boundary enforcement.
 const SHORT_BOUNDARY_MAX_LEN: usize = 3;
@@ -137,7 +136,7 @@ pub fn compact_index_to_corpus_index(corpus: &str, compact_index: usize) -> Opti
         }
         ci += 1;
     }
-    // Python returns len(corpus) as the fallback.
+    // Fallback: return corpus length.
     Some(corpus.len())
 }
 
@@ -171,7 +170,6 @@ pub fn match_variants_for_token(token: &str, skill_name: Option<&str>) -> Vec<St
 }
 
 /// Return the earliest start index where `token` matches `corpus`, or `None`.
-/// Mirrors `earliest_corpus_match`.
 pub fn earliest_corpus_match(corpus: &str, token: &str, skill_name: Option<&str>) -> Option<usize> {
     let corpus_l = corpus.trim().to_lowercase();
     if corpus_l.is_empty() {

@@ -1,4 +1,4 @@
-//! Environment variable expansion (ported from `config/env.py`).
+//! Environment variable expansion.
 
 /// Expand `${VAR}` and `$VAR` patterns in a string.
 pub fn expand_env_vars(input: &str) -> String {

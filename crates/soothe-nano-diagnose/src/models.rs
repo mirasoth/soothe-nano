@@ -1,4 +1,4 @@
-//! Diagnose result models (dict-contract compatible).
+//! Diagnose result models and status aggregation.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +13,7 @@ pub enum CheckStatus {
 }
 
 impl CheckStatus {
-    /// String value matching the Python StrEnum contract.
+    /// String value of the status.
     pub fn as_str(&self) -> &'static str {
         match self {
             CheckStatus::Ok => "ok",

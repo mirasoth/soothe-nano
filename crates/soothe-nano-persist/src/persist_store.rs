@@ -1,4 +1,4 @@
-//! Persist store trait + SQLite implementation (ported from `backends/persistence/sqlite_store.py`).
+//! Persist store trait and SQLite implementation.
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::{PersistError, SqliteStoreRuntime};
 
-/// Async persist store trait (mirrors `soothe_nano.protocols.persistence`).
+/// Async persist store trait.
 #[async_trait]
 pub trait AsyncPersistStore: Send + Sync {
     async fn save(&self, key: &str, value: Value) -> Result<(), PersistError>;

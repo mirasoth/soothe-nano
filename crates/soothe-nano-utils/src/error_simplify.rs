@@ -1,4 +1,4 @@
-//! Error simplification and classification (ported from `utils/tool_error_handler.py`).
+//! Error simplification and classification.
 //!
 //! Pure string-pattern logic for converting exceptions into user-friendly
 //! messages and classifying them as warning-level vs error-level.
@@ -7,7 +7,7 @@
 pub const HTTP_FORBIDDEN: i32 = 403;
 pub const HTTP_TOO_MANY_REQUESTS: i32 = 429;
 
-/// Structural tokens per message (mirrors Python constant).
+/// Structural tokens per message.
 pub const STRUCTURAL_TOKENS_PER_MESSAGE: i64 = 3;
 
 /// Check if a TypeError message is about an unexpected keyword argument.
@@ -92,8 +92,8 @@ pub fn is_warning_level_error(error_type: &str, error_msg: &str, status: Option<
 
 /// Convert an error into a user-friendly message.
 ///
-/// `error_type` is `type(exc).__name__`, `error_msg` is `str(exc)`.
-/// `status` is the optional HTTP status code from the exception.
+/// `error_type` is the exception type name, `error_msg` is the message string,
+/// `status` is the optional HTTP status code.
 pub fn simplify_error(error_type: &str, error_msg: &str, status: Option<i32>) -> String {
     // Unexpected keyword argument.
     if is_unexpected_keyword_error(error_msg) {

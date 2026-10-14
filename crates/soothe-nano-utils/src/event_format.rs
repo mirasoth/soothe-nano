@@ -1,4 +1,4 @@
-//! Compact progress-event formatting (ported from `utils/progress.py`).
+//! Compact progress-event formatting.
 
 /// Maximum field length before truncation in compact event formatting.
 const MAX_FIELD_LEN: usize = 50;
@@ -27,7 +27,7 @@ const KEY_FIELDS: &[&str] = &[
 /// - Truncates long string values
 ///
 /// `event` is a list of `(key, value_string, value_is_str)` tuples where
-/// `value_is_str` indicates whether the original Python value was a string
+/// `value_is_str` indicates whether the original value was a string
 /// (so we know whether to apply string truncation logic). Non-string values
 /// are formatted as-is via `to_string()`.
 pub fn format_event_compact(event: &[(String, String, bool)]) -> String {

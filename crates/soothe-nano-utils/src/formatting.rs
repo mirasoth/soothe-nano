@@ -1,4 +1,4 @@
-//! CLI display formatting (ported from `utils/formatting.py`).
+//! CLI display formatting.
 
 use std::path::{Path, PathBuf};
 
@@ -14,7 +14,7 @@ pub fn format_cli_error(error_type: &str, error_msg: &str) -> String {
 }
 
 /// Return `text` if `<= max_length`, else truncated + `"..."`.
-/// When `max_length < 3`, Python's `text[:max_length-3]` is a negative index (tail slice).
+/// When `max_length < 3`, performs a tail slice (negative-index behavior).
 pub fn log_preview(text: &str, max_length: usize) -> String {
     let len = text.chars().count();
     if len <= max_length {
@@ -85,7 +85,7 @@ fn strip_prefix_dir(path: &str, prefix: &str) -> Option<String> {
     }
 }
 
-/// Normalize a path string, matching Python's `str(Path(...))` semantics.
+/// Normalize a path string.
 fn normalize_path_str(path: &str) -> String {
     let p = Path::new(path);
     let buf: PathBuf = p.components().collect();

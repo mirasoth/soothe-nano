@@ -1,4 +1,4 @@
-//! Thread ID log suffix (ported from `logging/setup.py`).
+//! Thread ID log suffix.
 
 const THREAD_ID_LOG_SUFFIX_LEN: usize = 4;
 

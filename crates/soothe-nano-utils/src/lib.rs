@@ -1,4 +1,4 @@
-//! Pure-logic utilities ported from `utils/*.py`.
+//! Pure-logic utilities.
 
 pub mod chrome_detect;
 pub mod circuit_breaker;

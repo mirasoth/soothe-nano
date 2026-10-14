@@ -1,4 +1,4 @@
-//! SQL script splitting and migration filename parsing (ported from `db_init/runner.py`).
+//! SQL script splitting and migration filename parsing.
 
 use regex::Regex;
 use std::sync::OnceLock;

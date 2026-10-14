@@ -1,4 +1,4 @@
-//! Local filesystem implementation (ported from `filesystem/local.py`).
+//! Local filesystem implementation with workspace isolation.
 
 use std::path::PathBuf;
 

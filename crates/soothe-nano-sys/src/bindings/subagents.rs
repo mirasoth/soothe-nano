@@ -1,8 +1,7 @@
 //! PyO3 bindings for `soothe_nano_utils::subagents`.
 //!
 //! Exposes pure-logic subagent helpers (topic stripping, search-query compaction,
-//! effort parsing, report summaries, reference formatting, termination logic)
-//! to Python as `soothe_nano._rust.subagents_*`.
+//! effort parsing, report summaries, reference formatting, termination logic).
 
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
@@ -27,7 +26,7 @@ fn subagents_planned_research_topic(
     parsed: PyObject,
     raw_topic: &str,
 ) -> PyResult<String> {
-    // Convert PyObject to serde_json::Value via Python json.dumps
+    // Convert PyObject to serde_json::Value via json.dumps
     let json_str: String = if parsed.is_none(py) {
         String::new()
     } else {
@@ -195,7 +194,7 @@ fn subagents_reference_key(
     py.allow_threads(|| sa::reference_key(url, source_name, source_ref))
 }
 
-/// Parse a list of Python dicts (ResearchReference-like) into Rust tuples.
+/// Parse a list of dicts (ResearchReference-like) into Rust tuples.
 fn parse_ref_list(
     py: Python<'_>,
     refs: &[PyObject],

@@ -1,4 +1,4 @@
-//! Environment and workspace XML section builders (ported from `prompts/context_xml.py`).
+//! Environment and workspace XML section builders.
 
 use std::path::Path;
 
@@ -9,8 +9,7 @@ fn escape_xml(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Build the ENVIRONMENT XML block. `is_rg` and `knowledge_cutoff` are passed in
-/// (obtained via PyO3 round-trip) so this function stays pure Rust.
+/// Build the ENVIRONMENT XML block.
 pub fn build_environment_section(
     platform_name: &str,
     shell: &str,

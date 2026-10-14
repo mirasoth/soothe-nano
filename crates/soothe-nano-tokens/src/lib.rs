@@ -1,4 +1,4 @@
-//! Token counting via tiktoken-rs (ported from `utils/token_counting.py`).
+//! Token counting via tiktoken-rs.
 
 use dashmap::DashMap;
 use std::sync::Arc;

@@ -230,9 +230,8 @@ impl PyCircuitBreaker {
 
 /// Parsed components of a unified tool_call_id.
 ///
-/// Mirrors the Python ``ParsedUnifiedToolCallId`` NamedTuple. Fields are
-/// read-only; construct via ``parse_unified_tool_call_id`` or the
-/// ``empty()`` classmethod.
+/// Fields are read-only; construct via `parse_unified_tool_call_id` or the
+/// `empty()` classmethod.
 #[pyclass(name = "ParsedUnifiedToolCallId", module = "soothe_nano._rust")]
 #[derive(Clone)]
 pub struct PyParsedUnifiedToolCallId {
@@ -241,7 +240,7 @@ pub struct PyParsedUnifiedToolCallId {
 
 #[pymethods]
 impl PyParsedUnifiedToolCallId {
-    /// Non-unified or empty id sentinel. ``tool_info`` defaults to empty.
+    /// Non-unified or empty id sentinel. `tool_info` defaults to empty.
     #[classmethod]
     #[pyo3(signature = (tool_info=""))]
     fn empty(_cls: &Bound<'_, PyType>, tool_info: &str) -> Self {

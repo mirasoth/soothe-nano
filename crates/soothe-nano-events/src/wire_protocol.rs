@@ -1,6 +1,4 @@
-//! Pure string/regex helpers for the `soothe.subagent.*` wire protocol.
-//!
-//! Ported from `core/subagent_wire.py`.
+//! Wire protocol helpers for `soothe.subagent.*` event types.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

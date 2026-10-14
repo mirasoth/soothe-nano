@@ -1,5 +1,4 @@
-//! Corpus matching — cosine similarity over pre-computed skill embeddings
-//! (ported from `skills/corpus_match.py`).
+//! Cosine similarity corpus matcher for skill embeddings.
 
 /// Cosine similarity corpus matcher.
 pub struct CorpusMatcher {

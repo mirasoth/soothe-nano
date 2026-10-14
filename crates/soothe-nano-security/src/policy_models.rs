@@ -1,4 +1,4 @@
-//! Policy models (ported from `security/policy_models.py`).
+//! Policy models.
 
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -18,7 +18,7 @@ pub enum PolicyAction {
 }
 
 impl PolicyAction {
-    /// String label matching the Python enum values (lowercase).
+    /// String label (lowercase).
     pub fn as_str(self) -> &'static str {
         match self {
             PolicyAction::Allow => "allow",
@@ -58,8 +58,6 @@ impl FromStr for PolicyAction {
 }
 
 /// True if `path` equals `prefix` (after rstrip '/') or sits beneath it.
-///
-/// Ported verbatim from `security/policy_models.py::_path_is_under`.
 pub fn path_is_under(path: &str, prefix: &str) -> bool {
     if path.is_empty() || prefix.is_empty() {
         return false;
@@ -87,7 +85,7 @@ pub struct PolicyRule {
     pub description: Option<String>,
 }
 
-/// Represents a policy violation (frozen in Python; immutable here).
+/// A policy violation record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyViolation {
     pub policy_name: String,
@@ -311,8 +309,8 @@ mod tests {
 
     #[test]
     fn path_is_under_root_prefix() {
-        // Matches Python quirk: "/" only matches itself, not children,
-        // because the child check becomes startswith("//").
+        // "/" only matches itself, not children, because the child check
+        // becomes startswith("//").
         assert!(path_is_under("/", "/"));
         assert!(!path_is_under("/anything", "/"));
     }

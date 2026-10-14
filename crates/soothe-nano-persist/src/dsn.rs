@@ -1,4 +1,4 @@
-//! PostgreSQL DSN manipulation (ported from `postgres_provisioning.py`).
+//! PostgreSQL DSN manipulation.
 
 use crate::sql_parsing::is_valid_db_name;
 

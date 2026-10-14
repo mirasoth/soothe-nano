@@ -1,5 +1,4 @@
-//! Content character counting and token-usage coercion (ported from
-//! `utils/token_counting.py` and `utils/token_usage.py`).
+//! Content character counting and token-usage coercion.
 
 /// Best-effort character count for a plain string.
 pub fn count_str_chars(s: &str) -> usize {
@@ -8,8 +7,7 @@ pub fn count_str_chars(s: &str) -> usize {
 
 /// Coerce an arbitrary value into a non-negative `i64` token count.
 ///
-/// Mirrors Python `max(0, int(value or 0))`: `None`, empty string, or
-/// non-numeric values yield `0`; negative values are clamped to `0`.
+/// `None`, empty string, or non-numeric values yield `0`; negative values are clamped to `0`.
 pub fn coerce_total_tokens_used(value: Option<i64>) -> i64 {
     value.unwrap_or(0).max(0)
 }

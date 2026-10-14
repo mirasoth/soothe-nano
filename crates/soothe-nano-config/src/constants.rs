@@ -1,4 +1,4 @@
-//! Constants (ported from `config/constants.py`).
+//! Configuration constants and defaults.
 
 pub const SOOTHE_NANO_VERSION: &str = env!("CARGO_PKG_VERSION");
 

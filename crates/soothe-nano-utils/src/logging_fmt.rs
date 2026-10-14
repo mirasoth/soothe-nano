@@ -1,8 +1,6 @@
-//! Compact logging formatter helpers (ported from `utils/logging.py`).
-//!
-//! Pure string manipulation — no Python-specific dependencies.
+//! Compact logging formatter helpers.
 
-/// Standard `logging` level constants (mirrors `logging.DEBUG` etc.).
+/// Standard `logging` level constants.
 const LEVEL_DEBUG: i32 = 10;
 const LEVEL_INFO: i32 = 20;
 const LEVEL_WARNING: i32 = 30;
@@ -34,7 +32,7 @@ pub fn abbreviate_logger_name(name: &str) -> String {
     if name.is_empty() {
         return String::new();
     }
-    // Split on '.' — matches Python's str.split(".").
+    // Split on '.'.
     let parts: Vec<&str> = name.split('.').collect();
     if parts.len() <= 2 {
         return name.to_string();

@@ -1,4 +1,4 @@
-//! Banned-command regex matching (ported from `security/operation_guard.py`).
+//! Banned-command regex matching.
 
 use fancy_regex::Regex;
 use std::sync::OnceLock;

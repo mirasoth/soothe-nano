@@ -1,4 +1,4 @@
-//! Thread ID generation (ported from `utils/thread_id.py`).
+//! Thread ID generation.
 
 use uuid::Uuid;
 

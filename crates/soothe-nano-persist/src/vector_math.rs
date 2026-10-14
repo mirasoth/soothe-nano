@@ -1,7 +1,7 @@
-//! Vector math operations (ported from `backends/vector_store/sqlite_vec.py`).
+//! Vector math operations for similarity search.
 //!
-//! Math is done in `f64` internally to match Python's `float` (double) precision,
-//! even though inputs are `f32` (the storage format used by sqlite-vec).
+//! Math is done in `f64` internally for precision, even though inputs are `f32`
+//! (the storage format used by sqlite-vec).
 
 /// Pack a list of floats into F32 binary format for sqlite-vec (little-endian).
 pub fn pack_vector_f32(vector: &[f32]) -> Vec<u8> {

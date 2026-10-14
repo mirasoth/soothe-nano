@@ -1,4 +1,4 @@
-//! Retry error classification for PostgreSQL (ported from `retry_utils.py`).
+//! Retry error classification for PostgreSQL.
 
 /// Check if an error message indicates a duplicate schema error.
 ///

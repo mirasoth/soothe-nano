@@ -1,4 +1,4 @@
-//! Agent identity (ported from `prompts/fragments/system/prompts/assistant_identity.xml`).
+//! Agent identity prompt fragment.
 
 pub const IDENTITY: &str = "\
 <ASSISTANT_IDENTITY>\n\

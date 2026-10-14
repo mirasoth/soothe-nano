@@ -1,8 +1,6 @@
 //! PyO3 bindings for `soothe-nano-protocols`.
 //!
 //! Exposes pure-logic functions that the Python protocol modules delegate to.
-//! The Pydantic models themselves stay in Python (for `model_dump` /
-//! `model_validate` compatibility), but their pure logic is Rust-backed.
 
 use pyo3::prelude::*;
 use serde_json::Value;
@@ -13,6 +11,7 @@ use soothe_nano_protocols::{
 // ── Planner pure logic ────────────────────────────────────────
 
 /// Resolve bounded planner-facing text from an outcome dict (JSON string).
+///
 /// Returns the first non-empty stripped string from keys:
 /// `wave_join_preview`, `task_return_preview`, `output_summary`, or None.
 #[pyfunction]
@@ -24,7 +23,6 @@ fn planner_outcome_text_preview(py: Python<'_>, outcome_json: &str) -> Option<St
 }
 
 /// Build an evidence string for a StepResult from its JSON representation.
-/// Mirrors `StepResult.to_evidence_string(truncate=...)`.
 #[pyfunction]
 #[pyo3(signature = (step_result_json, truncate = true))]
 fn step_result_to_evidence_string(
@@ -68,7 +66,6 @@ fn is_valid_goal_directive_action(action: &str) -> bool {
 // ── Policy pure logic ─────────────────────────────────────────
 
 /// Check if a granted permission covers a requested permission.
-/// Mirrors `Permission.matches(requested)`.
 #[pyfunction]
 fn permission_matches(
     category: &str,

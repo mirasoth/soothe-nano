@@ -1,4 +1,4 @@
-//! File operation result types (ported from `toolkits/file_ops.py`).
+//! File operation result types.
 
 use serde::Serialize;
 

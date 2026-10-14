@@ -1,4 +1,4 @@
-//! SQLite path resolution (ported from `paths/sqlite_paths.py`).
+//! SQLite path resolution.
 //!
 //! Resolves the `SOOTHE_HOME` directory and thread-specific DB file layout.
 

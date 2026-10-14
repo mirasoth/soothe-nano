@@ -1,4 +1,4 @@
-//! Pure-logic helpers for subagents (ported from `subagents/*.py`).
+//! Pure-logic helpers for subagents.
 //!
 //! Covers: topic attachment stripping, search-query compaction, effort
 //! parsing/normalization, report display summaries, reference key/merge/format,
@@ -10,7 +10,7 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-// ── Topic attachment stripping (from `_research_topic_util.py`) ───────────
+// ── Topic attachment stripping ───────────────────────────────────────────
 
 const CUT_MARKERS: &[&str] = &[
     "--- Context ---",

@@ -1,4 +1,4 @@
-//! Rate limiter (ported from security rate limiting logic).
+//! Rate limiter.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -53,9 +53,9 @@ impl Default for RateLimiter {
     }
 }
 
-/// Sliding-window rate limiter (mirrors the Python `RateLimiter` in
-/// `security_enforcer.py` — records operation timestamps and checks
-/// counts within a rolling window).
+/// Sliding-window rate limiter.
+///
+/// Records operation timestamps and checks counts within a rolling window.
 pub struct SlidingWindowRateLimiter {
     window_seconds: f64,
     operations: Mutex<HashMap<String, Vec<f64>>>,

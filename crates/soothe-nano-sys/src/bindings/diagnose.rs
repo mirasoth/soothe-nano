@@ -352,7 +352,7 @@ fn check_mcp_servers_from_results_rust(
 
 // ── helpers ───────────────────────────────────────────────────
 
-/// Convert a serde_json::Value into a Python object via json round-trip.
+/// Convert a serde_json::Value into a dict via json round-trip.
 fn dict_from_json(py: Python<'_>, value: &serde_json::Value) -> PyResult<PyObject> {
     let json_str = serde_json::to_string(value)
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
@@ -361,7 +361,7 @@ fn dict_from_json(py: Python<'_>, value: &serde_json::Value) -> PyResult<PyObjec
     Ok(result.into())
 }
 
-/// Parse a list of Python dicts into Rust CheckResult objects.
+/// Parse a list of dicts into Rust CheckResult objects.
 fn parse_check_dicts(py: Python<'_>, dicts: &[Bound<'_, PyDict>]) -> PyResult<Vec<CheckResult>> {
     let json_mod = py.import_bound("json")?;
     let mut checks = Vec::new();
@@ -376,7 +376,7 @@ fn parse_check_dicts(py: Python<'_>, dicts: &[Bound<'_, PyDict>]) -> PyResult<Ve
     Ok(checks)
 }
 
-/// Parse a single Python dict into a Rust CheckResult.
+/// Parse a single dict into a Rust CheckResult.
 fn parse_single_check_dict(py: Python<'_>, d: &Bound<'_, PyDict>) -> PyResult<CheckResult> {
     let json_mod = py.import_bound("json")?;
     let json_str: String = json_mod

@@ -1,4 +1,4 @@
-//! Protocol data models and pure logic (ported from `protocols/*.py`).
+//! Protocol data models and pure logic.
 
 pub mod concurrency;
 pub mod durability;

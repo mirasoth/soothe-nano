@@ -1,6 +1,5 @@
-//! Verbosity tiers — ported from `core/verbosity.py`.
+//! Verbosity tiers for event visibility.
 //!
-//! Events classify to one of two tiers:
 //! - `Normal`: client-visible — flows over the wire to subscribed clients.
 //! - `Internal`: hidden — daemon-side only, never leaves the daemon.
 
@@ -19,12 +18,12 @@ pub enum VerbosityTier {
 }
 
 impl VerbosityTier {
-    /// Return the discriminant value (matches the Python `IntEnum` value).
+    /// Return the discriminant value.
     pub const fn as_int(self) -> u8 {
         self as u8
     }
 
-    /// Return the discriminant as `i64` (for PyO3 interop).
+    /// Return the discriminant as `i64`.
     pub const fn to_i64(self) -> i64 {
         self as u8 as i64
     }
@@ -38,7 +37,7 @@ impl VerbosityTier {
         }
     }
 
-    /// Return the string name (matches the Python `IntEnum` member name).
+    /// Return the string name.
     pub const fn name(self) -> &'static str {
         match self {
             VerbosityTier::Normal => "NORMAL",
@@ -54,7 +53,7 @@ impl VerbosityTier {
     /// Parse a legacy string alias into a tier.
     ///
     /// `quiet`/`normal` → Normal; `detailed`/`debug`/`internal` → Internal.
-    /// Unknown strings default to Normal (matching the Python fallback).
+    /// Unknown strings default to Normal.
     pub fn from_legacy_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "quiet" | "normal" => VerbosityTier::Normal,
@@ -64,9 +63,7 @@ impl VerbosityTier {
     }
 }
 
-/// Return True if tier is client-visible.
-///
-/// Mirrors the module-level `should_show(tier)` function in `verbosity.py`.
+/// Return true if the tier is client-visible.
 pub fn should_show(tier: VerbosityTier) -> bool {
     tier.should_show()
 }

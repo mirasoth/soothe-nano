@@ -1,6 +1,4 @@
-//! Filesystem discovery guidance for tool descriptions and error recovery.
-//!
-//! Ported from `filesystem/discovery_hints.py`.
+//! Discovery guidance for filesystem tool descriptions and error recovery.
 
 /// Glob discovery fallback hint — guidance appended to glob tool description
 /// and embedded in glob timeout errors.
@@ -9,7 +7,7 @@ pub const GLOB_DISCOVERY_FALLBACK_HINT: &str = "If glob fails, times out, or ret
 /// Grep discovery fallback hint — guidance appended to grep tool description.
 pub const GREP_DISCOVERY_FALLBACK_HINT: &str = "Prefer this grep tool over run_command with grep/rg for content search. Batch parallel grep calls for multiple patterns. Scope with path/glob when known. Only if you need true regex or flags this tool lacks: run_command with `rg '<regex>' <path>` (always pass an explicit path after the pattern).";
 
-/// Glob tool description — built from `GLOB_DISCOVERY_FALLBACK_HINT`.
+/// Glob tool description.
 pub const GLOB_TOOL_DESCRIPTION: &str = concat!(
     "Find files and directories matching a glob pattern.\n",
     "\n",
@@ -29,7 +27,7 @@ pub const GLOB_TOOL_DESCRIPTION: &str = concat!(
     "If glob fails, times out, or returns empty: narrow the path (e.g. packages/foo/), use grep(pattern=..., glob='*.ts') for content-based discovery, or ls on known directories before read_file on specific targets. Avoid repeating broad ** globs."
 );
 
-/// Grep tool description — built from `GREP_DISCOVERY_FALLBACK_HINT`.
+/// Grep tool description.
 pub const GREP_TOOL_DESCRIPTION: &str = concat!(
     "Search for a LITERAL text pattern across files (NOT regex).\n",
     "\n",
@@ -50,9 +48,6 @@ pub const GREP_TOOL_DESCRIPTION: &str = concat!(
 );
 
 /// Build a glob timeout error with discovery fallback guidance.
-///
-/// Mirrors `format_glob_timeout_error(timeout_seconds)` in Python:
-/// `format!("Error: glob timed out after {timeout_seconds:.0}s. Try a more specific pattern, set path to a narrower directory, or switch strategy: {GLOB_DISCOVERY_FALLBACK_HINT}")`
 pub fn format_glob_timeout_error(timeout_seconds: f64) -> String {
     format!(
         "Error: glob timed out after {:.0}s. Try a more specific pattern, set path to a narrower directory, or switch strategy: {}",

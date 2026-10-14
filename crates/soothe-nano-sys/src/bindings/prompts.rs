@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use soothe_nano_prompts::context_xml::FileInfo;
 use std::path::Path;
 
-/// Build the file-list context XML (pure Rust, no Python round-trip).
+/// Build the file-list context XML.
 #[pyfunction]
 fn build_context_xml(_py: Python<'_>, workspace: &str, files: Vec<(String, u64, usize)>) -> String {
     let file_infos: Vec<FileInfo> = files
@@ -20,8 +20,8 @@ fn load_project_instructions(workspace: &str) -> Option<String> {
     soothe_nano_prompts::load_project_instructions(std::path::Path::new(workspace))
 }
 
-/// Build the ENVIRONMENT XML block. Round-trips into Python for `is_rg_available()`
-/// and `get_knowledge_cutoff(model)`.
+/// Build the ENVIRONMENT XML block. Calls back into Python for
+/// `is_rg_available()` and `get_knowledge_cutoff(model)`.
 #[pyfunction]
 fn build_environment_section(py: Python<'_>, model: &str) -> PyResult<String> {
     let platform_name = std::env::consts::OS;

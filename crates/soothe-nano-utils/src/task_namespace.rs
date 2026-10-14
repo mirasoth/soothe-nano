@@ -1,7 +1,7 @@
-//! Task-tool namespace parsing (ported from `ux/task_namespace.py`).
+//! Task-tool namespace parsing.
 //!
 //! Pure string ops for the unified tool_call_id format
-//! ``{step_wire}:{type}:{tool}:{idx}``.
+//! `{step_wire}:{type}:{tool}:{idx}`.
 
 /// Parsed components of a unified tool_call_id.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,12 +13,12 @@ pub struct ParsedUnifiedToolCallId {
 }
 
 impl ParsedUnifiedToolCallId {
-    /// Non-unified or empty id sentinel. ``tool_info`` defaults to empty.
+    /// Non-unified or empty id sentinel. `tool_info` defaults to empty.
     pub fn empty() -> Self {
         Self::empty_with_tool_info("")
     }
 
-    /// Non-unified id sentinel preserving the raw id in ``tool_info``.
+    /// Non-unified id sentinel preserving the raw id in `tool_info`.
     pub fn empty_with_tool_info(tool_info: &str) -> Self {
         ParsedUnifiedToolCallId {
             step_id: String::new(),
@@ -29,7 +29,7 @@ impl ParsedUnifiedToolCallId {
     }
 }
 
-/// Map execute step ids (``GHT-01``) to the unified wire fragment (``GHT_01``).
+/// Map execute step ids (`GHT-01`) to the unified wire fragment (`GHT_01`).
 pub fn step_id_to_unified_fragment(step_id: &str) -> String {
     step_id.trim().replace('-', "_")
 }
@@ -39,16 +39,16 @@ pub fn step_id_from_unified_fragment(fragment: &str) -> String {
     fragment.trim().replace('_', "-")
 }
 
-/// True when the first segment uses underscore wire form (``GHT_01``).
+/// True when the first segment uses underscore wire form (`GHT_01`).
 pub fn is_wire_step_fragment(fragment: &str) -> bool {
     let text = fragment.trim();
     !text.is_empty() && text.contains('_') && !text.contains('-')
 }
 
-/// Parse provider ``tool:idx`` into unified ``tool:idx`` fragment.
+/// Parse provider `tool:idx` into unified `tool:idx` fragment.
 ///
-/// If ``:`` is present, split at the last ``:``; when the suffix is all digits
-/// and the name is non-empty, return ``{name}:{idx}``. Otherwise return the
+/// If `:` is present, split at the last `:`; when the suffix is all digits
+/// and the name is non-empty, return `{name}:{idx}`. Otherwise return the
 /// trimmed text unchanged.
 pub fn provider_tool_fragment(tid: &str) -> String {
     let text = tid.trim();
@@ -65,9 +65,9 @@ pub fn provider_tool_fragment(tid: &str) -> String {
 
 /// Extract tool_info from colon segments after the type segment.
 ///
-/// Returns everything after ``parts[1]`` joined by ``":"``. The canonical wire
-/// form is ``{name}:{idx}`` (e.g. ``grep:0``), but providers that stamp opaque
-/// call ids without an ``:idx`` suffix are preserved verbatim.
+/// Returns everything after `parts[1]` joined by `":"`. The canonical wire
+/// form is `{name}:{idx}` (e.g. `grep:0`), but providers that stamp opaque
+/// call ids without an `:idx` suffix are preserved verbatim.
 pub fn tool_info_from_unified_parts(parts: &[&str]) -> String {
     if parts.len() >= 3 {
         parts[2..].join(":").trim().to_string()
@@ -76,7 +76,7 @@ pub fn tool_info_from_unified_parts(parts: &[&str]) -> String {
     }
 }
 
-/// Build canonical unified id: ``{step_wire}:{type}:{tool}:{idx}``.
+/// Build canonical unified id: `{step_wire}:{type}:{tool}:{idx}`.
 pub fn format_unified_tool_call_id(step_id: &str, type_part: &str, tool_fragment: &str) -> String {
     let sid_wire = step_id_to_unified_fragment(step_id);
     let frag = provider_tool_fragment(tool_fragment);
@@ -87,9 +87,9 @@ pub fn format_unified_tool_call_id(step_id: &str, type_part: &str, tool_fragment
 ///
 /// Recognition rules (in order):
 /// 1. The id must contain at least three colon-separated segments.
-/// 2. ``parts[0]`` must be a wire step fragment (underscore form, no hyphen).
-/// 3. ``parts[1]`` must be ``s`` (step-level) or ``t{N}`` (task-level).
-/// 4. Everything after ``parts[1]`` is the tool_info, joined by ``":"``.
+/// 2. `parts[0]` must be a wire step fragment (underscore form, no hyphen).
+/// 3. `parts[1]` must be `s` (step-level) or `t{N}` (task-level).
+/// 4. Everything after `parts[1]` is the tool_info, joined by `":"`.
 ///
 /// Non-unified ids use empty step_id/type_code and preserve the raw id in
 /// tool_info.

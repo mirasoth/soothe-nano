@@ -23,8 +23,9 @@ pub fn import_error(name: &str, module_path: &str, error: &str) -> CheckResult {
     )
 }
 
-/// Build the protocols category result from a list of (name, module_path, ok, error_msg) tuples.
-/// Python does the actual __import__ and passes the results here.
+/// Build the protocols category result from pre-resolved import outcomes.
+///
+/// `results` is a list of `(name, module_path, ok, error_msg)` tuples.
 pub fn check_protocols_from_results(results: &[(String, String, bool, String)]) -> CategoryResult {
     let checks: Vec<CheckResult> = results
         .iter()

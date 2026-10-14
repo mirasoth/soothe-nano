@@ -1,4 +1,4 @@
-//! JSON extraction and repair (ported from `utils/json_parsing.py`).
+//! JSON extraction and repair.
 
 use serde_json::Value;
 

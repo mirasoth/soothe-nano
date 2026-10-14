@@ -1,4 +1,4 @@
-//! stdout/stderr capture and truncation (ported from `utils/output_capture.py`).
+//! stdout/stderr capture and truncation.
 
 /// Truncate output to a max byte length, appending an ellipsis indicator.
 pub fn truncate_output(output: &str, max_bytes: usize) -> String {

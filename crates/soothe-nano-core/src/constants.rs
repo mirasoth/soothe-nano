@@ -1,7 +1,6 @@
-//! Event type string constants — ported from `core/events.py`.
+//! Wire-safe event type string constants.
 //!
-//! Wire-safe event type strings for CLI/TUI event processing. These are the
-//! canonical home; nano and the host re-export rather than redefine the literals.
+//! Canonical home for event type strings used across CLI/TUI event processing.
 
 /// Plan events.
 pub const PLAN_CREATED: &str = "soothe.cognition.plan.created";

@@ -35,8 +35,9 @@ pub fn mcp_configs_empty() -> CheckResult {
     )
 }
 
-/// Validate MCP server configs and return a CheckResult.
-/// Returns (result, server_names) so the caller can use names for availability checks.
+/// Validate MCP server configs.
+///
+/// Returns `(result, server_names)` so the caller can use names for availability checks.
 pub fn check_mcp_configs(servers: &[McpServerSpec]) -> (CheckResult, Vec<String>) {
     if servers.is_empty() {
         return (mcp_configs_empty(), Vec::new());

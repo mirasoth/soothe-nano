@@ -1,4 +1,4 @@
-//! Event types ported from `events/catalog.py`.
+//! Streaming event types and chunks.
 
 pub mod wire_protocol;
 

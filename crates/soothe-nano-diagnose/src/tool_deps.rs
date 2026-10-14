@@ -88,7 +88,8 @@ pub fn check_git(git_path: Option<&str>) -> CheckResult {
 }
 
 /// Run all tool-dep checks and return a CategoryResult.
-/// Python passes the resolved binary paths (from shutil.which / deepagents helpers).
+///
+/// Caller passes resolved binary paths (e.g. from `shutil.which`).
 pub fn check_tool_deps(
     rg_path: Option<&str>,
     fd_path: Option<&str>,

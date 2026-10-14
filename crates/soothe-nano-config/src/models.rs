@@ -1,4 +1,4 @@
-//! Config model structs (ported from `config/models.py`).
+//! Configuration model structs.
 
 use serde::{Deserialize, Serialize};
 

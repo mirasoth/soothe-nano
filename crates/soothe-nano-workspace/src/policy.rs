@@ -1,4 +1,4 @@
-//! Workspace policy (ported from `workspace/workspace_policy.py`).
+//! Workspace policy.
 
 use std::path::{Path, PathBuf};
 

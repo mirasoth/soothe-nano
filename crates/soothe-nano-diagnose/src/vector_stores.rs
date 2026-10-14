@@ -35,8 +35,9 @@ pub fn import_failed(name: &str, error: &str, remediation: &str) -> CheckResult 
     )
 }
 
-/// Build the vector_stores category result from a list of pre-built CheckResults.
-/// Python does the config inspection and import attempts, then passes results here.
+/// Build the vector_stores category result from pre-built CheckResults.
+///
+/// Caller performs config inspection and import attempts, then passes results here.
 pub fn check_vector_stores_from_results(checks: Vec<CheckResult>) -> CategoryResult {
     let statuses: Vec<CheckStatus> = checks.iter().map(|c| c.status).collect();
     CategoryResult::new("vector_stores", aggregate_status(&statuses), checks)

@@ -192,7 +192,7 @@ fn path_policy_should_log(action: &str) -> bool {
 
 /// Merge two decisions (most restrictive wins). Returns the merged field
 /// tuple `(allowed, action, reason, sanitized_path)`; the caller combines
-/// violations and metadata on the Python side (they are plain concatenation
+/// violations and metadata separately (they are plain concatenation
 /// / overlay and don't need Rust evaluation).
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -244,8 +244,7 @@ fn path_policy_merge(
 
 // ── Sliding-window rate limiter ────────────────────────────────
 
-/// Python-facing sliding-window rate limiter (mirrors the Python
-/// `security_enforcer.RateLimiter` class).
+/// Python-facing sliding-window rate limiter.
 #[pyclass(name = "SlidingWindowRateLimiter")]
 pub struct PySlidingWindowRateLimiter {
     inner: std::sync::Mutex<soothe_nano_security::SlidingWindowRateLimiter>,
@@ -357,7 +356,7 @@ fn command_approved_by_allowlist(
     })
 }
 
-/// Glob (fnmatch) pattern match — case-sensitive, like Python's default.
+/// Glob (fnmatch) pattern match — case-sensitive.
 #[pyfunction]
 fn glob_match(py: Python<'_>, pattern: &str, text: &str) -> bool {
     py.allow_threads(|| soothe_nano_security::glob_match(pattern, text))

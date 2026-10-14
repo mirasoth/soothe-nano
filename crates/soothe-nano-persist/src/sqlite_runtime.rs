@@ -1,4 +1,4 @@
-//! SQLite runtime with connection pooling (ported from `persistence/sqlite_runtime.py`).
+//! SQLite runtime with connection pooling.
 
 use rusqlite::{params, Connection};
 use std::path::PathBuf;

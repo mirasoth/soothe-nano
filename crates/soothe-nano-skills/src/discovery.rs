@@ -1,5 +1,4 @@
-//! Skill discovery — filesystem scanning for `.md` skill files
-//! (ported from `skills/discovery_tools.py`).
+//! Skill discovery: filesystem scanning for `.md` skill files.
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
