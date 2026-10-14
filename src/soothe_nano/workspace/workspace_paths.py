@@ -16,28 +16,6 @@ from soothe_nano.workspace.workspace_runtime import resolve_process_workspace_ro
 # Product layout under the workspace (not soothe-deepagents defaults).
 WORKSPACE_BACKUP_DIR = workspace_backup_dir_rust()
 
-_UNIX_HOST_ROOT_TOP_NAMES: frozenset[str] = frozenset(
-    {
-        "Applications",
-        "bin",
-        "cores",
-        "dev",
-        "etc",
-        "home",
-        "Library",
-        "opt",
-        "private",
-        "sbin",
-        "sys",
-        "System",
-        "tmp",
-        "usr",
-        "Users",
-        "var",
-        "Volumes",
-    }
-)
-
 
 def config_workspace_root(config: Any | None) -> str | None:
     """Return configured `filesystem_middleware.workspace_root` when set."""
@@ -84,15 +62,6 @@ def workspace_path_for_tool_resolution(
 ) -> Path:
     """Workspace root for toolkit path resolution."""
     return resolve_effective_tool_workspace(config, runtime=runtime)
-
-
-def _posix_first_segment_name(expanded: Path) -> str | None:
-    parts = expanded.parts
-    if not parts or parts[0] != "/":
-        return None
-    if len(parts) < 2:
-        return None
-    return parts[1]
 
 
 def should_use_virtual_path_resolution(file_path: str, workspace_root: Path) -> bool:

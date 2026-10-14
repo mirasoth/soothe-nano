@@ -13,7 +13,9 @@ from soothe_nano.ux.stream_tool_wire import (
 
 
 def test_tool_call_update_event_basic() -> None:
-    event = tool_call_update_event(tool_call_id="GHT_01:s:grep:0", name="grep", args={"pattern": "foo"})
+    event = tool_call_update_event(
+        tool_call_id="GHT_01:s:grep:0", name="grep", args={"pattern": "foo"}
+    )
     assert event["type"] == STREAM_TOOL_CALL_UPDATE
     assert event["tool_call_id"] == "GHT_01:s:grep:0"
     assert event["name"] == "grep"
