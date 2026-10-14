@@ -1,9 +1,10 @@
 //! PyO3 bindings for `soothe-nano-skills`.
 
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use soothe_nano_skills::{
     corpus_string, format_skills_within_budget as rs_format_skills, BudgetFormatTelemetry,
-    BudgetSkillEntry, CorpusMatcher, SkillBudget, SkillDiscovery,
+    BudgetSkillEntry, CorpusMatcher, SkillBudget, SkillDiscovery, SkillIndex, SkillIndexEntry,
 };
 
 // ── SkillDiscovery ────────────────────────────────────────────
@@ -87,6 +88,192 @@ impl PySkillBudget {
     #[getter]
     fn remaining(&self) -> u32 {
         self.inner.remaining()
+    }
+}
+
+// ── SkillIndexEntry ──────────────────────────────────────────
+
+/// Lightweight skill metadata cached by the index.
+#[pyclass(name = "SkillIndexEntry")]
+#[derive(Clone)]
+pub struct PySkillIndexEntry {
+    inner: SkillIndexEntry,
+}
+
+impl From<SkillIndexEntry> for PySkillIndexEntry {
+    fn from(entry: SkillIndexEntry) -> Self {
+        Self { inner: entry }
+    }
+}
+
+#[pymethods]
+impl PySkillIndexEntry {
+    #[new]
+    #[pyo3(signature = (name, description, tags, source, path, mtime, paths=None, when_to_use=None, core=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        name: String,
+        description: String,
+        tags: String,
+        source: String,
+        path: String,
+        mtime: f64,
+        paths: Option<Vec<String>>,
+        when_to_use: Option<String>,
+        core: Option<bool>,
+    ) -> Self {
+        Self {
+            inner: SkillIndexEntry {
+                name,
+                description,
+                tags,
+                source,
+                path,
+                mtime,
+                paths,
+                when_to_use,
+                core,
+            },
+        }
+    }
+
+    #[getter]
+    fn name(&self) -> &str {
+        &self.inner.name
+    }
+
+    #[getter]
+    fn description(&self) -> &str {
+        &self.inner.description
+    }
+
+    #[getter]
+    fn tags(&self) -> &str {
+        &self.inner.tags
+    }
+
+    #[getter]
+    fn source(&self) -> &str {
+        &self.inner.source
+    }
+
+    #[getter]
+    fn path(&self) -> &str {
+        &self.inner.path
+    }
+
+    #[getter]
+    fn mtime(&self) -> f64 {
+        self.inner.mtime
+    }
+
+    #[getter]
+    fn paths(&self) -> Option<Vec<String>> {
+        self.inner.paths.clone()
+    }
+
+    #[getter]
+    fn when_to_use(&self) -> Option<&str> {
+        self.inner.when_to_use.as_deref()
+    }
+
+    #[getter]
+    fn core(&self) -> Option<bool> {
+        self.inner.core
+    }
+
+    fn __repr__(&self) -> String {
+        format!("SkillIndexEntry(name={:?})", self.inner.name)
+    }
+}
+
+// ── SkillIndex ───────────────────────────────────────────────
+
+/// Mtime-aware skill index; re-parses SKILL.md only when mtime changes.
+#[pyclass(name = "SkillIndex")]
+pub struct PySkillIndex {
+    inner: SkillIndex,
+}
+
+#[pymethods]
+impl PySkillIndex {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: SkillIndex::new(),
+        }
+    }
+
+    /// Return all indexed entries sorted by name.
+    fn entries(&self) -> Vec<PySkillIndexEntry> {
+        self.inner
+            .entries()
+            .into_iter()
+            .map(|e| e.clone().into())
+            .collect()
+    }
+
+    /// Resolve a skill by name (case-insensitive).
+    fn resolve(&self, name: &str) -> Option<PySkillIndexEntry> {
+        self.inner.resolve(name).map(|e| e.clone().into())
+    }
+
+    /// Stat all skill directories; re-parse only changed entries.
+    /// Returns the full list of current entries after refresh.
+    #[pyo3(signature = (roots, cache_path))]
+    fn rebuild_if_stale(
+        &mut self,
+        py: Python<'_>,
+        roots: Vec<(String, String)>,
+        cache_path: &str,
+    ) -> PyResult<Vec<PySkillIndexEntry>> {
+        let entries = py.allow_threads(|| {
+            self.inner
+                .rebuild_if_stale(&roots, std::path::Path::new(cache_path))
+        });
+        Ok(entries.into_iter().map(|e| e.into()).collect())
+    }
+
+    /// Return wire-safe dicts (no path field) for RPC serialization.
+    fn wire_entries(&self, py: Python<'_>) -> PyResult<Vec<PyObject>> {
+        let wires = self.inner.wire_entries();
+        wires
+            .into_iter()
+            .map(|w| {
+                let d = PyDict::new_bound(py);
+                let _ = d.set_item("name", w.name);
+                let _ = d.set_item("description", w.description);
+                let _ = d.set_item("source", w.source);
+                if let Some(tags) = w.tags {
+                    let _ = d.set_item("tags", tags);
+                }
+                if let Some(paths) = w.paths {
+                    let _ = d.set_item("paths", paths);
+                }
+                if let Some(wtu) = w.when_to_use {
+                    let _ = d.set_item("when_to_use", wtu);
+                }
+                Ok::<PyObject, PyErr>(d.into())
+            })
+            .collect()
+    }
+
+    /// Load persisted index from disk if available.
+    #[pyo3(signature = (cache_path))]
+    fn load_cache(&mut self, py: Python<'_>, cache_path: &str) {
+        py.allow_threads(|| self.inner.load_cache(std::path::Path::new(cache_path)));
+    }
+
+    /// Write current index to disk cache.
+    #[pyo3(signature = (cache_path))]
+    fn persist(&self, py: Python<'_>, cache_path: &str) {
+        py.allow_threads(|| self.inner.persist(std::path::Path::new(cache_path)));
+    }
+}
+
+impl Default for PySkillIndex {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -209,6 +396,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySkillDiscovery>()?;
     m.add_class::<PyCorpusMatcher>()?;
     m.add_class::<PySkillBudget>()?;
+    m.add_class::<PySkillIndexEntry>()?;
+    m.add_class::<PySkillIndex>()?;
     m.add_function(wrap_pyfunction!(corpus_matcher_new, m)?)?;
     m.add_function(wrap_pyfunction!(skill_discovery_new, m)?)?;
     m.add_function(wrap_pyfunction!(format_skills_within_budget, m)?)?;

@@ -2,11 +2,27 @@
 
 Canonical home for ``SOOTHE_HOME`` / ``SOOTHE_DATA_DIR`` and duck-typed config
 protocols used by daemon, core, and clients.
+
+Pure path functions delegate to the Rust extension (``soothe_nano._rust``).
 """
 
 import os
 from pathlib import Path
 from typing import Protocol
+
+from soothe_nano._rust_compat import (
+    resolve_checkpoints_db_path_rust,
+    resolve_context_db_path_rust,
+    resolve_cron_db_path_rust,
+    resolve_databases_dir_rust,
+    resolve_display_db_path_rust,
+    resolve_identity_db_path_rust,
+    resolve_metadata_db_path_rust,
+    resolve_persist_db_path_rust,
+    resolve_sqlite_db_path_rust,
+    resolve_vectors_db_path_rust,
+    sqlite_databases_subdir_rust,
+)
 
 # === Constants (from config_constants.py) ===
 
@@ -23,12 +39,12 @@ SOOTHE_DATA_DIR: str = os.environ.get("SOOTHE_DATA_DIR", str(SOOTHE_HOME / "data
 """Default Soothe data directory. Overridable via `SOOTHE_DATA_DIR` env var."""
 
 # SQLite purpose databases under databases/. Hard cut: no legacy flat paths.
-SQLITE_DATABASES_SUBDIR: str = "databases"
+SQLITE_DATABASES_SUBDIR: str = sqlite_databases_subdir_rust()
 
 
 def resolve_databases_dir() -> Path:
     """Return ``$SOOTHE_DATA_DIR/databases`` (creates nothing)."""
-    return Path(SOOTHE_DATA_DIR) / SQLITE_DATABASES_SUBDIR
+    return Path(resolve_databases_dir_rust())
 
 
 def resolve_sqlite_db_path(purpose: str) -> Path:
@@ -37,48 +53,47 @@ def resolve_sqlite_db_path(purpose: str) -> Path:
     Args:
         purpose: Logical store name (e.g. ``checkpoints``, ``persist``).
     """
-    name = purpose.strip().removesuffix(".db")
-    return resolve_databases_dir() / f"{name}.db"
+    return Path(resolve_sqlite_db_path_rust(purpose))
 
 
 def resolve_checkpoints_db_path() -> Path:
     """StrangeLoop / loop checkpoints SQLite path."""
-    return resolve_sqlite_db_path("checkpoints")
+    return Path(resolve_checkpoints_db_path_rust())
 
 
 def resolve_context_db_path() -> Path:
     """Context Engine SQLite path."""
-    return resolve_sqlite_db_path("context")
+    return Path(resolve_context_db_path_rust())
 
 
 def resolve_display_db_path() -> Path:
     """Display card ledger SQLite path."""
-    return resolve_sqlite_db_path("display")
+    return Path(resolve_display_db_path_rust())
 
 
 def resolve_cron_db_path() -> Path:
     """Cron job store SQLite path."""
-    return resolve_sqlite_db_path("cron")
+    return Path(resolve_cron_db_path_rust())
 
 
 def resolve_identity_db_path() -> Path:
     """Identity service SQLite path."""
-    return resolve_sqlite_db_path("identity")
+    return Path(resolve_identity_db_path_rust())
 
 
 def resolve_metadata_db_path() -> Path:
     """ThreadInfo / durability metadata SQLite path."""
-    return resolve_sqlite_db_path("metadata")
+    return Path(resolve_metadata_db_path_rust())
 
 
 def resolve_persist_db_path() -> Path:
     """Persist KV SQLite path."""
-    return resolve_sqlite_db_path("persist")
+    return Path(resolve_persist_db_path_rust())
 
 
 def resolve_vectors_db_path() -> Path:
     """Vector store (sqlite-vec) SQLite path."""
-    return resolve_sqlite_db_path("vectors")
+    return Path(resolve_vectors_db_path_rust())
 
 
 # Default execution timeout for shell commands (seconds)

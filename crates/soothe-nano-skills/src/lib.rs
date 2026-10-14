@@ -5,6 +5,7 @@ pub mod budget_format;
 pub mod corpus_match;
 pub mod corpus_string;
 pub mod discovery;
+pub mod skill_index;
 
 pub use budget::SkillBudget;
 pub use budget_format::{
@@ -13,3 +14,4 @@ pub use budget_format::{
 };
 pub use corpus_match::CorpusMatcher;
 pub use discovery::{SkillDiscovery, SkillEntry, SkillMarkdown};
+pub use skill_index::{SkillIndex, SkillIndexEntry, WireEntry};

@@ -100,6 +100,10 @@ a ``datetime`` object).
   ``execute_step_langfuse_run_display_name`` — Langfuse display names
 - ``resolve_str`` / ``resolve_env_vars`` / ``normalize_tags`` — config resolution
 - ``short_thread_id_for_log`` — compact log tags
+- ``strip_thinking_rust`` / ``rust_thinking_stream_filter_new`` — thinking-token
+  filter (regex-based stripping + stateful stream filter)
+- ``strip_json_text_rust`` / ``parse_json_object_rust`` — LLM response text
+  JSON extraction (fence stripping, brace-depth matching)
 """
 
 from __future__ import annotations
@@ -199,6 +203,94 @@ def resolve_workspace_rust(
     Performs ``expanduser()`` + ``canonicalize()`` (symlink resolution).
     """
     return _rust_module.resolve_workspace(explicit, thread_workspace, installation_default)
+
+
+# ---------------------------------------------------------------------------
+# Workspace path helpers (full-parity — no Python fallback)
+# ---------------------------------------------------------------------------
+
+
+def should_use_virtual_path_resolution_rust(file_path: str, workspace_root: str) -> bool:
+    """True when a leading-`/` path should use virtual sandbox resolution."""
+    return _rust_module.should_use_virtual_path_resolution_py(file_path, workspace_root)
+
+
+def join_workspace_normalized_path_rust(workspace: str, normalized: str) -> str:
+    """Join a workspace root with a relative/absolute path (Rust-backed, no fallback).
+
+    Returns the canonical absolute path. Raises ``RuntimeError`` on path-escape.
+    """
+    return _rust_module.join_workspace_normalized_path_py(workspace, normalized)
+
+
+def soothe_home_rust() -> str:
+    """Resolve ``SOOTHE_HOME`` directory (env var > ``~/.soothe``)."""
+    return _rust_module.soothe_home_py()
+
+
+def soothe_data_dir_rust() -> str:
+    """Resolve ``$SOOTHE_DATA_DIR`` (env var > ``$SOOTHE_HOME/data``)."""
+    return _rust_module.soothe_data_dir_py()
+
+
+def resolve_databases_dir_rust() -> str:
+    """Return ``$SOOTHE_DATA_DIR/databases`` (creates nothing)."""
+    return _rust_module.resolve_databases_dir_py()
+
+
+def resolve_sqlite_db_path_rust(purpose: str) -> str:
+    """Return ``$SOOTHE_DATA_DIR/databases/{purpose}.db``."""
+    return _rust_module.resolve_sqlite_db_path_py(purpose)
+
+
+def resolve_checkpoints_db_path_rust() -> str:
+    """StrangeLoop / loop checkpoints SQLite path."""
+    return _rust_module.resolve_checkpoints_db_path_py()
+
+
+def resolve_context_db_path_rust() -> str:
+    """Context Engine SQLite path."""
+    return _rust_module.resolve_context_db_path_py()
+
+
+def resolve_display_db_path_rust() -> str:
+    """Display card ledger SQLite path."""
+    return _rust_module.resolve_display_db_path_py()
+
+
+def resolve_cron_db_path_rust() -> str:
+    """Cron job store SQLite path."""
+    return _rust_module.resolve_cron_db_path_py()
+
+
+def resolve_identity_db_path_rust() -> str:
+    """Identity service SQLite path."""
+    return _rust_module.resolve_identity_db_path_py()
+
+
+def resolve_metadata_db_path_rust() -> str:
+    """ThreadInfo / durability metadata SQLite path."""
+    return _rust_module.resolve_metadata_db_path_py()
+
+
+def resolve_persist_db_path_rust() -> str:
+    """Persist KV SQLite path."""
+    return _rust_module.resolve_persist_db_path_py()
+
+
+def resolve_vectors_db_path_rust() -> str:
+    """Vector store (sqlite-vec) SQLite path."""
+    return _rust_module.resolve_vectors_db_path_py()
+
+
+def workspace_backup_dir_rust() -> str:
+    """Product layout under the workspace (``.soothe/backups``)."""
+    return _rust_module.workspace_backup_dir_py()
+
+
+def sqlite_databases_subdir_rust() -> str:
+    """SQLite purpose databases subdirectory name (``databases``)."""
+    return _rust_module.sqlite_databases_subdir_py()
 
 
 def expand_env_vars_rust(s: str) -> str:
@@ -754,6 +846,21 @@ def is_unified_tool_call_id_rust(tool_call_id: str) -> bool:
 def shorten_tool_call_id_rust(raw_tid: str) -> str:
     """Shorten provider tool_call_id to ``tool:idx`` for unified id assembly."""
     return _rust_module.shorten_tool_call_id(raw_tid)
+
+
+# ---------------------------------------------------------------------------
+# Stream tool wire helpers (full-parity — no Python fallback)
+# ---------------------------------------------------------------------------
+
+
+def unified_tool_update_allowed_without_args_rust(tool_call_id: str) -> bool:
+    """True when a wire update may omit kwargs (unified main or subgraph tool rows)."""
+    return _rust_module.unified_tool_update_allowed_without_args_rust(tool_call_id)
+
+
+def extract_tool_call_updates_from_wire_message_rust(msg: Any) -> list[dict[str, Any]]:
+    """Extract ``soothe.stream.tool_call.update`` payloads from a wire AI message dict."""
+    return _rust_module.extract_tool_call_updates_from_wire_message_rust(msg)
 
 
 # ---------------------------------------------------------------------------
@@ -1822,3 +1929,44 @@ def short_thread_id_for_log_rust(thread_id: str) -> str | None:
     Returns the suffix
     """
     return _rust_module.short_thread_id_for_log_rust(thread_id)
+
+
+# ---------------------------------------------------------------------------
+# Thinking-token filter (full-parity — no Python fallback)
+# ---------------------------------------------------------------------------
+
+
+def strip_thinking_rust(text: str) -> tuple[str, list[str]]:
+    """Strip complete ``<thinking>...</thinking>`` blocks from *text* (Rust-backed).
+
+    Returns ``(stripped_text, captured_blocks)`` where ``captured_blocks``
+    is a list of inner-content strings (without tags), in order of appearance.
+    """
+    return _rust_module.strip_thinking_rust(text)
+
+
+def rust_thinking_stream_filter_new() -> Any:
+    """Construct a Rust-backed ``ThinkingStreamFilter`` for streaming chunk filtering."""
+    return _rust_module.ThinkingStreamFilter()
+
+
+# ---------------------------------------------------------------------------
+# LLM response text / JSON extraction (full-parity — no Python fallback)
+# ---------------------------------------------------------------------------
+
+
+def strip_json_text_rust(raw: str) -> str:
+    """Normalize model output to a JSON-parseable string (Rust-backed).
+
+    Strips markdown fences and, if prose precedes the first ``{``, slices to
+    that position. Returns the normalized string.
+    """
+    return _rust_module.strip_json_text_rust(raw)
+
+
+def parse_json_object_rust(content: str) -> Any:
+    """Parse a JSON object from model output — raw or markdown-fenced (Rust-backed).
+
+    Returns a dict or ``None`` when no valid JSON object can be extracted.
+    """
+    return _rust_module.parse_json_object_rust(content)

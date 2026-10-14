@@ -271,32 +271,21 @@ def test_dedup_uses_frontmatter_name_not_directory_name(tmp_path: Path) -> None:
 
 
 def test_parse_skill_dir_swallows_parse_metadata_exception(tmp_path: Path) -> None:
-    """A skill whose parse_skill_metadata raises must not crash rebuild."""
+    """A skill with malformed frontmatter must not crash rebuild."""
     root = tmp_path / "skills"
     root.mkdir()
     _make_skill(root, "good-skill")
-    _make_skill(root, "bad-skill")
+    # bad-skill has frontmatter missing required 'description' field
+    bad_dir = root / "bad-skill"
+    bad_dir.mkdir(parents=True, exist_ok=True)
+    (bad_dir / "SKILL.md").write_text(
+        "---\nname: bad-skill\n---\n# bad skill (no description)\n",
+        encoding="utf-8",
+    )
 
     index = SkillIndex()
 
-    real_parse = None
-
-    def _side_effect(text, path, dir_name):
-        nonlocal real_parse
-        if real_parse is None:
-            from soothe_deepagents.middleware.skills import _parse_skill_metadata
-
-            real_parse = _parse_skill_metadata
-        if dir_name == "bad-skill":
-            raise ValueError("I/O operation on closed file.")
-        return real_parse(text, path, dir_name)
-
-    import soothe_deepagents.middleware.skills as sdm
-
-    with (
-        patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)),
-        patch.object(sdm, "parse_skill_metadata", side_effect=_side_effect),
-    ):
+    with patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)):
         entries = index.rebuild_if_stale()
 
     names = [e.name for e in entries]

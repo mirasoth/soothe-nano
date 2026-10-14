@@ -34,9 +34,14 @@ fn dirs_or_default() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serializes tests that mutate `SOOTHE_HOME` (shared with paths::tests).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn env_overrides_home() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("SOOTHE_HOME", "/custom/soothe");
         assert_eq!(soothe_home(), PathBuf::from("/custom/soothe"));
         std::env::remove_var("SOOTHE_HOME");
@@ -44,6 +49,7 @@ mod tests {
 
     #[test]
     fn thread_db_path() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("SOOTHE_HOME", "/tmp/soothe");
         let p = db_path_for_thread("abc-123");
         assert_eq!(p, PathBuf::from("/tmp/soothe/threads/abc-123.db"));

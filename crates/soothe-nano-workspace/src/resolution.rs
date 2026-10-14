@@ -1,7 +1,7 @@
 //! Workspace resolution logic.
 
 use crate::WorkspaceError;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Where the workspace came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,30 +72,13 @@ pub fn resolve_workspace_for_stream(
     })
 }
 
-/// Join a workspace root with a relative path, ensuring no escape.
-pub fn join_workspace_normalized_path(
-    workspace: &Path,
-    relative: &str,
-) -> Result<PathBuf, WorkspaceError> {
-    let normalized =
-        soothe_nano_utils::normalize_relative(relative).map_err(WorkspaceError::InvalidPath)?;
-
-    let joined = workspace.join(&normalized);
-    let canonical = joined
-        .parent()
-        .and_then(|p| p.canonicalize().ok())
-        .unwrap_or_else(|| workspace.to_path_buf());
-
-    if !canonical.starts_with(workspace) {
-        return Err(WorkspaceError::PathEscape(relative.to_string()));
-    }
-
-    Ok(canonical.join(normalized.file_name().unwrap_or_default()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serializes tests that mutate `HOME` (shared with paths::tests).
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn explicit_takes_precedence() {
@@ -112,13 +95,8 @@ mod tests {
     }
 
     #[test]
-    fn join_rejects_escape() {
-        let ws = Path::new("/tmp/workspace");
-        assert!(join_workspace_normalized_path(ws, "../../etc").is_err());
-    }
-
-    #[test]
     fn expanduser_tilde() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("HOME", "/test/home");
         assert_eq!(expanduser("~"), "/test/home");
         assert_eq!(expanduser("~/projects"), "/test/home/projects");

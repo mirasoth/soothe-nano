@@ -4,17 +4,22 @@ Indexes skills under ``~/.agents/skills``, package-bundled
 ``skills/builtin/``, host-registered roots, and ``~/.soothe/skills``.
 Uses stat-only invalidation: re-parses SKILL.md only when mtime changes.
 Persists cache to ~/.soothe/cache/skill_index.json for fast restarts.
+
+Core indexing logic (frontmatter parsing, discovery, cache I/O) is
+implemented in Rust (``soothe-nano-skills`` crate) and exposed via the
+``_rust`` extension. This module provides the Python-facing API that
+delegates to Rust while keeping ``iter_skill_roots()`` in Python (it
+returns Python ``Path`` objects and depends on process-local state).
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from soothe_nano._rust_compat import get_rust_module
 from soothe_nano.skills.builtins import iter_skill_roots
 
 logger = logging.getLogger(__name__)
@@ -23,6 +28,9 @@ _CACHE_FILE = Path.home() / ".soothe" / "cache" / "skill_index.json"
 
 # Package-bundled built-in skills directory (kept for tests / introspection)
 _BUILTIN_SKILLS_DIR = Path(__file__).resolve().parent / "builtin"
+
+_rust = get_rust_module()
+_RustSkillIndex = _rust.SkillIndex if _rust is not None else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,30 +76,22 @@ class SkillIndex:
 
         Returns the full list of current entries after refresh.
         """
-        current_skills = self._discover_skill_dirs()
-        changed = False
+        roots = [(str(root), source) for root, source in iter_skill_roots()]
+        cache_path = str(_CACHE_FILE)
 
-        new_entries: dict[str, SkillIndexEntry] = {}
-        for key, (skill_dir, mtime, source) in current_skills.items():
-            existing = self._entries.get(key)
-            if existing and existing.mtime >= mtime and existing.path == str(skill_dir):
-                new_entries[key] = existing
-            else:
-                entry = self._parse_skill_dir(skill_dir, mtime, source=source)
-                if entry:
-                    new_entries[entry.name.lower()] = entry
-                    changed = True
+        if _RustSkillIndex is not None:
+            rust_index = _RustSkillIndex()
+            if self._loaded:
+                # Restore entries from our cache into the Rust index so it can
+                # compare mtimes without re-parsing unchanged skills.
+                rust_index.load_cache(cache_path)
+            rust_entries = rust_index.rebuild_if_stale(roots, cache_path)
+            self._entries = {e.name.lower(): _rust_entry_to_py(e) for e in rust_entries}
+            self._loaded = True
+            return self.entries()
 
-        if set(self._entries.keys()) != set(new_entries.keys()):
-            changed = True
-
-        self._entries = new_entries
-        self._loaded = True
-
-        if changed:
-            self._persist()
-
-        return self.entries()
+        # Fallback: pure-Python path (should not normally execute)
+        return self._rebuild_if_stale_python(roots, cache_path)
 
     def wire_entries(self) -> list[dict[str, Any]]:
         """Return wire-safe dicts (no path) for RPC serialization."""
@@ -120,15 +120,40 @@ class SkillIndex:
             self._load_cache()
             self.rebuild_if_stale()
 
-    def _discover_skill_dirs(self) -> dict[str, tuple[Path, float, str]]:
-        """Stat SKILL.md in each candidate dir; return name key → (path, mtime, source).
+    def _load_cache(self) -> None:
+        """Load persisted index from disk if available."""
+        if _RustSkillIndex is not None:
+            rust_index = _RustSkillIndex()
+            rust_index.load_cache(str(_CACHE_FILE))
+            # Extract entries from the Rust index into our Python dict
+            for entry in rust_index.entries():
+                py_entry = _rust_entry_to_py(entry)
+                self._entries[py_entry.name.lower()] = py_entry
+            self._loaded = True
+            return
 
-        When the same skill name exists in multiple roots, the later root wins
-        (last-wins dedup). ``~/.soothe/skills`` overrides host/nano built-ins which
-        override ``~/.agents/skills``.
-        """
-        by_name: dict[str, tuple[Path, float, str]] = {}
-        for root, source in iter_skill_roots():
+        # Fallback: pure-Python path
+        self._load_cache_python()
+
+    def _persist(self) -> None:
+        """Write current index to disk cache."""
+        # Rust path: persist is handled internally by rebuild_if_stale.
+        # This method is only called from the pure-Python fallback path.
+        self._persist_python()
+
+    # ------------------------------------------------------------------
+    # Pure-Python fallback (kept for resilience; not normally exercised)
+    # ------------------------------------------------------------------
+
+    def _rebuild_if_stale_python(
+        self, roots: list[tuple[str, str]], cache_path: str
+    ) -> list[SkillIndexEntry]:
+        """Pure-Python rebuild fallback."""
+        import os
+
+        current_skills: dict[str, tuple[Path, float, str]] = {}
+        for root_str, source in roots:
+            root = Path(root_str)
             if not root.is_dir():
                 continue
             try:
@@ -145,12 +170,34 @@ class SkillIndex:
                     except OSError:
                         continue
                     skill_name_key = self._discover_skill_name_key(skill_md, dir_entry.name)
-                    by_name[skill_name_key] = (
+                    current_skills[skill_name_key] = (
                         Path(dir_entry.path).resolve(),
                         st.st_mtime,
                         source,
                     )
-        return by_name
+
+        changed = False
+        new_entries: dict[str, SkillIndexEntry] = {}
+        for key, (skill_dir, mtime, source) in current_skills.items():
+            existing = self._entries.get(key)
+            if existing and existing.mtime >= mtime and existing.path == str(skill_dir):
+                new_entries[key] = existing
+            else:
+                entry = self._parse_skill_dir(skill_dir, mtime, source=source)
+                if entry:
+                    new_entries[entry.name.lower()] = entry
+                    changed = True
+
+        if set(self._entries.keys()) != set(new_entries.keys()):
+            changed = True
+
+        self._entries = new_entries
+        self._loaded = True
+
+        if changed:
+            self._persist_python()
+
+        return self.entries()
 
     def _discover_skill_name_key(self, skill_md: Path, fallback_dir_name: str) -> str:
         """Return lowercase dedupe key from frontmatter ``name`` when available."""
@@ -202,8 +249,10 @@ class SkillIndex:
             core=meta.get("core"),
         )
 
-    def _load_cache(self) -> None:
-        """Load persisted index from disk if available."""
+    def _load_cache_python(self) -> None:
+        """Load persisted index from disk if available (pure Python)."""
+        import json
+
         try:
             data = json.loads(_CACHE_FILE.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, ValueError):
@@ -214,7 +263,6 @@ class SkillIndex:
 
         for raw in data:
             try:
-                # Tolerate old cache rows missing newer fields
                 raw.setdefault("paths", None)
                 raw.setdefault("when_to_use", None)
                 raw.setdefault("core", None)
@@ -223,8 +271,11 @@ class SkillIndex:
             except (TypeError, KeyError):
                 continue
 
-    def _persist(self) -> None:
-        """Write current index to disk cache."""
+    def _persist_python(self) -> None:
+        """Write current index to disk cache (pure Python)."""
+        import json
+        from dataclasses import asdict
+
         try:
             _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
             payload = [asdict(e) for e in self._entries.values()]
@@ -234,6 +285,22 @@ class SkillIndex:
             )
         except OSError:
             logger.debug("Failed to persist skill index cache", exc_info=True)
+
+
+def _rust_entry_to_py(entry: Any) -> SkillIndexEntry:
+    """Convert a Rust ``SkillIndexEntry`` to the Python dataclass."""
+    paths = entry.paths
+    return SkillIndexEntry(
+        name=entry.name,
+        description=entry.description,
+        tags=entry.tags,
+        source=entry.source,
+        path=entry.path,
+        mtime=entry.mtime,
+        paths=tuple(paths) if paths is not None else None,
+        when_to_use=entry.when_to_use,
+        core=entry.core,
+    )
 
 
 def _make_wire_entry(entry: SkillIndexEntry) -> dict[str, Any]:

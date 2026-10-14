@@ -500,11 +500,136 @@ fn normalize_tags_rust(py: Python<'_>, tags: Vec<String>) -> Option<Vec<String>>
     py.allow_threads(|| soothe_nano_utils::normalize_tags(Some(&tags)))
 }
 
+// ── Stream tool wire ──────────────────────────────────────────
+
+/// True when a wire update may omit kwargs (unified main or subgraph tool rows).
+#[pyfunction]
+fn unified_tool_update_allowed_without_args_rust(py: Python<'_>, tool_call_id: &str) -> bool {
+    py.allow_threads(|| {
+        soothe_nano_utils::stream_tool_wire::unified_tool_update_allowed_without_args(tool_call_id)
+    })
+}
+
+/// Extract ``soothe.stream.tool_call.update`` payloads from a wire AI message dict.
+///
+/// Accepts a Python dict; converts via json round-trip. Returns a list of dicts.
+#[pyfunction]
+fn extract_tool_call_updates_from_wire_message_rust(
+    py: Python<'_>,
+    msg: &Bound<'_, PyAny>,
+) -> PyResult<Vec<PyObject>> {
+    // Convert Python dict to serde_json::Value via json.dumps.
+    let json_str: String = {
+        let json_mod = py.import_bound("json")?;
+        let dumped = json_mod.call_method("dumps", (msg,), None)?;
+        dumped.extract()?
+    };
+    let value: serde_json::Value =
+        serde_json::from_str(&json_str).unwrap_or(serde_json::Value::Null);
+    let result = py.allow_threads(|| {
+        soothe_nano_utils::stream_tool_wire::extract_tool_call_updates_from_wire_message(&value)
+    });
+    // Convert each serde_json::Value back to a Python dict via json.loads.
+    let json_mod = py.import_bound("json")?;
+    let mut out: Vec<PyObject> = Vec::with_capacity(result.len());
+    for v in result {
+        let json_str = serde_json::to_string(&v)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+        let py_obj = json_mod.call_method("loads", (json_str,), None)?;
+        out.push(py_obj.into());
+    }
+    Ok(out)
+}
+
 // ── Thread ID log suffix ──────────────────────────────────────
 
 #[pyfunction]
 fn short_thread_id_for_log_rust(py: Python<'_>, thread_id: &str) -> String {
     py.allow_threads(|| soothe_nano_utils::short_thread_id_for_log(thread_id))
+}
+
+// ── Thinking-token filter ─────────────────────────────────────
+
+/// Strip complete ``<think>...</think>`` blocks from *text*.
+///
+/// Returns ``(stripped_text, captured_blocks)`` where ``captured_blocks``
+/// is a list of inner-content strings (without tags), in order of appearance.
+/// Captured blocks are always returned so Python-side logging can use them.
+#[pyfunction]
+#[pyo3(signature = (text))]
+fn strip_thinking_rust(py: Python<'_>, text: &str) -> (String, Vec<String>) {
+    py.allow_threads(|| {
+        let mut captured: Vec<String> = Vec::new();
+        let result = soothe_nano_utils::strip_thinking(text, Some(&mut captured));
+        (result, captured)
+    })
+}
+
+/// Stateful stream filter that strips thinking tags from text chunks.
+#[pyclass(name = "ThinkingStreamFilter", module = "soothe_nano._rust")]
+pub struct PyThinkingStreamFilter {
+    inner: soothe_nano_utils::ThinkingStreamFilter,
+}
+
+#[pymethods]
+impl PyThinkingStreamFilter {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: soothe_nano_utils::ThinkingStreamFilter::new(),
+        }
+    }
+
+    /// Filter *chunk* and return text safe to emit to the consumer.
+    fn feed(&mut self, py: Python<'_>, chunk: &str) -> String {
+        py.allow_threads(|| self.inner.feed(chunk))
+    }
+
+    /// Flush remaining safe text at end-of-stream.
+    fn finalize(&mut self, py: Python<'_>) -> String {
+        py.allow_threads(|| self.inner.finalize())
+    }
+
+    /// Concatenated reasoning text captured from all completed thinking blocks.
+    #[getter]
+    fn captured_reasoning(&self) -> String {
+        self.inner.captured_reasoning()
+    }
+}
+
+// ── LLM response text / JSON extraction ───────────────────────
+
+/// Normalize model output to a JSON-parseable string (Rust-backed).
+///
+/// Strips markdown fences and, if prose precedes the first ``{``, slices to
+/// that position. Returns the normalized string (caller parses it).
+#[pyfunction]
+#[pyo3(signature = (raw))]
+fn strip_json_text_rust(py: Python<'_>, raw: &str) -> String {
+    py.allow_threads(|| soothe_nano_utils::strip_json_text(raw))
+}
+
+/// Parse a JSON object from model output — raw or markdown-fenced (Rust-backed).
+///
+/// Returns a Python dict (via json round-trip) or ``None`` when no valid
+/// JSON object can be extracted.
+#[pyfunction]
+#[pyo3(signature = (content))]
+fn parse_json_object_rust(py: Python<'_>, content: &str) -> PyResult<PyObject> {
+    let result = py.allow_threads(|| soothe_nano_utils::parse_json_object(content));
+    match result {
+        Some(value) => {
+            if !value.is_object() {
+                return Ok(py.None());
+            }
+            let json_str = serde_json::to_string(&value)
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+            let json_mod = py.import_bound("json")?;
+            let parsed = json_mod.call_method("loads", (json_str,), None)?;
+            Ok(parsed.into())
+        }
+        None => Ok(py.None()),
+    }
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -575,5 +700,20 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(normalize_tags_rust, m)?)?;
     // Thread ID log suffix.
     m.add_function(wrap_pyfunction!(short_thread_id_for_log_rust, m)?)?;
+    // Stream tool wire helpers.
+    m.add_function(wrap_pyfunction!(
+        unified_tool_update_allowed_without_args_rust,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        extract_tool_call_updates_from_wire_message_rust,
+        m
+    )?)?;
+    // Thinking-token filter.
+    m.add_function(wrap_pyfunction!(strip_thinking_rust, m)?)?;
+    m.add_class::<PyThinkingStreamFilter>()?;
+    // LLM response text / JSON extraction.
+    m.add_function(wrap_pyfunction!(strip_json_text_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_json_object_rust, m)?)?;
     Ok(())
 }

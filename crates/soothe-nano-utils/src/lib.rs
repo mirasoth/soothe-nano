@@ -13,9 +13,12 @@ pub mod logging_fmt;
 pub mod output_capture;
 pub mod path;
 pub mod prompt_clock;
+pub mod response_text;
+pub mod stream_tool_wire;
 pub mod subagents;
 pub mod task_namespace;
 pub mod text_preview;
+pub mod thinking;
 pub mod thread_id;
 pub mod thread_id_suffix;
 pub mod url_validation;
@@ -25,8 +28,10 @@ pub use formatting::{convert_and_abbreviate_path, format_cli_error, log_preview}
 pub use json_parsing::repair_json;
 pub use output_capture::OutputCapture;
 pub use path::normalize_relative;
+pub use response_text::{parse_json_object, strip_json_text};
 pub use task_namespace::ParsedUnifiedToolCallId;
 pub use text_preview::{preview_full, text_preview};
+pub use thinking::{strip_thinking, ThinkingStreamFilter};
 pub use thread_id::generate_thread_id;
 pub use url_validation::{validate_url, UrlValidationError};
 
