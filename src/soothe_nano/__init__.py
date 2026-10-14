@@ -11,7 +11,7 @@ import importlib.metadata
 
 # Filter known noisy upstream warnings before the plugin/langgraph stack loads.
 import soothe_nano._upstream_warnings as _upstream_warnings  # noqa: F401,E402
-from soothe_nano.agent import LazyCoreAgent, SootheNanoAgent
+from soothe_nano.agent import SootheNanoAgent
 from soothe_nano.agent.core_agent import ephemeral_execute_stream_enabled
 from soothe_nano.agent.dual_mode import DualModeCoreAgent, create_dual_mode_nano_agent
 from soothe_nano.agent.factory import create_nano_agent
@@ -29,7 +29,6 @@ __all__ = [
     "CoreAgentCapabilities",
     "DualModeCoreAgent",
     "InteractionMode",
-    "LazyCoreAgent",
     "SootheConfig",
     "SootheNanoAgent",
     "create_dual_mode_nano_agent",

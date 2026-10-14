@@ -20,11 +20,9 @@ WORKFLOW:
 from .embeddings import get_default_embedding_client
 from .file_manager import MemoryFileManager
 from .memory_agent import MemoryAgent
-from .recall_agent import RecallAgent
 
 __all__ = [
     "MemoryAgent",  # Function calling interface
     "MemoryFileManager",
-    "RecallAgent",
     "get_default_embedding_client",
 ]

@@ -136,7 +136,6 @@ __all__ = [
     "resolve_sqlite_db_path",
     "resolve_vectors_db_path",
     # Types
-    "CliConfigProtocol",
     "DaemonConfigProtocol",
     "DaemonTransportConfigProtocol",
     "WebSocketConfigProtocol",

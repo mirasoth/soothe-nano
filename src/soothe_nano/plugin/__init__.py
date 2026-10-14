@@ -28,8 +28,6 @@ from soothe_nano.plugin.exceptions import (
     DiscoveryError,
     InitializationError,
     PluginError,
-    SubagentCreationError,
-    ToolCreationError,
     ValidationError,
 )
 from soothe_nano.plugin.health import PluginHealth
@@ -58,8 +56,6 @@ __all__ = [
     "DiscoveryError",
     "InitializationError",
     "PluginError",
-    "SubagentCreationError",
-    "ToolCreationError",
     "ValidationError",
     # Events
     "PluginFailedEvent",

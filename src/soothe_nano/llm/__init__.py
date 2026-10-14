@@ -9,19 +9,17 @@ binding/extraction, token observability, and thinking-stream filtering.
 
 from __future__ import annotations
 
-from soothe_nano.llm.base import BaseLLMClient, LLMClient
-from soothe_nano.llm.exceptions import ContentPolicyError, LLMError, StructuredOutputError
+from soothe_nano.llm.base import BaseLLMClient
+from soothe_nano.llm.exceptions import LLMError, StructuredOutputError
 from soothe_nano.llm.factory import LLMFactory
 from soothe_nano.llm.invoke_policy import (
     EnhancedTimeoutError,
     PersistentRetryRunner,
     await_with_llm_call_policy,
     llm_rate_limit_config_from,
-    run_with_llm_call_policy_sync,
 )
 from soothe_nano.llm.observability import (
     SootheLLMTokenUsageCallbackHandler,
-    SootheTokenUsageChatModel,
     bind_llm_token_observability,
     extract_token_counts_from_llm_result,
     get_llm_token_usage_callback_handler,
@@ -71,7 +69,6 @@ __all__ = [
     "ResolvedProvider",
     # Direct-call client
     "BaseLLMClient",
-    "LLMClient",
     # Types
     "ModelRole",
     "ProviderType",
@@ -89,7 +86,6 @@ __all__ = [
     "post_validate_structured_dict",
     "wrap_json_keyword_safe",
     # Observability
-    "SootheTokenUsageChatModel",
     "SootheLLMTokenUsageCallbackHandler",
     "get_llm_token_usage_callback_handler",
     "bind_llm_token_observability",
@@ -99,7 +95,6 @@ __all__ = [
     "PersistentRetryRunner",
     "await_with_llm_call_policy",
     "llm_rate_limit_config_from",
-    "run_with_llm_call_policy_sync",
     # Response text
     "llm_response_text",
     "parse_json_object",
@@ -118,5 +113,4 @@ __all__ = [
     "build_traced_invoke_config",
     # Exceptions
     "LLMError",
-    "ContentPolicyError",
 ]
