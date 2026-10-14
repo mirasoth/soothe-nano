@@ -1795,11 +1795,11 @@ class CoreAgentMiddlewareConfig(BaseModel):
     )
     tool_result_storage: ToolResultStorageConfig = Field(
         default_factory=ToolResultStorageConfig,
-        description="Tool result disk storage with compact reference (IG-778 §6)",
+        description="Tool result disk storage with compact reference",
     )
     tool_result_eviction: ToolResultEvictionConfig = Field(
         default_factory=ToolResultEvictionConfig,
-        description="Tool result eviction from context (IG-778 §2)",
+        description="Tool result eviction from context",
     )
     llm_rate_limit: LLMRateLimitConfig = Field(
         default_factory=LLMRateLimitConfig,
