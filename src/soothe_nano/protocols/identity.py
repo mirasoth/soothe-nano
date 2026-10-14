@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from soothe_nano._rust_compat import is_valid_token_type_rust
 
 # ============================================================================
 # Data Models
@@ -68,6 +70,14 @@ class TokenClaims(BaseModel):
     token_type: Literal["access", "refresh"]
     issued_at: datetime
     expires_at: datetime
+
+    @field_validator("token_type")
+    @classmethod
+    def _validate_token_type(cls, v: str) -> str:
+        """Rust-backed token type validation."""
+        if not is_valid_token_type_rust(v):
+            raise ValueError(f"invalid token_type: {v}")
+        return v
 
 
 class ExternalIdentityMapping(BaseModel):

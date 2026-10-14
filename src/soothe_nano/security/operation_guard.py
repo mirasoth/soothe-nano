@@ -8,6 +8,18 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from soothe_nano._rust_compat import (
+    dangerous_command_rule_id_rust as dangerous_command_rule_id,
+)
+from soothe_nano._rust_compat import (
+    rule_family_rust as rule_family,
+)
+from soothe_nano._rust_compat import (
+    rust_command_approved_by_allowlist,
+    rust_find_dangerous_path_component,
+    rust_glob_match,
+    rust_kill_invocation_pids,
+)
 from soothe_nano.protocols.operation_security import (
     OperationSecurityContext,
     OperationSecurityDecision,
@@ -20,82 +32,11 @@ from soothe_nano.workspace.workspace_paths import (
     should_use_virtual_path_resolution,
 )
 
-_BANNED_COMMAND_PATTERNS: tuple[tuple[str, str], ...] = (
-    # Negative lookbehind `(?<!git\s)` keeps ``git rm -r`` (a repo-index
-    # operation that cannot delete arbitrary filesystem paths) out of the
-    # destructive-``rm`` net while still catching standalone ``rm -rf /``,
-    # ``cd x && rm -r y`` and ``bash -c "rm -rf /"``.
-    (r"(?<!git\s)rm\s+-rf\s+/", "command.dangerous.rm_root"),
-    (r"(?<!git\s)rm\s+-rf\b", "command.dangerous.rm_rf"),
-    (r"(?<!git\s)rm\s+-r\b", "command.dangerous.rm_r"),
-    (r"sudo\s+rm\s+-rf", "command.dangerous.sudo_rm_rf"),
-    (r"sudo\s", "command.dangerous.sudo"),
-    (r"mkfs(\.|$)", "command.dangerous.mkfs"),
-    (r"dd\s+if=", "command.dangerous.dd"),
-    (r"dd\s+of=/dev/", "command.dangerous.dd_block_device_write"),
-    (r"shred\b", "command.dangerous.shred"),
-    (r":\(\)\s*\{\s*:\|:&\s*\};:", "command.dangerous.fork_bomb"),
-    (r"(curl|wget).*\|\s*(sh|bash)", "command.dangerous.pipe_to_shell"),
-    (r">\s*/(etc|bin|sbin|usr|System|Library)(/|$)", "command.dangerous.system_path_redirect"),
-    (r"tee\s+/((etc|bin|sbin|usr|System|Library)(/|$))", "command.dangerous.system_path_tee"),
-    (r"chmod\s+-R\s+777\s+/", "command.dangerous.chmod_root"),
-    (r"chmod\s+777\b", "command.dangerous.chmod_777"),
-    (r"chown\s+-R\s+.+\s+/", "command.dangerous.chown_root"),
-    (r"git\s+push\s+(-f|--force)\b", "command.dangerous.git_force_push"),
-    (r"\bpkill\b[^\n]*\bsoothe", "command.dangerous.pkill_soothe"),
-    (r"\bkillall\b[^\n]*\bsoothe", "command.dangerous.killall_soothe"),
-    (r"\bsoothed\s+(stop|restart)\b", "command.dangerous.soothed_lifecycle"),
-    # Bare `kill <pid>` of the live daemon (port / pidfile resolved via hooks below).
-    # Also block shell idioms that resolve the daemon PID then kill it.
-    (r"\bkill\b[^\n]*\b8765\b", "command.dangerous.kill_daemon_port"),
-    (r"\bkill\b[^\n]*soothed\.pid", "command.dangerous.kill_soothed_pidfile"),
-    (r"\bkill\b[^\n]*\bpgrep\b[^\n]*\bsoothe", "command.dangerous.kill_pgrep_soothe"),
-)
-
 # `kill [-signal…] <pid>…` fragments (not killall). Used to consult protected-kill hooks.
 _KILL_INVOCATION_RE = re.compile(
     r"(?:^|[;&|\n])\s*kill\b(?!\s*all\b)(?P<args>[^\n;&|]*)",
     re.IGNORECASE,
 )
-
-
-def dangerous_command_rule_id(command: str) -> str | None:
-    """Return the safety ``rule_id`` for the first banned pattern ``command`` matches, or ``None``."""
-    if not command:
-        return None
-    for pattern, rule_id in _BANNED_COMMAND_PATTERNS:
-        if re.search(pattern, command, re.IGNORECASE):
-            return rule_id
-    return None
-
-
-# Rule families: approving one rule in a family suppresses all rules in that
-# family for the rest of the loop (e.g. approving ``rm -rf /`` also suppresses
-# ``rm -rf <folder>``).
-_RULE_FAMILIES: tuple[frozenset[str], ...] = (
-    frozenset(
-        {
-            "command.dangerous.rm_root",
-            "command.dangerous.rm_rf",
-            "command.dangerous.rm_r",
-            "command.dangerous.sudo_rm_rf",
-        }
-    ),
-    frozenset(
-        {
-            "command.dangerous.dd",
-            "command.dangerous.dd_block_device_write",
-        }
-    ),
-)
-
-
-def rule_family(rule_id: str) -> frozenset[str]:
-    """Return all rule ids in the same family as ``rule_id`` (inclusive)."""
-    for family in _RULE_FAMILIES:
-        if rule_id in family:
-            return family
-    return frozenset({rule_id})
 
 
 def command_approved_by_allowlist(
@@ -113,6 +54,10 @@ def command_approved_by_allowlist(
     """
     if not allowlist:
         return False
+    # Rust fast-path: delegate the full check to the Rust implementation.
+    rust_result = rust_command_approved_by_allowlist(command, rule_id, allowlist)
+    if rust_result is not None:
+        return rust_result
     cmd = (command or "").strip()
     approved_rules = rule_family(rule_id) if rule_id else frozenset()
     for rec in allowlist:
@@ -178,6 +123,14 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         # Bypass-immune dangerous path check — runs regardless of security_config
         # so that sensitive paths (.git/, .bashrc, .vscode/, etc.) are always
         # blocked, even when no SecurityConfig is provided.
+        # Rust fast-path: delegate the dangerous component lookup to Rust.
+        rust_component = rust_find_dangerous_path_component(file_path)
+        if rust_component is not None:
+            return OperationSecurityDecision(
+                verdict="deny",
+                reason=f"Path '{file_path}' contains dangerous component '{rust_component}'",
+                rule_id="filesystem.dangerous_component",
+            )
         resolved_path = expand_path(file_path)
         for part in Path(resolved_path).parts:
             if part in self._DANGEROUS_PATH_COMPONENTS:
@@ -221,6 +174,16 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
                 )
 
         for pattern in _SENSITIVE_SYSTEM_PATH_PATTERNS:
+            # Rust fast-path: delegate glob matching to Rust when available.
+            rust_match = rust_glob_match(pattern, str(resolved_path))
+            if rust_match is not None:
+                if rust_match:
+                    return OperationSecurityDecision(
+                        verdict="deny",
+                        reason=f"Path '{file_path}' matches sensitive system pattern '{pattern}'",
+                        rule_id="filesystem.sensitive_system_path",
+                    )
+                continue
             if self._path_matches_pattern(resolved_path, pattern):
                 return OperationSecurityDecision(
                     verdict="deny",
@@ -230,6 +193,16 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
 
         for pattern in security.denied_paths:
             expanded_pattern = self._expand_path_pattern(pattern)
+            # Rust fast-path: delegate glob matching to Rust when available.
+            rust_match = rust_glob_match(expanded_pattern, str(resolved_path))
+            if rust_match is not None:
+                if rust_match:
+                    return OperationSecurityDecision(
+                        verdict="deny",
+                        reason=f"Path '{file_path}' matches denied pattern '{pattern}'",
+                        rule_id="filesystem.denied_path",
+                    )
+                continue
             if self._path_matches_pattern(resolved_path, expanded_pattern):
                 return OperationSecurityDecision(
                     verdict="deny",
@@ -240,6 +213,13 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         is_allowed = False
         for pattern in security.allowed_paths:
             expanded_pattern = self._expand_path_pattern(pattern)
+            # Rust fast-path: delegate glob matching to Rust when available.
+            rust_match = rust_glob_match(expanded_pattern, str(resolved_path))
+            if rust_match is not None:
+                if rust_match:
+                    is_allowed = True
+                    break
+                continue
             if self._path_matches_pattern(resolved_path, expanded_pattern):
                 is_allowed = True
                 break
@@ -295,13 +275,13 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
                     rule_id="command.whitelist_bypass",
                 )
 
-        for pattern, rule_id in _BANNED_COMMAND_PATTERNS:
-            if re.search(pattern, command_text, re.IGNORECASE):
-                return OperationSecurityDecision(
-                    verdict="deny",
-                    reason=f"Command blocked by security rule: {pattern}",
-                    rule_id=rule_id,
-                )
+        rule_id = dangerous_command_rule_id(command_text)
+        if rule_id is not None:
+            return OperationSecurityDecision(
+                verdict="deny",
+                reason=f"Command blocked by security rule: {rule_id}",
+                rule_id=rule_id,
+            )
 
         protected = self._protected_kill_in_shell(command_text)
         if protected is not None:
@@ -337,6 +317,19 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         """
         # Lazy import avoids a cycle: execution.py imports this module.
         from soothe_nano.toolkits.execution import _protected_kill_refusal
+
+        # Rust fast-path: delegate kill invocation PID extraction to Rust.
+        rust_pids = rust_kill_invocation_pids(command)
+        if rust_pids is not None:
+            for pid in rust_pids:
+                refusal = _protected_kill_refusal(pid)
+                if refusal:
+                    return OperationSecurityDecision(
+                        verdict="deny",
+                        reason=refusal,
+                        rule_id="command.dangerous.kill_protected_pid",
+                    )
+            return None
 
         for match in _KILL_INVOCATION_RE.finditer(command):
             for pid in self._pids_from_kill_args(match.group("args") or ""):

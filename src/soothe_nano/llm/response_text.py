@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-import json
-import re
 from typing import Any
 
+from soothe_nano._rust_compat import parse_json_object_rust, strip_json_text_rust
 from soothe_nano.llm.thinking import strip_thinking
 
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL | re.IGNORECASE)
+__all__ = [
+    "llm_response_text",
+    "parse_json_object",
+    "text_from_message_content",
+    "_strip_json_text",
+]
 
 
 def text_from_message_content(content: Any) -> str:
@@ -46,46 +50,12 @@ def llm_response_text(response: Any) -> str:
 
 
 def parse_json_object(content: str) -> dict[str, Any] | None:
-    """Parse a JSON object from model output (raw or markdown-fenced)."""
-    text = (content or "").strip()
-    if not text:
-        return None
+    """Parse a JSON object from model output (raw or markdown-fenced).
 
-    fence = _JSON_FENCE_RE.search(text)
-    if fence:
-        text = fence.group(1).strip()
-
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, dict):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-
-    start = text.find("{")
-    if start >= 0:
-        depth = 0
-        for i, ch in enumerate(text[start:], start=start):
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        parsed = json.loads(text[start : i + 1])
-                        if isinstance(parsed, dict):
-                            return parsed
-                    except json.JSONDecodeError:
-                        break
-    return None
-
-
-__all__ = [
-    "llm_response_text",
-    "parse_json_object",
-    "text_from_message_content",
-    "_strip_json_text",
-]
+    Delegates to the Rust implementation which handles fence extraction,
+    direct parsing, and brace-depth fallback matching.
+    """
+    return parse_json_object_rust(content)
 
 
 def _strip_json_text(raw: str) -> str:
@@ -97,14 +67,4 @@ def _strip_json_text(raw: str) -> str:
     the first `{` so downstream `json.loads` succeeds. Returns a string
     (the caller parses it).
     """
-    text = (raw or "").strip()
-    if not text:
-        return text
-    fence = _JSON_FENCE_RE.search(text)
-    if fence:
-        text = fence.group(1).strip()
-    start = text.find("{")
-    if start > 0:
-        # Leading prose before the first object — slice it off.
-        text = text[start:]
-    return text
+    return strip_json_text_rust(raw)

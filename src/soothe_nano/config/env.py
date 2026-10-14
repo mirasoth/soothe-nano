@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from typing import Any
 
+from soothe_nano._rust_compat import expand_env_vars_rust
 from soothe_nano.paths import SOOTHE_HOME  # noqa: F401
 
 # Matches ${VAR_NAME} anywhere in a string (not anchored)
@@ -18,11 +18,8 @@ _logger = logging.getLogger(__name__)
 def _resolve_env(value: str) -> str:
     """Resolve `${ENV_VAR}` references in config values.
 
-    Supports env vars anywhere in the string, including:
-    - Exact match: `${HOME}` → `/Users/alice`
-    - Embedded: `${HOME}/workspaces` → `/Users/alice/workspaces`
-    - Multiple: `${VAR1}/${VAR2}` → `value1/value2`
-    - Unresolved vars are left as-is (e.g., `${MISSING_VAR}` stays unchanged).
+    Delegates to the Rust implementation (compiled regex, no GIL).
+    Unresolved vars are left as-is (e.g., `${MISSING_VAR}` stays unchanged).
 
     Args:
         value: String potentially containing `${ENV_VAR}` placeholders.
@@ -30,16 +27,7 @@ def _resolve_env(value: str) -> str:
     Returns:
         String with all resolvable env vars substituted.
     """
-
-    def replacer(match: re.Match[str]) -> str:
-        var_name = match.group(1)
-        resolved = os.environ.get(var_name)
-        if resolved is not None:
-            return resolved
-        # Leave unresolved placeholder intact
-        return match.group(0)
-
-    return _ENV_VAR_RE.sub(replacer, value)
+    return expand_env_vars_rust(value)
 
 
 def _expand_env_in_config(

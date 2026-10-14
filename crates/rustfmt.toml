@@ -1,0 +1,7 @@
+# Rust formatting configuration for soothe-nano crates.
+# Stable-only options — works on both stable and nightly Rust.
+
+edition = "2021"
+max_width = 100
+use_field_init_shorthand = true
+use_try_shorthand = true

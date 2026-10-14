@@ -5,33 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from soothe_nano._rust_compat import (
+    join_workspace_normalized_path_rust,
+    should_use_virtual_path_resolution_rust,
+    workspace_backup_dir_rust,
+)
 from soothe_nano.config import SootheConfig
 from soothe_nano.workspace.workspace_runtime import resolve_process_workspace_root
 
 # Product layout under the workspace (not soothe-deepagents defaults).
-WORKSPACE_BACKUP_DIR = ".soothe/backups"
-
-_UNIX_HOST_ROOT_TOP_NAMES: frozenset[str] = frozenset(
-    {
-        "Applications",
-        "bin",
-        "cores",
-        "dev",
-        "etc",
-        "home",
-        "Library",
-        "opt",
-        "private",
-        "sbin",
-        "sys",
-        "System",
-        "tmp",
-        "usr",
-        "Users",
-        "var",
-        "Volumes",
-    }
-)
+WORKSPACE_BACKUP_DIR = workspace_backup_dir_rust()
 
 
 def config_workspace_root(config: Any | None) -> str | None:
@@ -81,30 +64,9 @@ def workspace_path_for_tool_resolution(
     return resolve_effective_tool_workspace(config, runtime=runtime)
 
 
-def _posix_first_segment_name(expanded: Path) -> str | None:
-    parts = expanded.parts
-    if not parts or parts[0] != "/":
-        return None
-    if len(parts) < 2:
-        return None
-    return parts[1]
-
-
 def should_use_virtual_path_resolution(file_path: str, workspace_root: Path) -> bool:
     """True when a leading-`/` path should use virtual sandbox resolution."""
-    if not file_path.strip().startswith("/"):
-        return False
-    expanded = Path(file_path.strip()).expanduser()
-    try:
-        expanded.resolve().relative_to(workspace_root.resolve())
-    except ValueError:
-        pass
-    else:
-        return False
-    first = _posix_first_segment_name(expanded)
-    if first is None:
-        return True
-    return first not in _UNIX_HOST_ROOT_TOP_NAMES
+    return should_use_virtual_path_resolution_rust(file_path, str(workspace_root))
 
 
 def resolve_backend_os_path(
@@ -127,10 +89,7 @@ def resolve_backend_os_path(
 
 def join_workspace_normalized_path(workspace: Path, normalized: str) -> Path:
     """Convert a validator-normalized logical path to an on-disk path."""
-    path = Path(normalized)
-    if path.is_absolute():
-        return path.resolve()
-    return (workspace / normalized).resolve()
+    return Path(join_workspace_normalized_path_rust(str(workspace), normalized))
 
 
 def filesystem_virtual_mode_from_soothe_config(config: SootheConfig) -> bool:

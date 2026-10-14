@@ -5,6 +5,12 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
+from soothe_nano._rust_compat import (
+    subagents_format_references_section_rust,
+    subagents_merge_reference_indices_rust,
+    subagents_reference_key_rust,
+)
+
 from .protocol import ResearchReference, SourceResult
 
 _URL_IN_TEXT = re.compile(r"https?://[^\s\])>\"']+")
@@ -43,25 +49,23 @@ def reference_from_source_result(
 
 
 def _reference_key(ref: ResearchReference) -> str:
-    if ref.url:
-        parsed = urlparse(ref.url.strip().rstrip("/"))
-        host = (parsed.hostname or "").lower()
-        path = parsed.path.rstrip("/")
-        return f"url:{host}{path}"
-    return f"ref:{ref.source_name}:{ref.source_ref}".lower()
+    return subagents_reference_key_rust(ref.url, ref.source_name, ref.source_ref)
 
 
 def merge_references(refs: list[ResearchReference]) -> list[ResearchReference]:
     """Deduplicate references while preserving first-seen order."""
-    seen: set[str] = set()
-    merged: list[ResearchReference] = []
-    for ref in refs:
-        key = _reference_key(ref)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(ref)
-    return merged
+    ref_dicts = [
+        {
+            "url": r.url,
+            "source_name": r.source_name,
+            "source_ref": r.source_ref,
+            "title": r.title,
+            "query": r.query,
+        }
+        for r in refs
+    ]
+    keep_indices = subagents_merge_reference_indices_rust(ref_dicts)
+    return [refs[i] for i in keep_indices]
 
 
 def format_references_section(
@@ -70,19 +74,17 @@ def format_references_section(
     accessed_date: str | None = None,
 ) -> str:
     """Format a markdown bibliography section."""
-    if not refs:
-        return ""
-    lines = ["## References", ""]
-    for idx, ref in enumerate(refs, 1):
-        label = (ref.title or ref.source_ref or ref.source_name).strip()
-        if ref.url:
-            entry = f"{idx}. [{label}]({ref.url})"
-        else:
-            entry = f"{idx}. {label} ({ref.source_name}: {ref.source_ref})"
-        if accessed_date:
-            entry += f" (accessed {accessed_date})"
-        lines.append(entry)
-    return "\n".join(lines)
+    ref_dicts = [
+        {
+            "url": r.url,
+            "source_name": r.source_name,
+            "source_ref": r.source_ref,
+            "title": r.title,
+            "query": r.query,
+        }
+        for r in refs
+    ]
+    return subagents_format_references_section_rust(ref_dicts, accessed_date)
 
 
 __all__ = [

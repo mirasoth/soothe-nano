@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from soothe_nano._rust_compat import (
+    is_valid_operation_kind_rust,
+    is_valid_operation_security_verdict_rust,
+)
 
 OperationKind = Literal[
     "filesystem_read",
@@ -26,6 +31,14 @@ class OperationSecurityRequest(BaseModel):
     target_path: str | None = None
     command: str | None = None
 
+    @field_validator("operation_kind")
+    @classmethod
+    def _validate_operation_kind(cls, v: str) -> str:
+        """Rust-backed operation kind validation."""
+        if not is_valid_operation_kind_rust(v):
+            raise ValueError(f"invalid operation_kind: {v}")
+        return v
+
 
 class OperationSecurityContext(BaseModel):
     """Context for operation security evaluation."""
@@ -42,6 +55,14 @@ class OperationSecurityDecision(BaseModel):
     verdict: Literal["allow", "deny", "need_approval"]
     reason: str
     rule_id: str | None = None
+
+    @field_validator("verdict")
+    @classmethod
+    def _validate_verdict(cls, v: str) -> str:
+        """Rust-backed operation security verdict validation."""
+        if not is_valid_operation_security_verdict_rust(v):
+            raise ValueError(f"invalid verdict: {v}")
+        return v
 
 
 @runtime_checkable

@@ -1,4 +1,9 @@
-"""Host tool binary diagnose checks (rg, fd, git)."""
+"""Host tool binary diagnose checks (rg, fd, git).
+
+Delegates check-result construction and status aggregation to the Rust
+extension. Python retains the binary-path resolution (``shutil.which``,
+deepagents helpers) and subprocess version probing.
+"""
 
 from __future__ import annotations
 
@@ -6,11 +11,11 @@ import shutil
 import subprocess
 from typing import Any
 
+from soothe_nano._rust_compat import check_tool_deps_rust
 from soothe_nano.diagnose.models import (
     CategoryResult,
     CheckResult,
     CheckStatus,
-    aggregate_status,
 )
 
 
@@ -30,15 +35,29 @@ def _bin_version(bin_path: str) -> str | None:
         return None
 
 
-def _check_rg() -> CheckResult:
-    """Check ripgrep availability via deepagents helpers when present."""
-    path: str | None = None
+def _resolve_rg_path() -> str | None:
+    """Resolve rg binary path via deepagents helpers when present."""
     try:
         from soothe_deepagents.backends.grep_search import get_rg_bin
 
-        path = get_rg_bin()
+        return get_rg_bin()
     except Exception:
-        path = shutil.which("rg") or shutil.which("rg.exe")
+        return shutil.which("rg") or shutil.which("rg.exe")
+
+
+def _resolve_fd_path() -> str | None:
+    """Resolve fd binary path via deepagents helpers when present."""
+    try:
+        from soothe_deepagents.backends.glob_search import get_fd_bin
+
+        return get_fd_bin()
+    except Exception:
+        return shutil.which("fd") or shutil.which("fdfind") or shutil.which("fd.exe")
+
+
+def _check_rg() -> CheckResult:
+    """Check ripgrep availability via deepagents helpers when present."""
+    path = _resolve_rg_path()
 
     if not path:
         return CheckResult(
@@ -62,13 +81,7 @@ def _check_rg() -> CheckResult:
 
 def _check_fd() -> CheckResult:
     """Check fd / fdfind availability via deepagents helpers when present."""
-    path: str | None = None
-    try:
-        from soothe_deepagents.backends.glob_search import get_fd_bin
-
-        path = get_fd_bin()
-    except Exception:
-        path = shutil.which("fd") or shutil.which("fdfind") or shutil.which("fd.exe")
+    path = _resolve_fd_path()
 
     if not path:
         return CheckResult(
@@ -112,9 +125,24 @@ def _check_git() -> CheckResult:
 
 async def check_tool_deps() -> CategoryResult:
     """Check host tool binaries used by CoreAgent filesystem tools."""
-    checks = [_check_rg(), _check_fd(), _check_git()]
+    rg_path = _resolve_rg_path()
+    fd_path = _resolve_fd_path()
+    git_path = shutil.which("git")
+
+    # Delegate category construction to Rust, then rebuild Python dataclasses.
+    result_dict = check_tool_deps_rust(rg_path, fd_path, git_path)
+    checks = [
+        CheckResult(
+            name=c["name"],
+            status=CheckStatus(c["status"]),
+            message=c["message"],
+            details=c.get("details", {}),
+        )
+        for c in result_dict["checks"]
+    ]
     return CategoryResult(
-        category="tool_deps",
-        status=aggregate_status([c.status for c in checks]),
+        category=result_dict["category"],
+        status=CheckStatus(result_dict["status"]),
         checks=checks,
+        message=result_dict.get("message"),
     )

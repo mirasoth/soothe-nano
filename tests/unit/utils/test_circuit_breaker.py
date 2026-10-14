@@ -266,3 +266,97 @@ class TestCircuitBreakerConcurrency:
         results = await asyncio.gather(*tasks)
 
         assert all(r == "done" for r in results)
+
+
+class TestCircuitBreakerRustFastPath:
+    """Tests for Rust fast-path delegation in is_open/state/call."""
+
+    def test_rust_breaker_constructed_on_init(self):
+        """CircuitBreaker stores a Rust fast-path instance (or None)."""
+        breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=5.0)
+        # _rust_breaker is either a Rust PyO3 instance or None (no extension).
+        assert breaker._rust_breaker is None or hasattr(breaker._rust_breaker, "is_open")
+
+    def test_rust_state_visible_in_stats(self):
+        """get_stats exposes the Rust breaker state (or None)."""
+        breaker = CircuitBreaker(failure_threshold=3)
+        stats = breaker.get_stats()
+        assert "rust_state" in stats
+        # When Rust is available, it's "closed"; when not, it's None.
+        assert stats["rust_state"] in (None, "closed", "open", "half_open")
+
+    def test_rust_fast_path_open_short_circuits_is_open(self):
+        """When Rust breaker says OPEN, is_open returns True without Python state update."""
+        breaker = CircuitBreaker(failure_threshold=2, recovery_timeout=60.0)
+
+        # Drive the Rust breaker to OPEN by recording failures (mirrors Python).
+        if breaker._rust_breaker is not None:
+            breaker._rust_breaker.record_failure()
+            breaker._rust_breaker.record_failure()
+            # Rust should now say OPEN — Python state machine may not yet agree
+            # because Python's _failure_count is still 0, but the fast-path wins.
+            assert breaker.is_open is True
+            assert breaker.state == CircuitBreakerState.OPEN
+
+    def test_rust_fast_path_open_short_circuits_call(self):
+        """When Rust breaker says OPEN, call() raises immediately."""
+        breaker = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
+
+        if breaker._rust_breaker is not None:
+            breaker._rust_breaker.record_failure()
+            with pytest.raises(CircuitBreakerOpenError):
+                breaker.call(lambda: "should not reach")
+
+    def test_rust_fast_path_closed_falls_through_to_python(self):
+        """When Rust says CLOSED/HALF_OPEN, Python state machine is authoritative."""
+        breaker = CircuitBreaker(failure_threshold=5)
+        # Rust breaker is fresh — should say closed, so Python state machine runs.
+        assert breaker.is_open is False
+        assert breaker.state == CircuitBreakerState.CLOSED
+
+    def test_record_failure_mirrors_to_rust(self):
+        """record_failure propagates to the Rust breaker so its state stays in sync."""
+        breaker = CircuitBreaker(failure_threshold=2, recovery_timeout=60.0)
+        breaker.record_failure()
+
+        if breaker._rust_breaker is not None:
+            # After 1 failure, Rust should still be closed (threshold=2).
+            assert breaker._rust_breaker.state() == "closed"
+            breaker.record_failure()
+            # After 2 failures, both Rust and Python should say open.
+            assert breaker._rust_breaker.state() == "open"
+            assert breaker.is_open is True
+
+    def test_record_success_mirrors_to_rust(self):
+        """record_success propagates to the Rust breaker."""
+        breaker = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
+        breaker.record_failure()
+
+        if breaker._rust_breaker is not None:
+            assert breaker._rust_breaker.state() == "open"
+            breaker.record_success()
+            assert breaker._rust_breaker.state() == "closed"
+
+    def test_reset_mirrors_to_rust(self):
+        """reset() clears the Rust breaker state too."""
+        breaker = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
+        breaker.record_failure()
+
+        if breaker._rust_breaker is not None:
+            assert breaker._rust_breaker.state() == "open"
+            breaker.reset()
+            assert breaker._rust_breaker.state() == "closed"
+
+    @pytest.mark.asyncio
+    async def test_rust_fast_path_open_short_circuits_call_async(self):
+        """When Rust breaker says OPEN, call_async() raises immediately."""
+        breaker = CircuitBreaker(failure_threshold=1, recovery_timeout=60.0)
+
+        if breaker._rust_breaker is not None:
+            breaker._rust_breaker.record_failure()
+
+            async def noop():
+                return "should not reach"
+
+            with pytest.raises(CircuitBreakerOpenError):
+                await breaker.call_async(noop)

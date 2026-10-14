@@ -7,6 +7,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from soothe_nano._rust_compat import (
+    rust_path_is_under,
+    rust_path_policy_is_denied,
+    rust_path_policy_merge,
+    rust_path_policy_should_log,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -15,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 def _path_is_under(path: str, prefix: str) -> bool:
     """True if `path` equals `prefix` or sits beneath it."""
+    rust_result = rust_path_is_under(path, prefix)
+    if rust_result is not None:
+        return rust_result
     if not path or not prefix:
         return False
     prefix_norm = prefix.rstrip("/") or "/"
@@ -86,31 +96,59 @@ class PathPolicyDecision:
     @property
     def is_denied(self) -> bool:
         """Check if decision denies the operation."""
+        rust_result = rust_path_policy_is_denied(self.allowed, self.action.value)
+        if rust_result is not None:
+            return rust_result
         return not self.allowed or self.action == PolicyAction.DENY
 
     @property
     def should_log(self) -> bool:
         """Check if this decision should be logged."""
+        rust_result = rust_path_policy_should_log(self.action.value)
+        if rust_result is not None:
+            return rust_result
         return self.action in (PolicyAction.LOG, PolicyAction.DENY, PolicyAction.NOTIFY)
 
     def merge(self, other: PathPolicyDecision) -> PathPolicyDecision:
         """Merge another decision into this one (most restrictive wins)."""
+        rust_result = rust_path_policy_merge(
+            self.allowed,
+            self.action.value,
+            self.reason,
+            self.sanitized_path,
+            other.allowed,
+            other.action.value,
+            other.reason,
+            other.sanitized_path,
+        )
+        violations = self.violations + other.violations
+        metadata = {**self.metadata, **other.metadata}
+        if rust_result is not None:
+            allowed, action_str, reason, sanitized_path = rust_result
+            return PathPolicyDecision(
+                allowed=allowed,
+                action=PolicyAction(action_str),
+                reason=reason,
+                violations=violations,
+                sanitized_path=sanitized_path,
+                metadata=metadata,
+            )
         if other.is_denied:
             return PathPolicyDecision(
                 allowed=False,
                 action=PolicyAction.DENY,
                 reason=other.reason or self.reason,
-                violations=self.violations + other.violations,
+                violations=violations,
                 sanitized_path=self.sanitized_path or other.sanitized_path,
-                metadata={**self.metadata, **other.metadata},
+                metadata=metadata,
             )
         return PathPolicyDecision(
             allowed=self.allowed,
             action=self.action if self.action != PolicyAction.ALLOW else other.action,
             reason=self.reason or other.reason,
-            violations=self.violations + other.violations,
+            violations=violations,
             sanitized_path=self.sanitized_path or other.sanitized_path,
-            metadata={**self.metadata, **other.metadata},
+            metadata=metadata,
         )
 
 

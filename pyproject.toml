@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "soothe-nano"
@@ -72,6 +72,7 @@ dev = [
     "ruff>=0.12.0",
     "mypy>=1.0.0",
     "twine>=5.0.0",
+    "maturin>=1.7,<2.0",
 ]
 
 [project.urls]
@@ -79,16 +80,19 @@ Homepage = "https://github.com/mirasoth/soothe-nano"
 Documentation = "https://soothe.readthedocs.io"
 Repository = "https://github.com/mirasoth/soothe-nano"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/soothe_nano"]
-
-[tool.hatch.build.targets.sdist]
-include = ["src/soothe_nano/"]
-exclude = [
-    "**/__pycache__",
-    "**/*.pyc",
-    "**/*.pyo",
-]
+[tool.maturin]
+# The PyO3 extension crate.
+manifest-path = "crates/soothe-nano-sys/Cargo.toml"
+# Python source tree (maturin ships this alongside the compiled extension).
+python-source = "src"
+# Extension module name — must match the `#[pymodule]` function name.
+module-name = "soothe_nano._rust"
+# Include only the Python package in the wheel.
+include = ["src/soothe_nano/**"]
+# Features to enable for the Rust build.
+features = ["pyo3/extension-module"]
+# Don't strip debug info on release (useful for profiling).
+strip = false
 
 [tool.ruff]
 extend-exclude = ["**/*.md"]

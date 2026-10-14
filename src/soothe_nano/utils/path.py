@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
+
+from soothe_nano._rust_compat import expand_env_vars_rust
 
 
 def expand_path(path: str | Path) -> Path:
@@ -20,25 +21,7 @@ def expand_path(path: str | Path) -> Path:
 
     Returns:
         Expanded and resolved absolute Path.
-
-    Examples:
-        >>> expand_path("~/.soothe")
-        PosixPath('/Users/xiamingchen/.soothe')
-
-        >>> expand_path("${HOME}/project")
-        PosixPath('/Users/xiamingchen/project')
-
-        >>> expand_path("./relative")
-        PosixPath('/current/working/dir/relative')
     """
-    # Convert to string if Path object
     path_str = str(path)
-
-    # Expand environment variables first (handles $HOME, ${HOME}, etc.)
-    expanded = os.path.expandvars(path_str)
-
-    # Expand home directory (~ and ~user) and convert to Path
-    expanded_path = Path(expanded).expanduser()
-
-    # Resolve to absolute path
-    return expanded_path.resolve()
+    expanded = expand_env_vars_rust(path_str)
+    return Path(expanded).expanduser().resolve()

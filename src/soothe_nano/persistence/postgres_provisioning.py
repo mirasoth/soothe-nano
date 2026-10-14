@@ -9,17 +9,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import threading
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit, urlunsplit
+
+from soothe_nano._rust_compat import (
+    is_valid_db_name_rust,
+    postgres_admin_dsn_rust,
+    postgres_target_dsn_rust,
+)
 
 if TYPE_CHECKING:
     from soothe_nano.config import SootheConfig
 
 logger = logging.getLogger(__name__)
 
-_VALID_DB_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _provisioned_cache_keys: set[str] = set()
 _provision_lock = threading.Lock()
 
@@ -33,7 +36,7 @@ def validate_database_name(name: str) -> None:
     Raises:
         ValueError: If the name is empty or contains unsafe characters.
     """
-    if not name or not _VALID_DB_NAME.match(name):
+    if not is_valid_db_name_rust(name):
         msg = f"Invalid PostgreSQL database name: {name!r}"
         raise ValueError(msg)
 
@@ -47,23 +50,13 @@ def postgres_admin_dsn(base_dsn: str) -> str:
     Returns:
         DSN targeting the ``postgres`` maintenance database.
     """
-    parts = urlsplit(base_dsn.rstrip("/"))
-    return urlunsplit((parts.scheme, parts.netloc, "/postgres", parts.query, parts.fragment))
+    return postgres_admin_dsn_rust(base_dsn)
 
 
 def postgres_target_dsn(base_dsn: str, database_name: str) -> str:
     """Build a DSN for a named database under ``base_dsn``."""
     validate_database_name(database_name)
-    parts = urlsplit(base_dsn.rstrip("/"))
-    return urlunsplit(
-        (
-            parts.scheme,
-            parts.netloc,
-            f"/{database_name}",
-            parts.query,
-            parts.fragment,
-        )
-    )
+    return postgres_target_dsn_rust(base_dsn, database_name)
 
 
 def uses_postgresql_persistence(config: SootheConfig) -> bool:

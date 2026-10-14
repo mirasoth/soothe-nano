@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from soothe_nano._rust_compat import (
+    is_valid_thread_priority_rust,
+    is_valid_thread_status_rust,
+    strip_legacy_claude_sessions_rust,
+)
 
 
 class ThreadMetadata(BaseModel):
@@ -24,7 +30,7 @@ class ThreadMetadata(BaseModel):
     @classmethod
     def _strip_legacy_claude_sessions(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            data.pop("claude_sessions", None)
+            return strip_legacy_claude_sessions_rust(data)
         return data
 
     tags: list[str] = Field(default_factory=list)
@@ -34,6 +40,14 @@ class ThreadMetadata(BaseModel):
     labels: list[str] = Field(default_factory=list)
     priority: Literal["low", "normal", "high"] = "normal"
     category: str | None = None
+
+    @field_validator("priority")
+    @classmethod
+    def _validate_priority(cls, v: str) -> str:
+        """Rust-backed thread priority validation."""
+        if not is_valid_thread_priority_rust(v):
+            raise ValueError(f"invalid thread priority: {v}")
+        return v
 
 
 class ThreadInfo(BaseModel):
@@ -52,6 +66,14 @@ class ThreadInfo(BaseModel):
     created_at: datetime
     updated_at: datetime
     metadata: ThreadMetadata = Field(default_factory=ThreadMetadata)
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status(cls, v: str) -> str:
+        """Rust-backed thread status validation."""
+        if not is_valid_thread_status_rust(v):
+            raise ValueError(f"invalid thread status: {v}")
+        return v
 
 
 class ThreadFilter(BaseModel):

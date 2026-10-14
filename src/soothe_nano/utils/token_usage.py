@@ -143,11 +143,14 @@ def extract_token_usage_from_messages(messages: list[BaseMessage]) -> dict[str, 
 
 
 def coerce_total_tokens_used(value: Any) -> int:
-    """Parse a non-negative `total_tokens_used` field from event payloads."""
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
+    """Parse a non-negative `total_tokens_used` field from event payloads.
+
+    Delegates the clamping logic to the Rust ``coerce_total_tokens_used``
+    implementation; Python handles the ``int()`` conversion for non-int types.
+    """
+    from soothe_nano._rust_compat import coerce_total_tokens_used_rust
+
+    return coerce_total_tokens_used_rust(value)
 
 
 # IG-761: Per-message structural token overhead for role tags + separators.

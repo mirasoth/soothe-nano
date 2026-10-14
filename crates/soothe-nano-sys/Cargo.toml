@@ -1,0 +1,29 @@
+[package]
+name = "soothe-nano-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PyO3 extension module — the only crate that links against pyo3. Exposes all Rust crates to Python as soothe_nano._rust"
+
+[lib]
+name = "_rust"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3.workspace = true
+
+soothe-nano-core = { path = "../soothe-nano-core" }
+soothe-nano-utils = { path = "../soothe-nano-utils" }
+soothe-nano-events = { path = "../soothe-nano-events" }
+soothe-nano-tokens = { path = "../soothe-nano-tokens" }
+soothe-nano-workspace = { path = "../soothe-nano-workspace" }
+soothe-nano-config = { path = "../soothe-nano-config" }
+soothe-nano-prompts = { path = "../soothe-nano-prompts" }
+soothe-nano-security = { path = "../soothe-nano-security" }
+soothe-nano-persist = { path = "../soothe-nano-persist" }
+soothe-nano-filesystem = { path = "../soothe-nano-filesystem" }
+soothe-nano-skills = { path = "../soothe-nano-skills" }
+soothe-nano-protocols = { path = "../soothe-nano-protocols" }
+soothe-nano-diagnose = { path = "../soothe-nano-diagnose" }
+
+serde_json.workspace = true

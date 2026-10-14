@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
+
+from soothe_nano._rust_compat import rust_skill_discovery_new
 
 
 class SearchSkillsInput(BaseModel):
@@ -58,3 +62,24 @@ def create_invoke_skill_tool() -> StructuredTool:
         ),
         args_schema=InvokeSkillInput,
     )
+
+
+# ---------------------------------------------------------------------------
+# Rust fast-path for filesystem .md skill scanning
+# ---------------------------------------------------------------------------
+
+
+def discover_skill_files(roots: list[str | Path]) -> list[tuple[str, str, str]] | None:
+    """Scan *roots* for ``.md`` skill files (Rust fast-path, Python fallback).
+
+    Returns a list of ``(name, path, description)`` tuples, or ``None`` when
+    the Rust extension is unavailable (caller falls back to Python scanning).
+
+    When the Rust extension is available, delegates to
+    ``SkillDiscovery.discover()`` which uses the ``ignore`` crate for
+    recursive ``.md`` file walking with hidden-file awareness.
+    """
+    discovery = rust_skill_discovery_new([str(r) for r in roots])
+    if discovery is not None:
+        return list(discovery.discover())
+    return None

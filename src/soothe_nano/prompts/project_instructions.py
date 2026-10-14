@@ -109,6 +109,13 @@ def load_agent_instructions(
     if not root.is_dir():
         return None
 
+    # Rust fast path: check if any instruction file exists.
+    from soothe_nano._rust_compat import load_project_instructions_rust
+
+    rust_result = load_project_instructions_rust(str(root))
+    if rust_result is None:
+        return None  # No instruction file found — skip Python path too.
+
     candidates: list[tuple[str, Path]] = [
         (path.relative_to(root).as_posix(), path)
         for path in _agents_md_candidates(root)

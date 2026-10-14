@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
+from soothe_nano._rust_compat import generate_thread_id
 
-
-def generate_thread_id() -> str:
-    """Return a new unique thread identifier."""
-    return str(uuid.uuid4())
+__all__ = ["generate_thread_id"]

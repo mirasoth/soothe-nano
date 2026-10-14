@@ -10,7 +10,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from soothe_nano.workspace.workspace_paths import join_workspace_normalized_path
+from soothe_nano._rust_compat import (
+    rust_find_dangerous_path_component,
+    rust_path_validator_validate,
+)
+from soothe_nano.workspace.workspace_paths import (
+    join_workspace_normalized_path,
+    should_use_virtual_path_resolution,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +200,15 @@ class PathValidator:
                 details={"length": len(path), "max_length": self.max_path_length},
             )
 
+        # Rust fast-path pre-check: short-circuit on the common reject case
+        # (traversal, null byte, host-absolute path) before compiling/matching
+        # the Python regexes. The valid branch is NOT authoritative — the full
+        # Python validation still runs for suspicious patterns, symlinks,
+        # blocked paths, workspace boundary, etc.
+        rust_result = self._rust_fast_check(path)
+        if rust_result is not None:
+            return rust_result
+
         suspicious_result = self._check_suspicious_patterns(path)
         if suspicious_result:
             if strict or suspicious_result.severity >= ValidationSeverity.HIGH:
@@ -243,6 +259,55 @@ class PathValidator:
             is_valid=True,
             normalized_path=normalized,
             message="Path validation passed",
+        )
+
+    def _rust_fast_check(self, path: str) -> ValidationResult | None:
+        """Rust fast-path pre-check for traversal/absolute/null-byte rejections.
+
+        Returns a ``ValidationResult`` when the Rust validator rejects the
+        path (short-circuit), or ``None`` when the path passes the Rust check
+        (caller continues with the full Python validation). Returns ``None``
+        when the Rust extension is unavailable.
+
+        Only the *reject* branch is authoritative. The Rust validator is
+        deliberately minimal — it does not cover suspicious patterns,
+        symlinks, blocked paths, or workspace boundary checks, so a Rust
+        "valid" verdict must still flow through the full Python pipeline.
+
+        Absolute-path rejections are suppressed when the path qualifies for
+        virtual sandbox resolution (a leading-``/`` workspace-relative path),
+        because the Python ``_normalize_path`` rewrites those to relative
+        paths before the boundary check.
+        """
+        is_valid, violation_type, message = rust_path_validator_validate(path)
+        if is_valid:
+            return None
+        # Absolute-path rejections are suppressed when either (a) the path
+        # qualifies for virtual sandbox resolution (a leading-``/`` workspace-
+        # relative path that the Python normalizer rewrites to relative), or
+        # (b) the validator explicitly permits absolute paths. In both cases
+        # the full Python pipeline must run to apply boundary/blocked checks.
+        if violation_type == "absolute_path_blocked" and path.lstrip().startswith("/"):
+            if self.allow_absolute or should_use_virtual_path_resolution(path, self.workspace):
+                return None
+        # Map Rust violation types onto the Python convention so callers and
+        # existing tests see the same violation_type strings they would get
+        # from the Python regex path.
+        rust_to_python = {
+            "path_traversal_rust": "path_traversal_dot_dot_slash",
+            "absolute_path_blocked": "absolute_path_blocked",
+            "suspicious_null_byte": "suspicious_null_byte",
+        }
+        mapped_type = rust_to_python.get(violation_type, violation_type)
+        severity = ValidationSeverity.CRITICAL
+        if violation_type == "absolute_path_blocked":
+            severity = ValidationSeverity.HIGH
+        return ValidationResult(
+            is_valid=False,
+            violation_type=mapped_type,
+            message=message,
+            severity=severity,
+            details={"fast_path": "rust", "rust_violation": violation_type},
         )
 
     def _check_suspicious_patterns(self, path: str) -> ValidationResult | None:
@@ -310,6 +375,16 @@ class PathValidator:
         return normalized
 
     def _check_dangerous_components(self, path: str) -> ValidationResult | None:
+        # Rust fast-path: check for dangerous path components (.git, .bashrc, etc.)
+        rust_component = rust_find_dangerous_path_component(path)
+        if rust_component is not None:
+            return ValidationResult(
+                is_valid=False,
+                violation_type="dangerous_component",
+                message=f"Dangerous path component: {rust_component}",
+                severity=ValidationSeverity.HIGH,
+                details={"component": rust_component},
+            )
         path_obj = Path(path)
         for part in path_obj.parts:
             if part in self.DANGEROUS_COMPONENTS:

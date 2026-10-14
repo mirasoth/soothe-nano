@@ -10,6 +10,13 @@ import logging
 import re
 from typing import Any
 
+from soothe_nano._rust_compat import (
+    clip_wire_event_payload_rust,
+    is_curated_subagent_wire_event_type_rust,
+    parse_subagent_wire_agent_rust,
+    truncate_wire_str_rust,
+)
+
 _REGISTERED_SUBAGENT_WIRE_TYPES: set[str] = set()
 
 # ``soothe.subagent.<agent>.<signal>`` — clients may accept before producers register types.
@@ -41,6 +48,9 @@ def is_curated_subagent_wire_event_type(event_type: str) -> bool:
 
     Used by CLI/TUI clients that may not import subagent ``events`` modules.
     """
+    rust = is_curated_subagent_wire_event_type_rust(event_type)
+    if rust is not None:
+        return rust
     return bool(_CURATED_SUBAGENT_WIRE_RE.match(event_type))
 
 
@@ -58,6 +68,9 @@ def is_allowlisted_subagent_event_type(event_type: str) -> bool:
 
 def parse_subagent_wire_agent(event_type: str) -> str | None:
     """Return agent segment (``browser``, ``claude``, …) from ``soothe.subagent.<agent>.…``."""
+    rust = parse_subagent_wire_agent_rust(event_type)
+    if rust is not None:
+        return rust if rust else None
     parts = event_type.split(".")
     if len(parts) >= 4 and parts[0] == "soothe" and parts[1] == "subagent":
         return parts[2]
@@ -66,6 +79,9 @@ def parse_subagent_wire_agent(event_type: str) -> str | None:
 
 def truncate_wire_str(value: str, max_len: int = _DEFAULT_PREVIEW_LEN) -> str:
     """Truncate a single wire string field."""
+    rust = truncate_wire_str_rust(value, max_len)
+    if rust is not None:
+        return rust
     if len(value) <= max_len:
         return value
     if max_len <= 1:
@@ -75,6 +91,9 @@ def truncate_wire_str(value: str, max_len: int = _DEFAULT_PREVIEW_LEN) -> str:
 
 def clip_wire_event_payload(data: dict[str, Any]) -> dict[str, Any]:
     """Copy event dict and truncate known string fields for wire safety."""
+    rust = clip_wire_event_payload_rust(data)
+    if rust is not None:
+        return rust
     out = dict(data)
     string_caps: dict[str, int] = {
         "task_preview": _LONG_PREVIEW_LEN,

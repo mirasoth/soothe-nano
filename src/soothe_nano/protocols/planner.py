@@ -4,18 +4,22 @@ from __future__ import annotations
 
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from soothe_nano._rust_compat import (
+    is_valid_execution_hint_rust,
+    is_valid_goal_directive_action_rust,
+    is_valid_plan_status_rust,
+    is_valid_step_status_rust,
+    planner_outcome_text_preview_rust,
+    step_result_to_evidence_string_rust,
+)
 from soothe_nano.protocols.concurrency import ConcurrencyPolicy
 
 
 def planner_outcome_text_preview(outcome: dict[str, Any]) -> str | None:
     """Resolve bounded planner-facing text from an outcome dict."""
-    for key in ("wave_join_preview", "task_return_preview", "output_summary"):
-        val = outcome.get(key)
-        if isinstance(val, str) and val.strip():
-            return val.strip()
-    return None
+    return planner_outcome_text_preview_rust(outcome)
 
 
 class PlanStep(BaseModel):
@@ -40,6 +44,22 @@ class PlanStep(BaseModel):
     result: str | None = None
     depends_on: list[str] = Field(default_factory=list)
     current_activity: str | None = None
+
+    @field_validator("execution_hint")
+    @classmethod
+    def _validate_execution_hint(cls, v: str) -> str:
+        """Rust-backed execution-hint validation."""
+        if not is_valid_execution_hint_rust(v):
+            raise ValueError(f"invalid execution_hint: {v}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def _validate_step_status(cls, v: str) -> str:
+        """Rust-backed step-status validation."""
+        if not is_valid_step_status_rust(v):
+            raise ValueError(f"invalid step status: {v}")
+        return v
 
 
 class Plan(BaseModel):
@@ -68,6 +88,14 @@ class Plan(BaseModel):
     reasoning: str | None = Field(
         default=None, description="Optional planner rationale or strategy summary when populated"
     )
+
+    @field_validator("status")
+    @classmethod
+    def _validate_plan_status(cls, v: str) -> str:
+        """Rust-backed plan-status validation."""
+        if not is_valid_plan_status_rust(v):
+            raise ValueError(f"invalid plan status: {v}")
+        return v
 
 
 class StepResult(BaseModel):
@@ -99,43 +127,7 @@ class StepResult(BaseModel):
         Returns:
             Human-readable evidence string
         """
-        if not self.success:
-            return f"Step {self.step_id}: ✗ Error: {self.error or 'unknown'}"
-
-        # Use outcome metadata to generate evidence
-        outcome_type = self.outcome.get("type", "generic")
-        tool_name = self.outcome.get("tool_name", "tool")
-        size_bytes = self.outcome.get("size_bytes", 0)
-
-        if outcome_type == "error":
-            return f"Step {self.step_id}: ✗ Error: {self.outcome.get('error', 'unknown')}"
-        elif outcome_type == "file_read":
-            lines = self.outcome.get("success_indicators", {}).get("lines", 0)
-            files = self.outcome.get("success_indicators", {}).get("files_found", 0)
-            entities = self.outcome.get("entities", [])
-            entity_preview = ", ".join(entities[:3]) if entities else "files"
-            return (
-                f"Step {self.step_id}: ✓ {tool_name} ({lines} lines, {files} files)"
-                f" - {entity_preview}"
-            )
-        elif outcome_type == "web_search":
-            results = self.outcome.get("success_indicators", {}).get("results_count", 0)
-            return f"Step {self.step_id}: ✓ {tool_name} ({results} results)"
-        elif outcome_type == "code_exec":
-            return f"Step {self.step_id}: ✓ {tool_name} (executed successfully)"
-        elif outcome_type == "subagent":
-            preview_src = planner_outcome_text_preview(self.outcome)
-            if preview_src:
-                if truncate:
-                    prev = preview_src[:800] + ("…" if len(preview_src) > 800 else "")
-                else:
-                    prev = preview_src
-                return f"Step {self.step_id}: ✓ {tool_name} — {prev}"
-            return f"Step {self.step_id}: ✓ {tool_name} (delegation completed)"
-        else:
-            # Generic outcome
-            preview = f"{size_bytes} bytes" if size_bytes > 0 else "completed"
-            return f"Step {self.step_id}: ✓ {tool_name} ({preview})"
+        return step_result_to_evidence_string_rust(self.model_dump(), truncate=truncate)
 
 
 class PlanContext(BaseModel):
@@ -227,6 +219,14 @@ class GoalDirective(BaseModel):
     parent_id: str | None = None
     depends_on: list[str] = Field(default_factory=list)
     rationale: str = ""
+
+    @field_validator("action")
+    @classmethod
+    def _validate_action(cls, v: str) -> str:
+        """Rust-backed goal-directive action validation."""
+        if not is_valid_goal_directive_action_rust(v):
+            raise ValueError(f"invalid goal directive action: {v}")
+        return v
 
 
 class Reflection(BaseModel):

@@ -13,6 +13,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from soothe_nano._rust_compat import short_thread_id_for_log_rust
 from soothe_nano.config import SOOTHE_HOME
 from soothe_nano.logging.context import get_thread_id
 from soothe_nano.utils.logging import ShortLevelFormatter
@@ -31,12 +32,7 @@ _THREAD_ID_LOG_SUFFIX_LEN = 4
 
 def _short_thread_id_for_log(thread_id: str) -> str:
     """Return last N characters of thread id for compact, distinctive log tags."""
-    tid = thread_id.strip()
-    if not tid:
-        return ""
-    if len(tid) <= _THREAD_ID_LOG_SUFFIX_LEN:
-        return tid
-    return tid[-_THREAD_ID_LOG_SUFFIX_LEN:]
+    return short_thread_id_for_log_rust(thread_id)
 
 
 class ThreadFormatter(ShortLevelFormatter):

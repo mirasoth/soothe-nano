@@ -1,16 +1,24 @@
-"""MCP server diagnose checks."""
+"""MCP server diagnose checks.
+
+Delegates config validation and category aggregation to the Rust extension.
+Python retains the config introspection and binary availability probing.
+"""
 
 from __future__ import annotations
 
 from shutil import which
 from typing import Any
 
+from soothe_nano._rust_compat import (
+    check_mcp_availability_rust,
+    check_mcp_configs_rust,
+    check_mcp_servers_from_results_rust,
+)
 from soothe_nano.config.models import MCPTransport
 from soothe_nano.diagnose.models import (
     CategoryResult,
     CheckResult,
     CheckStatus,
-    aggregate_status,
 )
 
 
@@ -37,37 +45,23 @@ def _check_mcp_configs(config: Any | None) -> CheckResult:
             message="No MCP servers configured",
         )
 
-    invalid = []
+    # Build server specs for Rust validation.
+    server_specs: list[tuple[str, str, str | None, str | None]] = []
     for server in mcp_servers:
-        if not getattr(server, "name", None):
-            invalid.append("server missing name")
-            continue
+        name = getattr(server, "name", None) or ""
         transport = getattr(server, "transport", MCPTransport.STDIO)
         tval = _transport_value(transport)
-        if tval == MCPTransport.STDIO.value:
-            if not getattr(server, "command", None):
-                invalid.append(f"'{server.name}' missing command for stdio transport")
-        elif tval in {
-            MCPTransport.SSE.value,
-            MCPTransport.STREAMABLE_HTTP.value,
-            MCPTransport.WEBSOCKET.value,
-        }:
-            if not getattr(server, "url", None):
-                invalid.append(f"'{server.name}' missing url for {tval} transport")
+        command = getattr(server, "command", None)
+        url = getattr(server, "url", None)
+        server_specs.append((name, tval, command, url))
 
-    if invalid:
-        return CheckResult(
-            name="mcp_configs",
-            status=CheckStatus.ERROR,
-            message=f"Invalid MCP server configs: {', '.join(invalid)}",
-            details={"remediation": "Fix MCP server configuration in config file"},
-        )
-
+    # Delegate config validation to Rust.
+    result_dict = check_mcp_configs_rust(server_specs)
     return CheckResult(
-        name="mcp_configs",
-        status=CheckStatus.OK,
-        message=f"{len(mcp_servers)} MCP server(s) configured",
-        details={"servers": [s.name for s in mcp_servers]},
+        name=result_dict["name"],
+        status=CheckStatus(result_dict["status"]),
+        message=result_dict["message"],
+        details=result_dict.get("details", {}),
     )
 
 
@@ -88,49 +82,27 @@ def _check_mcp_availability(config: Any | None) -> CheckResult:
             message="No MCP servers to check",
         )
 
-    missing = []
-    available = []
-    remote = []
-
+    # Build availability data for Rust.
+    availability_data: list[tuple[str, str, str | None, bool, bool]] = []
     for server in mcp_servers:
         transport = getattr(server, "transport", MCPTransport.STDIO)
         tval = _transport_value(transport)
         if tval == MCPTransport.STDIO.value:
             command = getattr(server, "command", None)
             cmd = command.split()[0] if command else None
-            if cmd:
-                if which(cmd):
-                    available.append(server.name)
-                else:
-                    missing.append(f"{server.name} ({cmd})")
+            is_available = bool(which(cmd)) if cmd else False
+            availability_data.append((server.name, tval, cmd, is_available, False))
         else:
-            remote.append(server.name)
+            url = getattr(server, "url", None)
+            availability_data.append((server.name, tval, url, False, True))
 
-    if missing:
-        return CheckResult(
-            name="mcp_availability",
-            status=CheckStatus.WARNING,
-            message=f"MCP servers not found: {', '.join(missing)}",
-            details={
-                "missing": missing,
-                "available": available,
-                "remote": remote,
-                "remediation": "Install missing MCP servers or update config",
-            },
-        )
-
-    details = {"available": available, "remote": remote}
-    msg_parts = []
-    if available:
-        msg_parts.append(f"{len(available)} stdio command(s) found")
-    if remote:
-        msg_parts.append(f"{len(remote)} remote server(s)")
-
+    # Delegate availability aggregation to Rust.
+    result_dict = check_mcp_availability_rust(availability_data)
     return CheckResult(
-        name="mcp_availability",
-        status=CheckStatus.OK,
-        message="All MCP servers: " + ", ".join(msg_parts) if msg_parts else "No servers",
-        details=details,
+        name=result_dict["name"],
+        status=CheckStatus(result_dict["status"]),
+        message=result_dict["message"],
+        details=result_dict.get("details", {}),
     )
 
 
@@ -140,8 +112,12 @@ async def check_mcp_servers(config: Any | None = None) -> CategoryResult:
         _check_mcp_configs(config),
         _check_mcp_availability(config),
     ]
+    # Delegate category aggregation to Rust.
+    check_dicts = [c.to_dict() for c in checks]
+    result_dict = check_mcp_servers_from_results_rust(check_dicts)
     return CategoryResult(
-        category="mcp_servers",
-        status=aggregate_status([check.status for check in checks]),
+        category=result_dict["category"],
+        status=CheckStatus(result_dict["status"]),
         checks=checks,
+        message=result_dict.get("message"),
     )

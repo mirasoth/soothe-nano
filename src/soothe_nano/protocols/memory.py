@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from soothe_nano._rust_compat import is_valid_importance_rust
 
 
 class MemoryItem(BaseModel):
@@ -29,6 +31,14 @@ class MemoryItem(BaseModel):
     tags: list[str] = Field(default_factory=list)
     importance: float = 0.5
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("importance")
+    @classmethod
+    def _validate_importance(cls, v: float) -> float:
+        """Rust-backed validation for importance range [0.0, 1.0]."""
+        if not is_valid_importance_rust(v):
+            raise ValueError(f"importance must be in [0.0, 1.0], got {v}")
+        return v
 
 
 @runtime_checkable

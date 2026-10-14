@@ -12,6 +12,12 @@ from enum import Enum, auto
 from functools import wraps
 from typing import Any, TypeVar
 
+from soothe_nano._rust_compat import (
+    rust_circuit_breaker_is_open,
+    rust_circuit_breaker_new,
+    rust_circuit_breaker_state,
+)
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -66,16 +72,32 @@ class CircuitBreaker:
         self._lock = threading.RLock()
         self._async_lock = asyncio.Lock()
 
+        # Rust fast-path breaker — reject-only pre-check for is_open/state.
+        # When Rust says OPEN, Python short-circuits immediately. The Rust
+        # instance is NOT authoritative for the CLOSED/HALF_OPEN branch.
+        self._rust_breaker: Any = rust_circuit_breaker_new(
+            failure_threshold=failure_threshold,
+            success_threshold=success_threshold,
+            timeout_seconds=recovery_timeout,
+        )
+
     @property
     def state(self) -> CircuitBreakerState:
         """Current state of the circuit breaker."""
         with self._lock:
+            # Rust fast-path: if the compiled breaker says OPEN, short-circuit.
+            if rust_circuit_breaker_is_open(self._rust_breaker):
+                return CircuitBreakerState.OPEN
+            self._update_state()
             return self._state
 
     @property
     def is_open(self) -> bool:
         """Check if circuit is open (fail-fast mode)."""
         with self._lock:
+            # Rust fast-path: if the compiled breaker says OPEN, short-circuit.
+            if rust_circuit_breaker_is_open(self._rust_breaker):
+                return True
             self._update_state()
             return self._state == CircuitBreakerState.OPEN
 
@@ -106,6 +128,8 @@ class CircuitBreaker:
     def record_success(self) -> None:
         """Record a successful call."""
         with self._lock:
+            if self._rust_breaker is not None:
+                self._rust_breaker.record_success()
             if self._state == CircuitBreakerState.HALF_OPEN:
                 self._success_count += 1
                 if self._success_count >= self.success_threshold:
@@ -123,6 +147,8 @@ class CircuitBreaker:
     def record_failure(self) -> None:
         """Record a failed call."""
         with self._lock:
+            if self._rust_breaker is not None:
+                self._rust_breaker.record_failure()
             self._failure_count += 1
             self._last_failure_time = time.monotonic()
 
@@ -148,6 +174,8 @@ class CircuitBreaker:
             self._failure_count = 0
             self._success_count = 0
             self._last_failure_time = None
+            if self._rust_breaker is not None:
+                self._rust_breaker.record_success()
 
     def __call__(self, func: Callable[..., T]) -> Callable[..., T]:
         """Decorator to wrap a function with circuit breaker protection.
@@ -188,6 +216,11 @@ class CircuitBreaker:
             Exception: Any exception from the wrapped function
         """
         with self._lock:
+            # Rust fast-path: if the compiled breaker says OPEN, short-circuit.
+            if rust_circuit_breaker_is_open(self._rust_breaker):
+                raise CircuitBreakerOpenError(
+                    f"[{self.name}] Circuit breaker is OPEN - failing fast"
+                )
             self._update_state()
             if self._state == CircuitBreakerState.OPEN:
                 raise CircuitBreakerOpenError(
@@ -219,6 +252,11 @@ class CircuitBreaker:
         """
         async with self._async_lock:
             with self._lock:
+                # Rust fast-path: if the compiled breaker says OPEN, short-circuit.
+                if rust_circuit_breaker_is_open(self._rust_breaker):
+                    raise CircuitBreakerOpenError(
+                        f"[{self.name}] Circuit breaker is OPEN - failing fast"
+                    )
                 self._update_state()
                 if self._state == CircuitBreakerState.OPEN:
                     raise CircuitBreakerOpenError(
@@ -243,6 +281,7 @@ class CircuitBreaker:
             return {
                 "name": self.name,
                 "state": self._state.name,
+                "rust_state": rust_circuit_breaker_state(self._rust_breaker),
                 "failure_count": self._failure_count,
                 "success_count": self._success_count,
                 "failure_threshold": self.failure_threshold,

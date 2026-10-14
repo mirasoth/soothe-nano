@@ -8,6 +8,13 @@ have one authoritative index regardless of which package defined them.
 
 The registry is structural metadata + handler dispatch; it is intentionally
 free of host-only concerns (wire broadcasting, daemon bus routing).
+
+Pure-logic portions (domain classification, ``_split_domain``, domain-default
+tier lookup) are delegated to the Rust ``core`` crate via ``_rust_compat``;
+Python fallbacks are retained for when the extension is unavailable. The
+``EventPriority`` enum, ``EventMeta`` dataclass, ``EventRegistry`` class, and
+``register_event`` stay in Python (Pydantic model manipulation + handler
+dispatch).
 """
 
 from __future__ import annotations
@@ -18,6 +25,12 @@ from typing import Any
 
 from pydantic_core import PydanticUndefined
 
+from soothe_nano._rust_compat import (
+    classify_domain_rust,
+    domain_default_tier_rust,
+    get_verbosity_for_type_rust,
+    split_domain_rust,
+)
 from soothe_nano.core.events import SootheEvent
 from soothe_nano.core.verbosity import VerbosityTier
 
@@ -60,6 +73,9 @@ class EventMeta:
 # Default verbosity tier per top-level domain. The domain is the second
 # segment of the type string (``soothe.<domain>.<component>.<action>``); the
 # ``internal`` domain maps to the ``soothe.internal.*`` namespace.
+#
+# Delegated to the Rust ``core`` crate via ``domain_default_tier_rust``; this
+# dict is the Python fallback for when the extension is unavailable.
 _DOMAIN_DEFAULT_TIER: dict[str, VerbosityTier] = {
     "internal": VerbosityTier.INTERNAL,
     "lifecycle": VerbosityTier.INTERNAL,
@@ -72,6 +88,18 @@ _DOMAIN_DEFAULT_TIER: dict[str, VerbosityTier] = {
     "error": VerbosityTier.NORMAL,
     "agentic": VerbosityTier.NORMAL,
 }
+
+
+def _domain_default_tier(domain: str) -> VerbosityTier:
+    """Return the default verbosity tier for a top-level domain.
+
+    Delegates to the Rust ``core`` crate when available; falls back to the
+    Python ``_DOMAIN_DEFAULT_TIER`` dict otherwise.
+    """
+    rust = domain_default_tier_rust(domain)
+    if rust is not None:
+        return VerbosityTier(rust)
+    return _DOMAIN_DEFAULT_TIER.get(domain, VerbosityTier.INTERNAL)
 
 
 @dataclass
@@ -94,7 +122,13 @@ class EventRegistry:
         return self._by_type.get(event_type)
 
     def classify(self, event_type: str) -> str:
-        """Return the domain from an event type string via ``split('.')[1]``."""
+        """Return the domain from an event type string via ``split('.')[1]``.
+
+        Delegates to the Rust ``core`` crate when available.
+        """
+        rust = classify_domain_rust(event_type)
+        if rust is not None:
+            return rust
         segments = event_type.split(".")
         _min_segments = 2
         if len(segments) >= _min_segments and segments[1] == "internal":
@@ -106,6 +140,10 @@ class EventRegistry:
         meta = self._by_type.get(event_type)
         if meta:
             return meta.verbosity
+        # Domain-default fallback — delegate to Rust when available.
+        rust = get_verbosity_for_type_rust(event_type)
+        if rust is not None:
+            return VerbosityTier(rust)
         domain = self.classify(event_type)
         return _DOMAIN_DEFAULT_TIER.get(domain, VerbosityTier.INTERNAL)
 
@@ -130,7 +168,14 @@ REGISTRY = EventRegistry()
 
 
 def _split_domain(type_string: str) -> tuple[str, str, str, VerbosityTier]:
-    """Return ``(domain, component, action, default_tier)`` for a type string."""
+    """Return ``(domain, component, action, default_tier)`` for a type string.
+
+    Delegates to the Rust ``core`` crate when available.
+    """
+    rust = split_domain_rust(type_string)
+    if rust is not None:
+        domain, component, action, tier = rust
+        return domain, component, action, VerbosityTier(tier)
     parts = type_string.split(".")
     if len(parts) >= 2 and parts[1] == "internal":
         domain = "internal"

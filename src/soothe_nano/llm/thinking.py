@@ -8,60 +8,35 @@ streaming chunks with partial-tag buffering.
 
 Captured reasoning is available via :attr:`ThinkingStreamFilter.captured_reasoning`
 and :func:`strip_thinking` returns it via the optional ``capture_sink`` callback.
+
+The core regex work and stream-filter state machine are delegated to the
+Rust extension (``soothe-nano-utils``) via PyO3.
 """
 
 from __future__ import annotations
 
-import logging
-import re
 from logging import Logger
 
-__all__ = ["strip_thinking", "ThinkingStreamFilter"]
-
-logger = logging.getLogger(__name__)
-
-
-# --- compiled tag regexes -----------------------------------------------------
-
-_THINK_OPEN_RE = re.compile(r"<(thinking|reasoning|think)>", re.IGNORECASE)
-_THINK_CLOSE_RE = re.compile(r"</(?:thinking|reasoning|think)>", re.IGNORECASE)
-
-# Complete block (open + content + matching close) for stateless stripping.
-# Group 1 = tag variant, group 2 = inner content (for capture_sink).
-_THINK_BLOCK_RE = re.compile(
-    r"<(thinking|reasoning|think)>(.*?)</\1>",
-    re.IGNORECASE | re.DOTALL,
+from soothe_nano._rust_compat import (
+    rust_thinking_stream_filter_new,
+    strip_thinking_rust,
 )
 
-_THINK_CLOSE_RES: dict[str, re.Pattern[str]] = {
-    "think": re.compile(r"</think>", re.IGNORECASE),
-    "thinking": re.compile(r"</thinking>", re.IGNORECASE),
-    "reasoning": re.compile(r"</reasoning>", re.IGNORECASE),
-}
-
-_OPEN_TAGS_LOWER: tuple[str, ...] = ("<think>", "<thinking>", "<reasoning>")
-
-
-def _resolve_logger(log: Logger | None) -> Logger:
-    """Return *log* or the module logger when *log* is ``None``."""
-    return log if log is not None else logger
+__all__ = ["strip_thinking", "ThinkingStreamFilter"]
 
 
 def strip_thinking(
     text: str,
     *,
-    logger: Logger | None = None,
+    logger: Logger | None = None,  # noqa: ARG001 — kept for API compatibility
     capture_sink: list[str] | None = None,
 ) -> str:
-    """Remove complete ``<think>...</think>`` blocks from *text*.
+    """Remove complete thinking blocks from *text*.
 
     Matches ``<think>``, ``<thinking>``, and ``<reasoning>`` variants
-    (case-insensitive; content may span newlines). Each extracted thinking
-    block is logged at ``DEBUG`` via *logger* (or the module logger) **before**
-    removal, so the hidden reasoning remains recoverable from debug logs.
-
-    When *capture_sink* is a list, each stripped block's inner text (without
-    tags) is appended so callers can forward reasoning to the TUI.
+    (case-insensitive; content may span newlines). When *capture_sink* is a
+    list, each stripped block's inner text (without tags) is appended so
+    callers can forward reasoning to the TUI.
 
     Only complete blocks (open + matching close) are removed; an unterminated
     opening tag is left untouched here -- streaming truncation is handled by
@@ -69,23 +44,13 @@ def strip_thinking(
     """
     if not text:
         return text
-    rec_logger = _resolve_logger(logger)
 
-    def _record(match: re.Match[str]) -> str:
-        variant = match.group(1)
-        block = match.group(0)
-        rec_logger.debug(
-            "thinking_tokens_stripped variant=%s length=%d content=%r",
-            variant,
-            len(block),
-            block,
-        )
-        if capture_sink is not None:
-            inner = match.group(2) if match.lastindex and match.lastindex >= 2 else ""
-            capture_sink.append(inner)
-        return ""
+    stripped, captured = strip_thinking_rust(text)
 
-    return _THINK_BLOCK_RE.sub(_record, text)
+    if capture_sink is not None:
+        capture_sink.extend(captured)
+
+    return stripped
 
 
 class ThinkingStreamFilter:
@@ -100,100 +65,26 @@ class ThinkingStreamFilter:
     Captured reasoning content (the text inside thinking blocks) is accumulated
     in :attr:`captured_reasoning` so callers can forward it to the TUI reasoning
     branch instead of discarding it.
+
+    The core state machine is delegated to the Rust extension.
     """
 
-    def __init__(self, logger: Logger | None = None) -> None:
-        self._log = _resolve_logger(logger)
-        self._buffer: str = ""
-        self._inside: bool = False
-        self._variant: str | None = None
-        self._reasoning_parts: list[str] = []
+    def __init__(self, logger: Logger | None = None) -> None:  # noqa: ARG002
+        # Logger is accepted for API compatibility but unused — the Rust filter
+        # handles all buffering and capture natively.
+        self._inner = rust_thinking_stream_filter_new()
 
     @property
     def captured_reasoning(self) -> str:
         """Concatenated reasoning text captured from all completed thinking blocks."""
-        return "".join(self._reasoning_parts)
+        return self._inner.captured_reasoning
 
     def feed(self, chunk: str) -> str:
         """Filter *chunk* and return text safe to emit to the consumer."""
         if not chunk:
             return ""
-        self._buffer += chunk
-        return self._drain()
+        return self._inner.feed(chunk)
 
     def finalize(self) -> str:
         """Flush remaining safe text at end-of-stream."""
-        if self._inside:
-            variant = self._variant
-            segment = self._buffer
-            self._log.debug(
-                "thinking_tokens_unterminated variant=%s length=%d content=%r",
-                variant,
-                len(segment),
-                segment,
-            )
-            # Capture unterminated reasoning too (the model was cut off mid-think).
-            if segment:
-                self._reasoning_parts.append(segment)
-            self._buffer = ""
-            self._inside = False
-            self._variant = None
-            return ""
-        remaining = self._buffer
-        self._buffer = ""
-        return remaining
-
-    # -- internals --------------------------------------------------------
-
-    def _drain(self) -> str:
-        out: list[str] = []
-        while self._buffer:
-            if self._inside:
-                variant = self._variant
-                assert variant is not None
-                close_re = _THINK_CLOSE_RES[variant]
-                match = close_re.search(self._buffer)
-                if match:
-                    segment = self._buffer[: match.start()]
-                    self._log.debug(
-                        "thinking_tokens_streamed variant=%s length=%d content=%r",
-                        variant,
-                        len(segment),
-                        segment,
-                    )
-                    # Capture the reasoning content inside the thinking block.
-                    if segment:
-                        self._reasoning_parts.append(segment)
-                    self._buffer = self._buffer[match.end() :]
-                    self._inside = False
-                    self._variant = None
-                    continue
-                return "".join(out)
-
-            match = _THINK_OPEN_RE.search(self._buffer)
-            if match:
-                out.append(self._buffer[: match.start()])
-                self._variant = match.group(1).lower()
-                self._buffer = self._buffer[match.end() :]
-                self._inside = True
-                continue
-
-            held = self._trailing_open_prefix_len()
-            if held:
-                out.append(self._buffer[:-held])
-                self._buffer = self._buffer[-held:]
-            else:
-                out.append(self._buffer)
-                self._buffer = ""
-            break
-        return "".join(out)
-
-    def _trailing_open_prefix_len(self) -> int:
-        """Length of the trailing buffer slice that could still become an opening tag."""
-        idx = self._buffer.rfind("<")
-        if idx < 0:
-            return 0
-        tail = self._buffer[idx:].lower()
-        if any(tag.startswith(tail) for tag in _OPEN_TAGS_LOWER):
-            return len(self._buffer) - idx
-        return 0
+        return self._inner.finalize()
