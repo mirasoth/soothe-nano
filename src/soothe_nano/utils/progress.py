@@ -21,9 +21,6 @@ _wire_bridge: contextvars.ContextVar[Callable[[dict[str, Any]], None] | None] = 
 _loop_wire_bridge: dict[int, Callable[[dict[str, Any]], None]] = {}
 _loop_wire_bridge_lock = threading.Lock()
 
-# Constants for formatting
-_MAX_FIELD_LEN = 50
-
 
 def set_wire_bridge(callback: Callable[[dict[str, Any]], None] | None) -> contextvars.Token:
     """Install a sync sink for wire/progress events (intake-only stream bridge)."""
@@ -87,7 +84,7 @@ def get_wire_bridge() -> Callable[[dict[str, Any]], None] | None:
 
 
 def _format_event_compact(event: dict[str, Any]) -> str:
-    """Format event dict into a compact, readable string.
+    """Format event dict into a compact, readable string (delegates to Rust).
 
     Extracts key fields and formats them concisely:
     - Shortens event type (removes 'soothe.' prefix)
@@ -100,45 +97,9 @@ def _format_event_compact(event: dict[str, Any]) -> str:
     Returns:
         Compact string representation.
     """
-    event_type = event.get("type", "unknown")
-    # Shorten type: "soothe.tool.execution.command_started" -> "tool.execution.command_started"
-    short_type = (
-        event_type.replace("soothe.", "") if event_type.startswith("soothe.") else event_type
-    )
+    from soothe_nano._rust_compat import format_event_compact_rust
 
-    # Key fields to extract (in priority order)
-    key_fields = [
-        "tool",
-        "tool_name",
-        "command",
-        "url",
-        "action_preview",
-        "exit_code",
-        "duration_ms",
-        "error",
-        "timeout",
-        "pid",
-        "session_id",
-        "success",
-    ]
-
-    parts = [short_type]
-
-    for field in key_fields:
-        if field in event:
-            val = event[field]
-            if val is None or val == "":
-                continue
-            # Format duration nicely
-            if field == "duration_ms":
-                parts.append(f"duration={val}ms")
-            # Truncate long strings
-            elif isinstance(val, str) and len(val) > _MAX_FIELD_LEN:
-                parts.append(f"{field}={val[: _MAX_FIELD_LEN - 3]}...")
-            else:
-                parts.append(f"{field}={val}")
-
-    return " ".join(parts)
+    return format_event_compact_rust(event)
 
 
 def emit_progress(event: dict[str, Any], logger: logging.Logger) -> None:

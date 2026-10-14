@@ -6,6 +6,10 @@ Chrome processes that would block new launches via SingletonLock.
 Process discovery is cross-platform: it prefers `psutil` (no shell,
 works identically on Linux and macOS) and falls back to a
 platform-aware `ps` invocation via :mod:`subprocess`.
+
+Pure-logic helpers (executable-name matching, exe-path extraction,
+singleton-PID parsing) delegate to the Rust ``chrome_detect`` module
+via PyO3; process discovery and signal handling stay Python-side.
 """
 
 from __future__ import annotations
@@ -13,100 +17,64 @@ from __future__ import annotations
 import logging
 import os
 import platform
-import re
 import signal
 import subprocess
 from pathlib import Path
+
+from soothe_nano._rust_compat import (
+    exe_name_is_chrome_like_rust as _exe_name_is_chrome_like_rust,
+)
+from soothe_nano._rust_compat import (
+    extract_debug_port_rust as _extract_debug_port_rust,
+)
+from soothe_nano._rust_compat import (
+    extract_exe_path_from_args_rust as _extract_exe_path_from_args_rust,
+)
+from soothe_nano._rust_compat import (
+    extract_user_data_dir_rust as _extract_user_data_dir_rust,
+)
+from soothe_nano._rust_compat import (
+    is_chrome_like_process_rust as _is_chrome_like_process_rust,
+)
+from soothe_nano._rust_compat import (
+    parse_singleton_owner_pid_rust as _parse_singleton_owner_pid_rust,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CDP_PORTS = [9222, 9242, 9223, 9333]
 """Well-known ports to try before falling back to process discovery."""
 
-# Known Chrome/Chromium/Electron/Edge/Brave executable names (basenames).
-# Compared case-insensitively against the OS-reported process name
-# (psutil) or the executable path basename (subprocess fallback).
-_CHROME_EXE_NAMES = frozenset(
-    {
-        "google chrome",
-        "google chrome helper",
-        "google chrome helper (renderer)",
-        "google chrome helper (gpu)",
-        "google chrome helper (plugin)",
-        "chrome",
-        "chromium",
-        "chromium-browser",
-        "chromium-browser-lite",
-        "microsoft edge",
-        "microsoft edge helper",
-        "msedge",
-        "edge",
-        "electron",
-        "electron helper",
-        "electron helper (renderer)",
-        "electron helper (gpu)",
-        "brave",
-        "brave-browser",
-    }
-)
-
 
 def _exe_name_is_chrome_like(exe_name: str) -> bool:
-    """Return True if an executable basename is a known Chrome/Electron name.
+    """Return True if an executable basename is a known Chrome/Electron name (delegates to Rust).
 
-    `exe_name` is matched case-insensitively against
-    :data:`_CHROME_EXE_NAMES`. A bare `chrome` / `electron` token
-    embedded as a *word* in the name also counts so that macOS
-    app-bundle names like `Google Chrome Helper (Renderer)` match,
+    Matches case-insensitively against the known set. A bare `chrome` /
+    `electron` token embedded as a *word* in the name also counts so that
+    macOS app-bundle names like `Google Chrome Helper (Renderer)` match,
     without false-matching `edge` inside `knowledge-agent`.
     """
-    if not exe_name:
-        return False
-    lowered = exe_name.lower()
-    if lowered in _CHROME_EXE_NAMES:
-        return True
-    # Catch macOS helper variants and localized names without enumerating
-    # every permutation: any known basename appearing as a word (bounded
-    # by a non-alphanumeric char or string end) in the OS-reported name
-    # (e.g. "google chrome helper (renderer)"). Word-bounding avoids
-    # matching "edge" inside "knowledge-agent".
-    return any(
-        re.search(r"(?:^|[^a-z0-9])" + re.escape(name) + r"(?:[^a-z0-9]|$)", lowered)
-        for name in ("chrome", "chromium", "electron", "edge", "brave")
-    )
+    return _exe_name_is_chrome_like_rust(exe_name)
 
 
 def _extract_exe_path_from_args(args: str) -> str:
-    """Extract the executable path from a ps cmdline string.
+    """Extract the executable path from a ps cmdline string (delegates to Rust).
 
-    `ps` output is `"<pid> <exe-and-flags>"` after the PID is
-    stripped. The executable may contain spaces (macOS app bundles),
-    so we accumulate leading tokens until the first token that starts
-    with `-` (a flag). Returns the joined executable path, or `""`.
+    Accumulates leading tokens until the first token starting with `-` (a flag).
+    Handles macOS app-bundle paths with spaces. Returns `""` for empty input.
     """
-    tokens = args.split()
-    exe_tokens: list[str] = []
-    for tok in tokens:
-        if tok.startswith("-"):
-            break
-        exe_tokens.append(tok)
-    return " ".join(exe_tokens)
+    return _extract_exe_path_from_args_rust(args)
 
 
 def _is_chrome_like_process(proc_info: dict[str, str]) -> bool:
-    """Return True if the process looks like Chrome/Electron.
+    """Return True if the process looks like Chrome/Electron (delegates to Rust).
 
-    A process is relevant if it was launched with
-    `--remote-debugging-port` AND its executable name matches a known
-    Chrome/Chromium/Electron/Edge/Brave basename. This filters out
-    unrelated processes that happen to pass the debugging flag while
-    keeping Electron apps that embed CDP.
+    A process is relevant if it was launched with `--remote-debugging-port`
+    AND its executable name matches a known Chrome-like basename.
     """
     args = proc_info.get("args", "")
-    if "--remote-debugging-port=" not in args:
-        return False
     exe_name = proc_info.get("exe_name", "") or _extract_exe_path_from_args(args)
-    return _exe_name_is_chrome_like(exe_name)
+    return _is_chrome_like_process_rust(args, exe_name)
 
 
 def _list_chrome_processes_psutil() -> list[dict[str, str]] | None:
@@ -133,14 +101,12 @@ def _list_chrome_processes_psutil() -> list[dict[str, str]] | None:
             # executable name and parse port/udd opportunistically.
             if not _exe_name_is_chrome_like(exe_name):
                 continue
-            udd_match = re.search(r"--user-data-dir=(\S+)", args)
-            port_match = re.search(r"--remote-debugging-port=(\d+)", args)
             entry: dict[str, str] = {
                 "pid": str(proc.info.get("pid", "")),
                 "args": args,
                 "exe_name": exe_name,
-                "user_data_dir": udd_match.group(1) if udd_match else "",
-                "debug_port": port_match.group(1) if port_match else "",
+                "user_data_dir": _extract_user_data_dir_rust(args) or "",
+                "debug_port": _extract_debug_port_rust(args) or "",
             }
             processes.append(entry)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -200,10 +166,8 @@ def _list_chrome_processes_subprocess() -> list[dict[str, str]]:
         }
         if not _is_chrome_like_process(entry):
             continue
-        udd_match = re.search(r"--user-data-dir=(\S+)", args)
-        port_match = re.search(r"--remote-debugging-port=(\d+)", args)
-        entry["user_data_dir"] = udd_match.group(1) if udd_match else ""
-        entry["debug_port"] = port_match.group(1) if port_match else ""
+        entry["user_data_dir"] = _extract_user_data_dir_rust(args) or ""
+        entry["debug_port"] = _extract_debug_port_rust(args) or ""
         processes.append(entry)
     return processes
 
@@ -326,18 +290,9 @@ def _remove_stale_singleton_lock(user_data_dir: str) -> None:
 
 
 def _parse_singleton_owner_pid(symlink_target: str) -> int | None:
-    """Extract the owning PID from a Chromium SingletonLock symlink target.
+    """Extract the owning PID from a Chromium SingletonLock symlink target (delegates to Rust).
 
-    Chromium writes the target as `<hostname>-<pid>`. This extracts
-    the trailing integer PID. Returns `None` if no PID can be parsed
-    (in which case the caller should NOT assume the lock is stale).
+    Chromium writes the target as `<hostname>-<pid>`. This extracts the
+    trailing integer PID. Returns `None` if no PID can be parsed.
     """
-    # Hostnames may contain hyphens, so match the final hyphen-delimited
-    # numeric tail.
-    match = re.search(r"-(\d+)$", symlink_target)
-    if match:
-        try:
-            return int(match.group(1))
-        except ValueError:
-            return None
-    return None
+    return _parse_singleton_owner_pid_rust(symlink_target)

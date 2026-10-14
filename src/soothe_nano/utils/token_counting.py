@@ -8,30 +8,36 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from soothe_nano._rust_compat import count_str_chars_rust
+
 ComplexityLevel = Literal["simple", "medium", "complex"]  # Simplified: merged trivial into simple
 
 
 def estimate_content_chars(content: Any) -> int:
-    """Best-effort character count for message content (string or blocks)."""
+    """Best-effort character count for message content (string or blocks).
+
+    String counting delegates to the Rust ``count_str_chars`` implementation;
+    Python handles the type dispatch over str/list/dict/other.
+    """
     if content is None:
         return 0
     if isinstance(content, str):
-        return len(content)
+        return count_str_chars_rust(content)
     if isinstance(content, list):
         total = 0
         for block in content:
             if isinstance(block, str):
-                total += len(block)
+                total += count_str_chars_rust(block)
             elif isinstance(block, dict):
                 text = block.get("text")
                 if isinstance(text, str):
-                    total += len(text)
+                    total += count_str_chars_rust(text)
                 else:
-                    total += len(str(block))
+                    total += count_str_chars_rust(str(block))
             else:
-                total += len(str(block))
+                total += count_str_chars_rust(str(block))
         return total
-    return len(str(content))
+    return count_str_chars_rust(str(content))
 
 
 def count_tokens(

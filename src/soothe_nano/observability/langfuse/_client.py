@@ -3,56 +3,29 @@
 from __future__ import annotations
 
 import logging
-import os
-import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from soothe_nano._rust_compat import normalize_tags_rust, resolve_str_rust
 from soothe_nano.observability.langfuse._types import SootheConfigLike
 
 logger = logging.getLogger(__name__)
 
-_ENV_REF = re.compile(r"^\$\{(\w+)\}$")
-_ENV_VAR_RE = re.compile(r"\$\{(\w+)\}")
 _INIT_LOCK = threading.Lock()
 _CLIENT_INITIALIZED_FOR_PUBLIC_KEY: set[str] = set()
 _LANGFUSE_EXECUTOR: ThreadPoolExecutor | None = None
 
 
-def _resolve_env(value: str) -> str:
-    """Resolve ``${ENV_VAR}`` placeholders in a string."""
-
-    def replacer(match: re.Match[str]) -> str:
-        var_name = match.group(1)
-        resolved = os.environ.get(var_name)
-        if resolved is not None:
-            return resolved
-        return match.group(0)
-
-    return _ENV_VAR_RE.sub(replacer, value)
-
-
 def resolved_langfuse_tags(soothe_config: SootheConfigLike) -> list[str] | None:
     """Normalize ``observability.langfuse.tags`` to non-empty stripped strings."""
     raw = soothe_config.observability.langfuse.tags
-    if not raw:
-        return None
-    out = [str(t).strip() for t in raw if str(t).strip()]
-    return out or None
+    return normalize_tags_rust(raw if raw else [])
 
 
 def resolve_str(value: str | None) -> str | None:
     """Strip and resolve ``${ENV}`` placeholders; return None if unresolved or empty."""
-    if value is None:
-        return None
-    s = str(value).strip()
-    if not s:
-        return None
-    out = _resolve_env(s)
-    if _ENV_REF.match(out):
-        return None
-    return out
+    return resolve_str_rust(value)
 
 
 def resolve_langfuse_config_str(value: str | None) -> str | None:

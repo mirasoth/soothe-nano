@@ -4,19 +4,31 @@ from __future__ import annotations
 
 import inspect
 import logging
-import re
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
+
+from soothe_nano._rust_compat import (
+    is_llm_argument_error_rust as _is_llm_argument_error_rust,
+)
+from soothe_nano._rust_compat import (
+    is_unexpected_keyword_error_rust as _is_unexpected_keyword_error_rust,
+)
+from soothe_nano._rust_compat import (
+    is_warning_level_error_rust as _is_warning_level_error_rust,
+)
+from soothe_nano._rust_compat import (
+    simplify_error_rust as _simplify_error_rust,
+)
+from soothe_nano._rust_compat import (
+    unexpected_kwarg_name_rust as _unexpected_kwarg_name_rust,
+)
 
 logger = logging.getLogger(__name__)
 
 # HTTP status codes for warning-level errors
 HTTP_FORBIDDEN = 403
 HTTP_TOO_MANY_REQUESTS = 429
-
-_UNEXPECTED_KWARG_RE = re.compile(r"got an unexpected keyword argument ['\"](?P<name>[^'\"]+)['\"]")
-_MISSING_REQUIRED_RE = re.compile(r"missing (?P<count>\d+) required positional argument")
 
 _RETRY_FAILED = object()
 
@@ -179,30 +191,26 @@ def _format_error_response(tool_name: str, return_type: str, exc: Exception) -> 
 
 
 def _is_unexpected_keyword_error(exc: Exception) -> bool:
-    """Return True for TypeError about an unexpected keyword argument."""
-    return isinstance(exc, TypeError) and "unexpected keyword argument" in str(exc)
+    """Return True for TypeError about an unexpected keyword argument (delegates to Rust)."""
+    if not isinstance(exc, TypeError):
+        return False
+    return _is_unexpected_keyword_error_rust(str(exc))
 
 
 def _unexpected_kwarg_name(exc: Exception) -> str | None:
-    """Extract the unexpected keyword name from a TypeError message."""
-    match = _UNEXPECTED_KWARG_RE.search(str(exc))
-    return match.group("name") if match else None
+    """Extract the unexpected keyword name from a TypeError message (delegates to Rust)."""
+    return _unexpected_kwarg_name_rust(str(exc))
 
 
 def _is_llm_argument_error(exc: Exception) -> bool:
-    """Return True for recoverable LLM tool-argument TypeErrors."""
+    """Return True for recoverable LLM tool-argument TypeErrors (delegates to Rust)."""
     if not isinstance(exc, TypeError):
         return False
-    message = str(exc)
-    return (
-        "unexpected keyword argument" in message
-        or "required positional argument" in message
-        or "required keyword-only argument" in message
-    )
+    return _is_llm_argument_error_rust(type(exc).__name__, str(exc))
 
 
 def _is_warning_level_error(exc: Exception) -> bool:
-    """Check if error should be logged as warning instead of error.
+    """Check if error should be logged as warning instead of error (delegates to Rust).
 
     Args:
         exc: Exception to check
@@ -211,72 +219,36 @@ def _is_warning_level_error(exc: Exception) -> bool:
         True if this should be logged as warning (non-critical/recoverable),
         False if it should be logged as error (unexpected/critical)
     """
-    if _is_llm_argument_error(exc):
-        return True
-
-    # Check for HTTP 403 Forbidden (API key issues, access denied)
-    status = getattr(exc, "status", None)
-    if status == HTTP_FORBIDDEN:
-        return True
-
-    # Check for HTTP 429 Too Many Requests (rate limiting)
-    if status == HTTP_TOO_MANY_REQUESTS:
-        return True
-
-    # Check response object for status
-    response = getattr(exc, "response", None)
-    if response is not None:
-        resp_status = getattr(response, "status_code", getattr(response, "status", None))
-        if resp_status in (HTTP_FORBIDDEN, HTTP_TOO_MANY_REQUESTS):
-            return True
-
-    # Default: log as error
-    return False
-
-
-def _simplify_error(exc: Exception) -> str:
-    """Convert exception to user-friendly message."""
     error_type = type(exc).__name__
     error_msg = str(exc)
 
-    if _is_unexpected_keyword_error(exc):
-        bad_name = _unexpected_kwarg_name(exc)
-        if bad_name:
-            return (
-                f"Unexpected argument '{bad_name}'. "
-                "Omit unknown parameters and retry with only the documented tool inputs."
-            )
-        return (
-            "Unexpected tool argument. "
-            "Omit unknown parameters and retry with only the documented tool inputs."
-        )
+    # Extract HTTP status from the exception or its response object.
+    status: int | None = getattr(exc, "status", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        if response is not None:
+            status = getattr(response, "status_code", getattr(response, "status", None))
 
-    if isinstance(exc, TypeError) and (
-        "required positional argument" in error_msg or "required keyword-only argument" in error_msg
-    ):
-        count_match = _MISSING_REQUIRED_RE.search(error_msg)
-        if count_match:
-            return (
-                f"Missing {count_match.group('count')} required argument(s). "
-                "Check the tool schema and retry with the documented inputs."
-            )
-        return "Missing required argument(s). Check the tool schema and retry."
+    return _is_warning_level_error_rust(error_type, error_msg, status)
 
-    # DNS/Network errors
-    if "nodename nor servname" in error_msg:
-        return "DNS resolution failed - invalid domain name"
-    if "ConnectError" in error_type or "ConnectionError" in error_type:
-        if "Connection refused" in error_msg:
-            return "Connection refused - service may not be running"
-        return "Connection failed - network unreachable or service down"
-    if "Timeout" in error_type or "timeout" in error_msg.lower():
-        return "Request timed out"
 
-    # HTTP errors - check response object
-    response = getattr(exc, "response", None)
-    if response is not None:
-        status = getattr(response, "status_code", "unknown")
-        return f"HTTP error {status}"
+def _simplify_error(exc: Exception) -> str:
+    """Convert exception to user-friendly message (delegates to Rust).
 
-    # Default: show type and message
-    return f"{error_type}: {error_msg}"
+    The Rust implementation handles all string-pattern matching: unexpected
+    keyword arguments, missing required arguments, DNS/network errors, timeout
+    detection, and HTTP status formatting. Python extracts the status code from
+    the exception's ``.response`` attribute when the exception itself has no
+    ``.status``.
+    """
+    error_type = type(exc).__name__
+    error_msg = str(exc)
+
+    # Extract HTTP status from the exception or its response object.
+    status: int | None = getattr(exc, "status", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        if response is not None:
+            status = getattr(response, "status_code", getattr(response, "status", None))
+
+    return _simplify_error_rust(error_type, error_msg, status)

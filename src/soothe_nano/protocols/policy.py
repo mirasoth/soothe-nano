@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-import fnmatch
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from soothe_nano._rust_compat import (
+    is_valid_policy_verdict_rust,
+    permission_matches_rust,
+)
 
 
 @dataclass(frozen=True)
@@ -41,13 +45,14 @@ class Permission:
         Returns:
             True if this grant covers the request.
         """
-        if self.category != requested.category or self.action != requested.action:
-            return False
-        if self.scope == "*":
-            return True
-        if self.scope.startswith("!"):
-            return not fnmatch.fnmatch(requested.scope, self.scope[1:])
-        return fnmatch.fnmatch(requested.scope, self.scope)
+        return permission_matches_rust(
+            self.category,
+            self.action,
+            self.scope,
+            requested.category,
+            requested.action,
+            requested.scope,
+        )
 
 
 class PermissionSet:
@@ -143,6 +148,14 @@ class PolicyDecision(BaseModel):
     verdict: Literal["allow", "deny", "need_approval"]
     reason: str
     matched_permission: Any = None  # Permission | None
+
+    @field_validator("verdict")
+    @classmethod
+    def _validate_verdict(cls, v: str) -> str:
+        """Rust-backed policy verdict validation."""
+        if not is_valid_policy_verdict_rust(v):
+            raise ValueError(f"invalid policy verdict: {v}")
+        return v
 
 
 class PolicyProfile(BaseModel):

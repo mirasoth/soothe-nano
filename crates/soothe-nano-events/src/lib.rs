@@ -1,5 +1,7 @@
 //! Event types ported from `events/catalog.py`.
 
+pub mod wire_protocol;
+
 use serde::{Deserialize, Serialize};
 
 /// A chunk emitted during streaming.

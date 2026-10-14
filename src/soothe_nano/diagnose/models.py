@@ -1,4 +1,9 @@
-"""Lightweight diagnose result models (dict-contract compatible)."""
+"""Lightweight diagnose result models (dict-contract compatible).
+
+Delegates status aggregation and dict serialization to the Rust extension
+(``soothe-nano-diagnose`` crate). Python retains the ``StrEnum`` / dataclass
+facade for type safety and backward compatibility.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,12 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from functools import total_ordering
 from typing import Any
+
+from soothe_nano._rust_compat import (
+    aggregate_status_rust,
+    check_status_severity_rust,
+    compare_status_rust,
+)
 
 
 @total_ordering
@@ -21,6 +32,9 @@ class CheckStatus(StrEnum):
     @property
     def severity(self) -> int:
         """Numeric severity for aggregation (higher = worse)."""
+        rust_result = check_status_severity_rust(self.value)
+        if rust_result is not None:
+            return rust_result
         return {
             CheckStatus.OK: 0,
             CheckStatus.INFO: 1,
@@ -31,6 +45,9 @@ class CheckStatus(StrEnum):
 
     def __lt__(self, other: object) -> bool:
         if isinstance(other, CheckStatus):
+            rust_result = compare_status_rust(self.value, other.value)
+            if rust_result is not None:
+                return rust_result < 0
             return self.severity < other.severity
         return NotImplemented
 
@@ -77,4 +94,6 @@ def aggregate_status(statuses: list[CheckStatus]) -> CheckStatus:
     """Aggregate multiple statuses into one (worst wins)."""
     if not statuses:
         return CheckStatus.OK
-    return max(statuses, key=lambda s: s.severity)
+    status_strs = [s.value for s in statuses]
+    result_str = aggregate_status_rust(status_strs)
+    return CheckStatus(result_str)

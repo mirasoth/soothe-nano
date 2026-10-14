@@ -1,4 +1,9 @@
-"""Observability and tracing diagnose checks."""
+"""Observability and tracing diagnose checks.
+
+Delegates check-result construction and category aggregation to the Rust
+extension. Python retains the HTTP health probing, package-availability
+detection, and config introspection.
+"""
 
 from __future__ import annotations
 
@@ -9,11 +14,11 @@ import urllib.request
 from typing import Any
 from urllib.parse import urljoin
 
+from soothe_nano._rust_compat import check_observability_from_results_rust
 from soothe_nano.diagnose.models import (
     CategoryResult,
     CheckResult,
     CheckStatus,
-    aggregate_status,
 )
 from soothe_nano.observability.langfuse import resolve_langfuse_config_str
 
@@ -180,8 +185,12 @@ def _check_langfuse_from_config(config: Any | None) -> list[CheckResult]:
 async def check_observability(config: Any | None = None) -> CategoryResult:
     """Check observability and tracing (Langfuse when enabled)."""
     checks = _check_langfuse_from_config(config)
+    # Delegate category aggregation to Rust.
+    check_dicts = [c.to_dict() for c in checks]
+    result_dict = check_observability_from_results_rust(check_dicts)
     return CategoryResult(
-        category="observability",
-        status=aggregate_status([check.status for check in checks]),
+        category=result_dict["category"],
+        status=CheckStatus(result_dict["status"]),
         checks=checks,
+        message=result_dict.get("message"),
     )

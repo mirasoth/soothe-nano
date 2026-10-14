@@ -1,4 +1,10 @@
-"""Exception types for the Soothe SDK."""
+"""Exception types for the Soothe SDK.
+
+These are Python exception classes (inheriting from ``Exception``) used for
+control flow throughout the SDK. Exception hierarchies are inherently
+Python-specific (they integrate with ``try``/``except`` and traceback
+machinery) and have no Rust equivalent; the class definitions stay in Python.
+"""
 
 
 class PluginError(Exception):

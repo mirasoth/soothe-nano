@@ -7,12 +7,17 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import sqlite3
 import struct
 import uuid
 from typing import Any
 
+from soothe_nano._rust_compat import (
+    cosine_similarity_rust,
+    ip_similarity_rust,
+    l2_distance_rust,
+    pack_vector_f32_rust,
+)
 from soothe_nano.paths import resolve_vectors_db_path
 from soothe_nano.protocols.vector_store import VectorRecord
 
@@ -21,27 +26,22 @@ logger = logging.getLogger(__name__)
 
 def _pack_vector(vector: list[float]) -> bytes:
     """Pack a list of floats into F32 binary format for sqlite-vec."""
-    return struct.pack(f"{len(vector)}f", *vector)
+    return pack_vector_f32_rust(vector)
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
-    dot = sum(x * y for x, y in zip(a, b, strict=False))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+    return cosine_similarity_rust(a, b)
 
 
 def _l2_distance(a: list[float], b: list[float]) -> float:
     """Compute L2 (Euclidean) distance between two vectors."""
-    return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b, strict=False)))
+    return l2_distance_rust(a, b)
 
 
 def _ip_similarity(a: list[float], b: list[float]) -> float:
     """Compute inner product (dot product) similarity."""
-    return sum(x * y for x, y in zip(a, b, strict=False))
+    return ip_similarity_rust(a, b)
 
 
 class SQLiteVecStore:

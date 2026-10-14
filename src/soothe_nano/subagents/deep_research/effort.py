@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import re
-
 from pydantic import BaseModel, Field
 
-from .protocol import DeepResearchConfig, DeepResearchEffortLevel
-
-_EFFORT_PATTERN = re.compile(
-    r"(?:^|\b)effort\s*[:=]\s*(normal|thorough)\b",
-    re.IGNORECASE,
+from soothe_nano._rust_compat import (
+    subagents_effort_follow_up_hint_rust,
+    subagents_effort_plan_hint_rust,
+    subagents_normalize_effort_rust,
+    subagents_parse_effort_from_text_rust,
 )
+
+from .protocol import DeepResearchConfig, DeepResearchEffortLevel
 
 
 class DeepResearchEffortProfile(BaseModel):
@@ -26,21 +26,11 @@ class DeepResearchEffortProfile(BaseModel):
 
     @property
     def plan_hint(self) -> str:
-        return (
-            f"Identify at most {self.max_sub_questions} sub-questions and "
-            f"at most {self.max_initial_queries} search queries."
-        )
+        return subagents_effort_plan_hint_rust(self.effort)
 
     @property
     def reflect_follow_up_hint(self) -> str:
-        if self.max_follow_up_queries == 0:
-            return (
-                "If not sufficient, set is_sufficient to true; do not generate follow-up queries."
-            )
-        return (
-            f"If not sufficient, generate at most {self.max_follow_up_queries} "
-            "follow-up queries targeting the gaps."
-        )
+        return subagents_effort_follow_up_hint_rust(self.effort)
 
 
 _PROFILES: dict[DeepResearchEffortLevel, DeepResearchEffortProfile] = {
@@ -70,20 +60,12 @@ def profile_for_effort(effort: DeepResearchEffortLevel) -> DeepResearchEffortPro
 
 def normalize_effort(raw: str | None) -> DeepResearchEffortLevel:
     """Coerce config/context value to a valid effort level."""
-    key = (raw or "normal").strip().lower()
-    if key == "thorough":
-        return "thorough"
-    return "normal"
+    return subagents_normalize_effort_rust(raw)  # type: ignore[return-value]
 
 
 def parse_effort_from_text(text: str) -> DeepResearchEffortLevel | None:
     """Parse ``effort: thorough`` from topic text."""
-    if not text:
-        return None
-    match = _EFFORT_PATTERN.search(text.strip())
-    if not match:
-        return None
-    return normalize_effort(match.group(1))
+    return subagents_parse_effort_from_text_rust(text)  # type: ignore[return-value]
 
 
 def resolve_effort(

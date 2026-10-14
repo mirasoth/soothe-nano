@@ -11,6 +11,11 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from soothe_nano._rust_compat import (
+    is_duplicate_schema_error_rust,
+    is_recoverable_connection_error_rust,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,15 +46,9 @@ def is_duplicate_schema_error(exc: Exception) -> bool:
     if recoverable_classes and isinstance(exc, recoverable_classes):
         return True
 
-    text = str(exc).lower()
-    return any(
-        needle in text
-        for needle in (
-            "duplicate key value violates unique constraint",
-            "pg_type_typname_nsp_index",
-            "already exists",
-        )
-    )
+    # Rust message-based classification
+    text = str(exc)
+    return is_duplicate_schema_error_rust(text)
 
 
 def is_recoverable_connection_error(exc: Exception) -> bool:
@@ -90,20 +89,9 @@ def is_recoverable_connection_error(exc: Exception) -> bool:
     except Exception:
         pass
 
-    # Fallback: check error message for known patterns
-    text = str(exc).lower()
-    return any(
-        needle in text
-        for needle in (
-            "admin shutdown",
-            "terminating connection due to administrator command",
-            "connection is closed",
-            "connection not open",
-            "server closed the connection unexpectedly",
-            "connection failure",
-            "server is not running",
-        )
-    )
+    # Rust message-based classification
+    text = str(exc)
+    return is_recoverable_connection_error_rust(text)
 
 
 async def run_with_connection_retry(

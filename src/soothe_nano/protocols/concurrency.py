@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from soothe_nano._rust_compat import is_unlimited_rust, is_valid_step_parallelism_rust
 
 
 class ConcurrencyPolicy(BaseModel):
@@ -42,3 +44,23 @@ class ConcurrencyPolicy(BaseModel):
     max_parallel_subagents: int = 4
     global_max_llm_calls: int = 5
     step_parallelism: Literal["sequential", "dependency", "max"] = "dependency"
+
+    @field_validator("step_parallelism")
+    @classmethod
+    def _validate_step_parallelism(cls, v: str) -> str:
+        """Rust-backed validation for step_parallelism values."""
+        if not is_valid_step_parallelism_rust(v):
+            raise ValueError(f"Invalid step_parallelism: {v}")
+        return v
+
+    def steps_unlimited(self) -> bool:
+        """True when max_parallel_steps means unlimited (0)."""
+        return is_unlimited_rust(self.max_parallel_steps)
+
+    def subagents_unlimited(self) -> bool:
+        """True when max_parallel_subagents means unlimited (0)."""
+        return is_unlimited_rust(self.max_parallel_subagents)
+
+    def llm_circuit_disabled(self) -> bool:
+        """True when global_max_llm_calls disables the circuit breaker (0)."""
+        return is_unlimited_rust(self.global_max_llm_calls)

@@ -10,7 +10,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from soothe_nano._rust_compat import is_rust_available, rust_path_validator_validate
+from soothe_nano._rust_compat import (
+    rust_find_dangerous_path_component,
+    rust_path_validator_validate,
+)
 from soothe_nano.workspace.workspace_paths import (
     join_workspace_normalized_path,
     should_use_virtual_path_resolution,
@@ -276,8 +279,6 @@ class PathValidator:
         because the Python ``_normalize_path`` rewrites those to relative
         paths before the boundary check.
         """
-        if not is_rust_available():
-            return None
         is_valid, violation_type, message = rust_path_validator_validate(path)
         if is_valid:
             return None
@@ -374,6 +375,16 @@ class PathValidator:
         return normalized
 
     def _check_dangerous_components(self, path: str) -> ValidationResult | None:
+        # Rust fast-path: check for dangerous path components (.git, .bashrc, etc.)
+        rust_component = rust_find_dangerous_path_component(path)
+        if rust_component is not None:
+            return ValidationResult(
+                is_valid=False,
+                violation_type="dangerous_component",
+                message=f"Dangerous path component: {rust_component}",
+                severity=ValidationSeverity.HIGH,
+                details={"component": rust_component},
+            )
         path_obj = Path(path)
         for part in path_obj.parts:
             if part in self.DANGEROUS_COMPONENTS:

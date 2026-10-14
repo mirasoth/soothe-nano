@@ -8,11 +8,18 @@ pub mod policy_profiles;
 pub mod rate_limiter;
 
 pub use command_guard::{dangerous_command_rule_id, rule_family};
-pub use operation_guard::{OperationGuard, OperationRecord};
-pub use path_security::{PathValidator, ValidationResult, ViolationType};
-pub use policy_models::{PolicyAction, PolicyRule, SecurityPolicy};
-pub use policy_profiles::default_policy;
-pub use rate_limiter::RateLimiter;
+pub use operation_guard::{
+    command_approved_by_allowlist, find_dangerous_path_component, glob_match, kill_invocation_pids,
+    matches_sensitive_system_path, pids_from_kill_args, OperationGuard, OperationRecord,
+};
+pub use path_security::{PathValidator, ValidationResult, ValidationSeverity, ViolationType};
+pub use policy_models::{
+    path_is_under, PathPolicyDecision, PolicyAction, PolicyRule, PolicyViolation, SecurityPolicy,
+};
+pub use policy_profiles::{
+    default_policy, permissive_policy, readonly_policy, sandbox_policy, strict_policy,
+};
+pub use rate_limiter::{RateLimiter, SlidingWindowRateLimiter};
 
 use thiserror::Error;
 

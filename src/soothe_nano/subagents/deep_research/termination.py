@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from soothe_nano.subagents.deep_research.protocol import SourceResult
+from soothe_nano._rust_compat import subagents_check_termination_rust
+
+from .protocol import SourceResult
 
 
 @dataclass
@@ -39,70 +41,35 @@ class LoopTerminationChecker:
         current_results: list[SourceResult],
     ) -> TerminationDecision:
         """Whether to stop after this iteration, with a reason."""
-        # Get accumulated references from state
         accumulated = state.get("references_gathered", [])
 
-        # Combine current and accumulated for total count
-        total_results = len(accumulated) + len(current_results)
+        # Extract source names from accumulated refs
+        accumulated_names: list[str] = []
+        for ref in accumulated:
+            if isinstance(ref, dict):
+                name = ref.get("source_name")
+                if name:
+                    accumulated_names.append(str(name))
+            elif hasattr(ref, "source_name"):
+                accumulated_names.append(str(ref.source_name))
 
-        # Don't terminate too early
-        if iteration < 1:
-            return TerminationDecision(
-                should_terminate=False,
-                reason="insufficient_iterations",
-                confidence=0.0,
-            )
+        current_contents = [r.content for r in current_results]
+        current_source_names = [r.source_name for r in current_results]
 
-        # Check minimum results threshold
-        if total_results < self.min_results:
-            return TerminationDecision(
-                should_terminate=False,
-                reason=f"below_min_results ({total_results}/{self.min_results})",
-                confidence=0.0,
-            )
-
-        # Check source diversity
-        source_names = self._extract_source_names(accumulated, current_results)
-        if len(source_names) < self.min_source_diversity:
-            return TerminationDecision(
-                should_terminate=False,
-                reason=f"insufficient_diversity ({len(source_names)}/{self.min_source_diversity} sources)",
-                confidence=0.0,
-            )
-
-        # Check for diminishing returns (no new sources in last iteration)
-        prev_sources = self._extract_source_names_from_refs(accumulated)
-        current_sources = {r.source_name for r in current_results}
-        new_sources = current_sources - prev_sources
-
-        if iteration >= 2 and not new_sources:
-            return TerminationDecision(
-                should_terminate=True,
-                reason="no_new_sources",
-                confidence=0.7,
-            )
-
-        # Check content quality
-        avg_content_length = self._compute_avg_content_length(current_results)
-        if avg_content_length < self.min_content_length:
-            return TerminationDecision(
-                should_terminate=False,
-                reason=f"low_content_quality ({avg_content_length:.0f} chars)",
-                confidence=0.0,
-            )
-
-        # Check if we have diverse, high-quality results
-        if total_results >= self.min_results * 2 and len(source_names) >= self.min_source_diversity:
-            return TerminationDecision(
-                should_terminate=True,
-                reason="sufficient_diverse_results",
-                confidence=0.8,
-            )
-
+        rust_result = subagents_check_termination_rust(
+            self.min_results,
+            self.min_source_diversity,
+            self.max_duplicate_ratio,
+            self.min_content_length,
+            accumulated_names,
+            current_contents,
+            current_source_names,
+            iteration,
+        )
         return TerminationDecision(
-            should_terminate=False,
-            reason="continue_research",
-            confidence=0.0,
+            should_terminate=rust_result.should_terminate,
+            reason=rust_result.reason,
+            confidence=rust_result.confidence,
         )
 
     def _extract_source_names(
@@ -113,7 +80,6 @@ class LoopTerminationChecker:
         """Extract unique source names from accumulated and current results."""
         names: set[str] = set()
 
-        # From accumulated references (dicts)
         for ref in accumulated:
             if isinstance(ref, dict):
                 name = ref.get("source_name")
@@ -122,7 +88,6 @@ class LoopTerminationChecker:
             elif hasattr(ref, "source_name"):
                 names.add(ref.source_name)
 
-        # From current results
         for result in current:
             names.add(result.source_name)
 
@@ -154,18 +119,7 @@ def should_terminate_early(
     current_results: list[SourceResult],
     config: Any | None = None,
 ) -> TerminationDecision:
-    """Convenience function for early termination check.
-
-    Args:
-        state: Current graph state.
-        iteration: Current loop iteration.
-        current_results: Results from current iteration.
-        config: Optional DeepResearchConfig for thresholds.
-
-    Returns:
-        TerminationDecision with termination recommendation.
-    """
-    # Extract thresholds from config if available
+    """Convenience function for early termination check."""
     min_results = 3
     min_diversity = 2
 

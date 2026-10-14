@@ -8,3 +8,4 @@ description = "Event type definitions as serde structs (ported from events/catal
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+regex.workspace = true

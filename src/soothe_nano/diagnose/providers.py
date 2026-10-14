@@ -1,15 +1,25 @@
-"""LLM provider connectivity diagnose checks."""
+"""LLM provider connectivity diagnose checks.
+
+Delegates credential validation, provider-spec parsing, and category
+aggregation to the Rust extension. Python retains the config introspection,
+async gathering, and optional live LLM invoke.
+"""
 
 from __future__ import annotations
 
 import asyncio
 from typing import Any
 
+from soothe_nano._rust_compat import (
+    check_provider_credentials_rust,
+    check_providers_from_results_rust,
+    demote_inactive_provider_check_rust,
+    missing_active_provider_rust,
+)
 from soothe_nano.diagnose.models import (
     CategoryResult,
     CheckResult,
     CheckStatus,
-    aggregate_status,
 )
 
 _ROUTER_ROLES = ("default", "think", "fast", "image", "ocr")
@@ -71,21 +81,17 @@ def _demote_inactive_provider_check(
     if check.status not in (CheckStatus.ERROR, CheckStatus.WARNING):
         return check
 
-    profile_label = profile_name or "active"
+    # Delegate demotion logic to Rust.
+    demoted_dict = demote_inactive_provider_check_rust(
+        check.to_dict(),
+        list(active),
+        profile_name,
+    )
     return CheckResult(
-        name=check.name,
-        status=CheckStatus.INFO,
-        message=(
-            f"{check.message} (not used by active profile '{profile_label}')"
-            if check.message
-            else f"{check.name}: not used by active profile '{profile_label}'"
-        ),
-        details={
-            **check.details,
-            "active_profile": profile_name,
-            "required_by_active_profile": False,
-            "impact": "Does not affect the active router/embedding providers",
-        },
+        name=demoted_dict["name"],
+        status=CheckStatus(demoted_dict["status"]),
+        message=demoted_dict["message"],
+        details=demoted_dict.get("details", {}),
     )
 
 
@@ -95,43 +101,13 @@ async def _check_provider_credentials(
     provider_type: str,
 ) -> CheckResult:
     """Validate that a configured provider has usable credentials."""
-    if _unresolved_env_ref(api_key):
-        return CheckResult(
-            name=provider_name,
-            status=CheckStatus.ERROR,
-            message=f"{provider_name}: API key still contains unresolved ${{ENV}} reference",
-            details={
-                "provider_type": provider_type,
-                "remediation": f"Export the env var referenced by {provider_name}.api_key",
-            },
-        )
-
-    if provider_type == "ollama":
-        return CheckResult(
-            name=provider_name,
-            status=CheckStatus.OK,
-            message=f"{provider_name}: configured (local/keyless provider_type={provider_type})",
-            details={"provider_type": provider_type, "api_key_present": bool(api_key)},
-        )
-
-    if not api_key:
-        return CheckResult(
-            name=provider_name,
-            status=CheckStatus.ERROR,
-            message=f"{provider_name}: API key not set",
-            details={
-                "provider_type": provider_type,
-                "remediation": (
-                    f"Set {provider_name}.api_key in config or the corresponding env var"
-                ),
-            },
-        )
-
+    # Delegate credential validation to Rust.
+    result_dict = check_provider_credentials_rust(provider_name, api_key, provider_type)
     return CheckResult(
-        name=provider_name,
-        status=CheckStatus.OK,
-        message=f"{provider_name}: credentials present (provider_type={provider_type})",
-        details={"provider_type": provider_type, "api_key_present": True},
+        name=result_dict["name"],
+        status=CheckStatus(result_dict["status"]),
+        message=result_dict["message"],
+        details=result_dict.get("details", {}),
     )
 
 
@@ -260,19 +236,14 @@ async def check_providers(
     # Missing providers referenced by the active profile are hard failures.
     for name in sorted(active):
         if name not in provider_by_name:
+            # Delegate missing-provider check construction to Rust.
+            result_dict = missing_active_provider_rust(name, profile_name)
             checks.append(
                 CheckResult(
-                    name=name,
-                    status=CheckStatus.ERROR,
-                    message=(
-                        f"{name}: referenced by active profile "
-                        f"'{profile_name or 'active'}' but not in providers[]"
-                    ),
-                    details={
-                        "active_profile": profile_name,
-                        "required_by_active_profile": True,
-                        "remediation": f"Add a providers[] entry named '{name}'",
-                    },
+                    name=result_dict["name"],
+                    status=CheckStatus(result_dict["status"]),
+                    message=result_dict["message"],
+                    details=result_dict.get("details", {}),
                 )
             )
 
@@ -288,8 +259,14 @@ async def check_providers(
         or c.name in active
         or c.details.get("required_by_active_profile") is True
     ]
+    # Delegate category aggregation to Rust.
+    result_dict = check_providers_from_results_rust(
+        [c.to_dict() for c in checks],
+        [c.to_dict() for c in status_checks],
+    )
     return CategoryResult(
-        category="providers",
-        status=aggregate_status([c.status for c in status_checks]),
+        category=result_dict["category"],
+        status=CheckStatus(result_dict["status"]),
         checks=checks,
+        message=result_dict.get("message"),
     )

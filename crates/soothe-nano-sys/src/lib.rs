@@ -11,6 +11,7 @@ mod bindings;
 /// Entry point for the `soothe_nano._rust` extension module.
 #[pymodule]
 fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    bindings::core::register(m)?;
     bindings::workspace::register(m)?;
     bindings::tokens::register(m)?;
     bindings::utils::register(m)?;
@@ -21,6 +22,9 @@ fn _rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     bindings::persist::register(m)?;
     bindings::filesystem::register(m)?;
     bindings::skills::register(m)?;
+    bindings::protocols::register(m)?;
+    bindings::diagnose::register(m)?;
+    bindings::subagents::register(m)?;
 
     Ok(())
 }

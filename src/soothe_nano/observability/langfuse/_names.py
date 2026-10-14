@@ -1,4 +1,11 @@
-"""Shared Langfuse trace/run display-name helpers for Nano runtime."""
+"""Langfuse display-name helpers."""
+
+from __future__ import annotations
+
+from soothe_nano._rust_compat import (
+    execute_step_langfuse_run_display_name_rust,
+    loop_graph_langfuse_run_display_name_rust,
+)
 
 _ROOT_GRAPH_RUN_NAME = "nanoagent-graph"
 _EXECUTE_STEP_RUN_NAME = "execute-step"
@@ -6,11 +13,9 @@ _EXECUTE_STEP_RUN_NAME = "execute-step"
 
 def loop_graph_langfuse_run_display_name(trace_name: str | None) -> str:
     """Return the root graph run display name for a trace."""
-    tn = (trace_name or "").strip()
-    return f"{tn}:{_ROOT_GRAPH_RUN_NAME}" if tn else _ROOT_GRAPH_RUN_NAME
+    return loop_graph_langfuse_run_display_name_rust(trace_name)
 
 
 def execute_step_langfuse_run_display_name(trace_name: str | None) -> str:
     """Return the execute-phase child run display name for a trace."""
-    tn = (trace_name or "").strip()
-    return f"{tn}:{_EXECUTE_STEP_RUN_NAME}" if tn else _EXECUTE_STEP_RUN_NAME
+    return execute_step_langfuse_run_display_name_rust(trace_name)

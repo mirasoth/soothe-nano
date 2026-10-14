@@ -3,19 +3,17 @@
 import logging
 import time
 
-# Single-letter markers for compact log lines (use %(level_short)s in format strings).
-_LEVEL_SHORT_BY_NO: dict[int, str] = {
-    logging.DEBUG: "D",
-    logging.INFO: "I",
-    logging.WARNING: "W",
-    logging.ERROR: "E",
-    logging.CRITICAL: "C",
-}
+from soothe_nano._rust_compat import (
+    abbreviate_logger_name_rust as _abbreviate_logger_name_rust,
+)
+from soothe_nano._rust_compat import (
+    short_level_letter_rust as _short_level_letter_rust,
+)
 
 
 def short_level_letter(levelno: int) -> str:
-    """Return one-letter code for a logging level number."""
-    return _LEVEL_SHORT_BY_NO.get(levelno, "?")
+    """Return one-letter code for a logging level number (delegates to Rust)."""
+    return _short_level_letter_rust(levelno)
 
 
 def abbreviate_logger_name(name: str) -> str:
@@ -30,15 +28,7 @@ def abbreviate_logger_name(name: str) -> str:
     Returns:
         Compact form, or ``name`` unchanged when fewer than three segments.
     """
-    if not name:
-        return name
-    parts = name.split(".")
-    if len(parts) <= 2:
-        return name
-    head: list[str] = []
-    for p in parts[:-2]:
-        head.append(p[0] if p else "?")
-    return ".".join(head + parts[-2:])
+    return _abbreviate_logger_name_rust(name)
 
 
 class ShortLevelFormatter(logging.Formatter):

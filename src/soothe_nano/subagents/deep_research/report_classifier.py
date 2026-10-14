@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from soothe_nano._rust_compat import (
+    subagents_deep_fallback_classification_rust,
+    subagents_parse_json_from_llm_rust,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,34 +85,17 @@ class ReportScenarioClassification(BaseModel):
 
 
 def _parse_json(content: str) -> dict[str, Any] | None:
-    text = (content or "").strip()
-    fence = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL | re.IGNORECASE)
-    if fence:
-        text = fence.group(1).strip()
-    try:
-        parsed = json.loads(text)
-        return parsed if isinstance(parsed, dict) else None
-    except json.JSONDecodeError:
-        return None
+    result = subagents_parse_json_from_llm_rust(content)
+    return result if isinstance(result, dict) else None
 
 
 def fallback_classification(topic: str) -> ReportScenarioClassification:
     """Heuristic fallback without LLM."""
-    lower = topic.lower()
-    if " vs " in lower or " versus " in lower or "compare" in lower:
-        scenario = "comparison"
-    elif lower.startswith("how ") or "how to" in lower:
-        scenario = "how_to_guide"
-    elif "true" in lower and "?" in topic:
-        scenario = "fact_check"
-    elif "state of" in lower or "landscape" in lower or "trends" in lower:
-        scenario = "landscape_survey"
-    else:
-        scenario = "general_research"
+    scenario, sections, contextual_focus = subagents_deep_fallback_classification_rust(topic)
     return ReportScenarioClassification(
         scenario=scenario,
-        sections=list(_SCENARIO_SECTIONS[scenario]),
-        contextual_focus=[topic[:120]],
+        sections=sections,
+        contextual_focus=contextual_focus,
     )
 
 

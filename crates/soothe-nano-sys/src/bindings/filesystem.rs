@@ -1,6 +1,9 @@
 //! PyO3 bindings for `soothe-nano-filesystem`.
 
 use pyo3::prelude::*;
+use soothe_nano_filesystem::discovery_hints::{
+    format_glob_timeout_error, GLOB_DISCOVERY_FALLBACK_HINT, GREP_DISCOVERY_FALLBACK_HINT,
+};
 use soothe_nano_filesystem::LocalFilesystem;
 
 #[pyclass(name = "LocalFilesystem")]
@@ -72,5 +75,23 @@ impl PyLocalFilesystem {
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyLocalFilesystem>()?;
+    m.add_function(wrap_pyfunction!(get_glob_discovery_fallback_hint, m)?)?;
+    m.add_function(wrap_pyfunction!(get_grep_discovery_fallback_hint, m)?)?;
+    m.add_function(wrap_pyfunction!(format_glob_timeout_error_py, m)?)?;
     Ok(())
+}
+
+#[pyfunction]
+fn get_glob_discovery_fallback_hint() -> &'static str {
+    GLOB_DISCOVERY_FALLBACK_HINT
+}
+
+#[pyfunction]
+fn get_grep_discovery_fallback_hint() -> &'static str {
+    GREP_DISCOVERY_FALLBACK_HINT
+}
+
+#[pyfunction]
+fn format_glob_timeout_error_py(timeout_seconds: f64) -> String {
+    format_glob_timeout_error(timeout_seconds)
 }

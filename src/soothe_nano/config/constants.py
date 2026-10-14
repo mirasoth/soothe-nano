@@ -3,6 +3,7 @@
 Centralizing defaults keeps tool timeouts and output caps consistent.
 """
 
+from soothe_nano._rust_compat import clamp_execute_timeout_rust
 from soothe_nano.paths import DEFAULT_EXECUTE_TIMEOUT  # noqa: F401
 
 __all__ = [
@@ -38,7 +39,10 @@ DEFAULT_TASK_TIMEOUT_SECONDS = 18000  # 5 hours
 
 def clamp_execute_timeout(seconds: int | float) -> int:
     """Clamp run_command timeout to `MAX_EXECUTE_TIMEOUT`."""
-    return min(int(seconds), MAX_EXECUTE_TIMEOUT)
+    try:
+        return clamp_execute_timeout_rust(int(seconds))
+    except (ImportError, AttributeError):
+        return min(int(seconds), MAX_EXECUTE_TIMEOUT)
 
 
 # Max chars for shell/code tool stdout (run_command) and code_exec aggregation.

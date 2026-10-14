@@ -14,6 +14,12 @@ from soothe_nano._rust_compat import (
 from soothe_nano._rust_compat import (
     rule_family_rust as rule_family,
 )
+from soothe_nano._rust_compat import (
+    rust_command_approved_by_allowlist,
+    rust_find_dangerous_path_component,
+    rust_glob_match,
+    rust_kill_invocation_pids,
+)
 from soothe_nano.protocols.operation_security import (
     OperationSecurityContext,
     OperationSecurityDecision,
@@ -48,6 +54,10 @@ def command_approved_by_allowlist(
     """
     if not allowlist:
         return False
+    # Rust fast-path: delegate the full check to the Rust implementation.
+    rust_result = rust_command_approved_by_allowlist(command, rule_id, allowlist)
+    if rust_result is not None:
+        return rust_result
     cmd = (command or "").strip()
     approved_rules = rule_family(rule_id) if rule_id else frozenset()
     for rec in allowlist:
@@ -113,6 +123,14 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         # Bypass-immune dangerous path check — runs regardless of security_config
         # so that sensitive paths (.git/, .bashrc, .vscode/, etc.) are always
         # blocked, even when no SecurityConfig is provided.
+        # Rust fast-path: delegate the dangerous component lookup to Rust.
+        rust_component = rust_find_dangerous_path_component(file_path)
+        if rust_component is not None:
+            return OperationSecurityDecision(
+                verdict="deny",
+                reason=f"Path '{file_path}' contains dangerous component '{rust_component}'",
+                rule_id="filesystem.dangerous_component",
+            )
         resolved_path = expand_path(file_path)
         for part in Path(resolved_path).parts:
             if part in self._DANGEROUS_PATH_COMPONENTS:
@@ -156,6 +174,16 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
                 )
 
         for pattern in _SENSITIVE_SYSTEM_PATH_PATTERNS:
+            # Rust fast-path: delegate glob matching to Rust when available.
+            rust_match = rust_glob_match(pattern, str(resolved_path))
+            if rust_match is not None:
+                if rust_match:
+                    return OperationSecurityDecision(
+                        verdict="deny",
+                        reason=f"Path '{file_path}' matches sensitive system pattern '{pattern}'",
+                        rule_id="filesystem.sensitive_system_path",
+                    )
+                continue
             if self._path_matches_pattern(resolved_path, pattern):
                 return OperationSecurityDecision(
                     verdict="deny",
@@ -165,6 +193,16 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
 
         for pattern in security.denied_paths:
             expanded_pattern = self._expand_path_pattern(pattern)
+            # Rust fast-path: delegate glob matching to Rust when available.
+            rust_match = rust_glob_match(expanded_pattern, str(resolved_path))
+            if rust_match is not None:
+                if rust_match:
+                    return OperationSecurityDecision(
+                        verdict="deny",
+                        reason=f"Path '{file_path}' matches denied pattern '{pattern}'",
+                        rule_id="filesystem.denied_path",
+                    )
+                continue
             if self._path_matches_pattern(resolved_path, expanded_pattern):
                 return OperationSecurityDecision(
                     verdict="deny",
@@ -175,6 +213,13 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         is_allowed = False
         for pattern in security.allowed_paths:
             expanded_pattern = self._expand_path_pattern(pattern)
+            # Rust fast-path: delegate glob matching to Rust when available.
+            rust_match = rust_glob_match(expanded_pattern, str(resolved_path))
+            if rust_match is not None:
+                if rust_match:
+                    is_allowed = True
+                    break
+                continue
             if self._path_matches_pattern(resolved_path, expanded_pattern):
                 is_allowed = True
                 break
@@ -272,6 +317,19 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         """
         # Lazy import avoids a cycle: execution.py imports this module.
         from soothe_nano.toolkits.execution import _protected_kill_refusal
+
+        # Rust fast-path: delegate kill invocation PID extraction to Rust.
+        rust_pids = rust_kill_invocation_pids(command)
+        if rust_pids is not None:
+            for pid in rust_pids:
+                refusal = _protected_kill_refusal(pid)
+                if refusal:
+                    return OperationSecurityDecision(
+                        verdict="deny",
+                        reason=refusal,
+                        rule_id="command.dangerous.kill_protected_pid",
+                    )
+            return None
 
         for match in _KILL_INVOCATION_RE.finditer(command):
             for pid in self._pids_from_kill_args(match.group("args") or ""):

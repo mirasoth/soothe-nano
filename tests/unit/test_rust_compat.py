@@ -957,18 +957,18 @@ class TestCircuitBreakerWrappers:
             assert result is None
 
     def test_is_open_with_none_breaker(self) -> None:
-        """When Rust is unavailable, is_open returns None (graceful fallback)."""
+        """When breaker is None, is_open returns False (no circuit to check)."""
         from soothe_nano._rust_compat import rust_circuit_breaker_is_open
 
         result = rust_circuit_breaker_is_open(None)
-        assert result is None
+        assert result is False
 
     def test_state_with_none_breaker(self) -> None:
-        """When Rust is unavailable, state returns None (graceful fallback)."""
+        """When breaker is None, state returns 'closed' (default)."""
         from soothe_nano._rust_compat import rust_circuit_breaker_state
 
         result = rust_circuit_breaker_state(None)
-        assert result is None
+        assert result == "closed"
 
     def test_open_after_threshold_failures(self) -> None:
         """Rust breaker reports OPEN after enough failures."""

@@ -8,7 +8,6 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
 
 import aiofiles
 import wcmatch.glob as wcglob
@@ -37,7 +36,7 @@ from soothe_deepagents.backends.protocol import (
     WriteResult,
 )
 
-from soothe_nano._rust_compat import is_rust_available, rust_local_filesystem_new
+from soothe_nano._rust_compat import rust_local_filesystem_new
 from soothe_nano.workspace.workspace_paths import WORKSPACE_BACKUP_DIR
 
 from .exceptions import (
@@ -99,12 +98,10 @@ class LocalFilesystem(UnifiedFilesystem):
         )
         # Rust fast-path for read/glob/grep (standalone utility; does not
         # participate in edit locks — used only for read-only operations).
-        self._rust_fs: Any = None
-        if is_rust_available():
-            try:
-                self._rust_fs = rust_local_filesystem_new(str(self._workspace))
-            except Exception:
-                self._rust_fs = None
+        try:
+            self._rust_fs = rust_local_filesystem_new(str(self._workspace))
+        except Exception:
+            self._rust_fs = None
 
     def _resolve_path(self, path: str, *, allow_host_absolute: bool = False) -> Path:
         """Resolve path within workspace.

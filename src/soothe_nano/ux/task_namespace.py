@@ -6,12 +6,29 @@ for task-level. The step_id embedded in tool_call_ids provides the correlation k
 between LangGraph ``tools:…`` namespaces and main-graph ``task`` spawns.
 
 Unified tool call ID format for step-level and task-level tool calls.
+
+String parsing is delegated to the Rust ``task_namespace`` module
+(``soothe_nano._rust``) via :mod:`soothe_nano._rust_compat`. The Python wrappers
+retain the ``ParsedUnifiedToolCallId`` NamedTuple interface for callers that
+unpack by position or access by attribute.
 """
 
 from __future__ import annotations
 
 from collections import deque
 from typing import Any, NamedTuple, TypeAlias
+
+from soothe_nano._rust_compat import (
+    format_unified_tool_call_id_rust,
+    is_unified_tool_call_id_rust,
+    is_wire_step_fragment_rust,
+    parse_unified_tool_call_id_rust,
+    provider_tool_fragment_rust,
+    shorten_tool_call_id_rust,
+    step_id_from_unified_fragment_rust,
+    step_id_to_unified_fragment_rust,
+    tool_info_from_unified_parts_rust,
+)
 
 TaskScope: TypeAlias = tuple[str, str, str]
 """``(task_tool_call_id, subagent_type, step_id)`` — ``step_id`` may be empty."""
@@ -36,30 +53,22 @@ _TASK_SCOPE_SEP = "\x1e"
 
 def _step_id_to_unified_fragment(step_id: str) -> str:
     """Map execute step ids (``GHT-01``) to the unified wire fragment (``GHT_01``)."""
-    return str(step_id).strip().replace("-", "_")
+    return step_id_to_unified_fragment_rust(step_id)
 
 
 def _step_id_from_unified_fragment(fragment: str) -> str:
     """Map unified wire step fragment back to canonical execute step id."""
-    return str(fragment).strip().replace("_", "-")
+    return step_id_from_unified_fragment_rust(fragment)
 
 
 def _is_wire_step_fragment(fragment: str) -> bool:
     """True when the first segment uses underscore wire form (``GHT_01``)."""
-    text = str(fragment).strip()
-    return bool(text) and "_" in text and "-" not in text
+    return is_wire_step_fragment_rust(fragment)
 
 
 def _provider_tool_fragment(tid: str) -> str:
     """Parse provider ``tool:idx`` into unified ``tool:idx`` fragment."""
-    text = str(tid).strip()
-    if not text:
-        return text
-    if ":" in text:
-        name, _, idx = text.rpartition(":")
-        if name and idx.isdigit():
-            return f"{name}:{idx}"
-    return text
+    return provider_tool_fragment_rust(tid)
 
 
 def _tool_info_from_unified_parts(parts: list[str]) -> str:
@@ -71,9 +80,7 @@ def _tool_info_from_unified_parts(parts: list[str]) -> str:
     preserved verbatim so the leading ``{step_wire}:{type}:`` marker can still
     recover the step id.
     """
-    if len(parts) >= 3:
-        return ":".join(parts[2:]).strip()
-    return ""
+    return tool_info_from_unified_parts_rust(parts)
 
 
 def _format_unified_tool_call_id(
@@ -82,15 +89,12 @@ def _format_unified_tool_call_id(
     tool_fragment: str,
 ) -> str:
     """Build canonical unified id: ``{step_wire}:{type}:{tool}:{idx}``."""
-    sid_wire = _step_id_to_unified_fragment(step_id)
-    frag = _provider_tool_fragment(tool_fragment)
-    return f"{sid_wire}:{type_part}:{frag}"
+    return format_unified_tool_call_id_rust(step_id, type_part, tool_fragment)
 
 
 def is_unified_tool_call_id(tool_call_id: str) -> bool:
     """Return True when ``tool_call_id`` matches the canonical unified wire format."""
-    step_id, type_code, _, tool_info = parse_unified_tool_call_id(tool_call_id)
-    return bool(step_id and type_code in ("s", "t") and tool_info)
+    return is_unified_tool_call_id_rust(tool_call_id)
 
 
 def _shorten_tool_call_id(raw_tid: str) -> str:
@@ -99,13 +103,7 @@ def _shorten_tool_call_id(raw_tid: str) -> str:
     Accepts provider ids (``functions.grep:0``). Already-unified ids yield their
     tool fragment via :func:`parse_unified_tool_call_id`.
     """
-    tid = str(raw_tid).strip()
-    parsed_sid, type_code, _, tool_info = parse_unified_tool_call_id(tid)
-    if parsed_sid and type_code in ("s", "t") and tool_info:
-        return tool_info
-    if tid.startswith("functions."):
-        tid = tid[len("functions.") :]
-    return _provider_tool_fragment(tid)
+    return shorten_tool_call_id_rust(raw_tid)
 
 
 def normalize_unified_tool_call_id(tool_call_id: str) -> str:
@@ -148,33 +146,10 @@ def parse_unified_tool_call_id(tool_call_id: str) -> ParsedUnifiedToolCallId:
         Parsed components: step_id, type_code, task_idx, tool_info.
         Non-unified ids use empty step_id/type_code and preserve the raw id in tool_info.
     """
-    tid = str(tool_call_id).strip()
-    if not tid:
-        return ParsedUnifiedToolCallId.empty()
-
-    parts = tid.split(":")
-    if len(parts) < 3 or not _is_wire_step_fragment(parts[0]):
-        return ParsedUnifiedToolCallId.empty(tool_info=tid)
-
-    type_part = parts[1]
-    if type_part == "s":
-        type_code = "s"
-        task_idx: int | None = None
-    elif type_part.startswith("t") and len(type_part) > 1:
-        try:
-            task_idx = int(type_part[1:])
-        except ValueError:
-            return ParsedUnifiedToolCallId.empty(tool_info=tid)
-        type_code = "t"
-    else:
-        return ParsedUnifiedToolCallId.empty(tool_info=tid)
-
-    tool_info = _tool_info_from_unified_parts(parts)
-    if not tool_info:
-        return ParsedUnifiedToolCallId.empty(tool_info=tid)
-
-    step_id = _step_id_from_unified_fragment(parts[0])
-    return ParsedUnifiedToolCallId(step_id, type_code, task_idx, tool_info)
+    parsed = parse_unified_tool_call_id_rust(tool_call_id)
+    return ParsedUnifiedToolCallId(
+        parsed.step_id, parsed.type_code, parsed.task_idx, parsed.tool_info
+    )
 
 
 def is_step_level_task_tool_id(tool_call_id: str) -> bool:

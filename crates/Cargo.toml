@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "soothe-nano-core",
     "soothe-nano-utils",
     "soothe-nano-events",
     "soothe-nano-tokens",
@@ -11,6 +12,8 @@ members = [
     "soothe-nano-persist",
     "soothe-nano-filesystem",
     "soothe-nano-skills",
+    "soothe-nano-protocols",
+    "soothe-nano-diagnose",
     "soothe-nano-sys",
 ]
 

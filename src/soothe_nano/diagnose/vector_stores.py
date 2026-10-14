@@ -1,14 +1,18 @@
-"""Vector store backends diagnose checks."""
+"""Vector store backends diagnose checks.
+
+Delegates category aggregation to the Rust extension. Python retains the
+config inspection and import probing.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
+from soothe_nano._rust_compat import check_vector_stores_from_results_rust
 from soothe_nano.diagnose.models import (
     CategoryResult,
     CheckResult,
     CheckStatus,
-    aggregate_status,
 )
 
 
@@ -126,8 +130,12 @@ async def check_vector_stores(config: Any | None = None) -> CategoryResult:
         _check_weaviate(config),
         _check_sqlite_vec(config),
     ]
+    # Delegate category aggregation to Rust.
+    check_dicts = [c.to_dict() for c in checks]
+    result_dict = check_vector_stores_from_results_rust(check_dicts)
     return CategoryResult(
-        category="vector_stores",
-        status=aggregate_status([check.status for check in checks]),
+        category=result_dict["category"],
+        status=CheckStatus(result_dict["status"]),
         checks=checks,
+        message=result_dict.get("message"),
     )

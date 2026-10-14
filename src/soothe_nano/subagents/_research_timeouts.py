@@ -1,8 +1,12 @@
-"""Timeout helpers shared by research subagents."""
+"""Timeout helpers for research subagents."""
 
 from __future__ import annotations
 
 from typing import Any
+
+from soothe_nano._rust_compat import (
+    subagents_effective_source_timeout_rust,
+)
 
 _DEFAULT_WIZSEARCH_TIMEOUT_SEC = 30.0
 
@@ -29,4 +33,5 @@ def effective_source_timeout_sec(
                     wiz = float(raw)
                 except (TypeError, ValueError):
                     wiz = _DEFAULT_WIZSEARCH_TIMEOUT_SEC
-    return max(float(configured), wiz + float(slack_sec))
+
+    return subagents_effective_source_timeout_rust(configured, wiz, slack_sec)

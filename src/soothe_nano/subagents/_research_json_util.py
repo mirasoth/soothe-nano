@@ -1,9 +1,14 @@
-"""Shared JSON and query helpers for research subagents."""
+"""JSON utilities for research subagents."""
 
 from __future__ import annotations
 
 from typing import Any
 
+from soothe_nano._rust_compat import (
+    subagents_compact_search_query_rust,
+    subagents_fallback_queries_rust,
+    subagents_fallback_sub_questions_rust,
+)
 from soothe_nano.llm.response_text import llm_response_text, parse_json_object
 
 __all__ = [
@@ -17,20 +22,12 @@ __all__ = [
 
 def compact_search_query(raw: str, *, max_len: int = 120) -> str:
     """Reduce a long task prompt to a short search-engine query."""
-    text = (raw or "").strip()
-    for sep in ("\n\n", "\n1.", "\n2.", "\n请", "\nPlease", "\nUse ", "\n使用"):
-        if sep in text:
-            text = text.split(sep, 1)[0].strip()
-    text = " ".join(text.split())
-    if len(text) > max_len:
-        return text[: max_len - 1] + "…"
-    return text
+    return subagents_compact_search_query_rust(raw, max_len)
 
 
 def fallback_sub_questions(topic: str, *, domain: str = "public") -> list[dict[str, str]]:
     """Single sub-question derived from the research topic."""
-    _ = domain
-    return [{"question": compact_search_query(topic, max_len=200)}]
+    return subagents_fallback_sub_questions_rust(topic)
 
 
 def fallback_queries(
@@ -40,16 +37,4 @@ def fallback_queries(
     default_domain: str = "public",
 ) -> list[dict[str, str]]:
     """Build search queries from sub-questions or the topic."""
-    _ = default_domain
-    queries: list[dict[str, str]] = []
-    for sq in sub_questions or []:
-        if isinstance(sq, dict):
-            question = str(sq.get("question", "")).strip()
-        else:
-            question = str(sq).strip()
-        if not question:
-            continue
-        queries.append({"query": compact_search_query(question, max_len=120)})
-    if queries:
-        return queries
-    return [{"query": compact_search_query(topic, max_len=120)}]
+    return subagents_fallback_queries_rust(topic, sub_questions or [])

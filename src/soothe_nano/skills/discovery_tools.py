@@ -7,7 +7,7 @@ from pathlib import Path
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from soothe_nano._rust_compat import is_rust_available, rust_skill_discovery_new
+from soothe_nano._rust_compat import rust_skill_discovery_new
 
 
 class SearchSkillsInput(BaseModel):
@@ -79,8 +79,7 @@ def discover_skill_files(roots: list[str | Path]) -> list[tuple[str, str, str]] 
     ``SkillDiscovery.discover()`` which uses the ``ignore`` crate for
     recursive ``.md`` file walking with hidden-file awareness.
     """
-    if is_rust_available():
-        discovery = rust_skill_discovery_new([str(r) for r in roots])
-        if discovery is not None:
-            return list(discovery.discover())
+    discovery = rust_skill_discovery_new([str(r) for r in roots])
+    if discovery is not None:
+        return list(discovery.discover())
     return None

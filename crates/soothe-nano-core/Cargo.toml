@@ -1,0 +1,12 @@
+[package]
+name = "soothe-nano-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core domain models: verbosity tiers, event priorities, type constants, domain classification (ported from core/)"
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

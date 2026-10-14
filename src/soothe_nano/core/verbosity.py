@@ -8,11 +8,17 @@ Earlier revisions had a five-level ladder (QUIET / NORMAL / DETAILED / DEBUG /
 INTERNAL). That granularity was never exercised — the wire ceiling and the TUI
 gate were both hardcoded to "normal", so the only effective distinction was
 visible-vs-hidden. The tiers collapsed accordingly.
+
+Pure-logic portions (tier values, ``should_show``) are delegated to the Rust
+``core`` crate via ``_rust_compat``; the Python ``IntEnum`` remains for
+ergonomic use across the SDK.
 """
 
 from __future__ import annotations
 
 from enum import IntEnum
+
+from soothe_nano._rust_compat import should_show_rust
 
 
 class VerbosityTier(IntEnum):
@@ -40,6 +46,9 @@ def should_show(tier: VerbosityTier) -> bool:
     Returns:
         True iff `tier` is `NORMAL`.
     """
+    rust = should_show_rust(int(tier))
+    if rust is not None:
+        return rust
     return tier == VerbosityTier.NORMAL
 
 

@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypeVar
 
-from soothe_nano._rust_compat import is_rust_available, rust_sqlite_store_new
+from soothe_nano._rust_compat import rust_sqlite_store_new
 from soothe_nano.config.models import SqliteRuntimeConfig
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class SqliteStoreRuntime:
         # Rust fast-path for simple KV ops (file-based DBs only; :memory:
         # cannot be shared across the separate Rust SQLite connection).
         self._rust_store: Any = None
-        if is_rust_available() and not self._is_memory:
+        if not self._is_memory:
             try:
                 self._rust_store = rust_sqlite_store_new(str(self.db_path))
             except Exception:

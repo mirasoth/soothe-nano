@@ -11,19 +11,23 @@ Each logical database may provide:
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from soothe_nano._rust_compat import (
+    advisory_lock_key_rust,
+    parse_migration_filename_rust,
+    split_sql_statements_rust,
+)
+
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
 
 logger = logging.getLogger(__name__)
 
-_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 _MIGRATION_FILENAME = re.compile(r"^(\d{3})_(.+)\.sql$")
 _INIT_FILENAME = "init.sql"
 
@@ -62,14 +66,7 @@ def split_sql_statements(sql: str) -> list[str]:
     Returns:
         Non-empty statements in file order.
     """
-    without_blocks = _BLOCK_COMMENT.sub("", sql)
-    lines: list[str] = []
-    for line in without_blocks.splitlines():
-        if "--" in line:
-            line = line.split("--", 1)[0]
-        lines.append(line)
-    merged = "\n".join(lines)
-    return [part.strip() for part in merged.split(";") if part.strip()]
+    return split_sql_statements_rust(sql)
 
 
 def init_script_path(database: str, *, sql_root: Path | None = None) -> Path:
@@ -115,11 +112,16 @@ def discover_versioned_scripts(
     for path in sorted(script_dir.glob("*.sql")):
         if path.name == _INIT_FILENAME:
             continue
-        match = _MIGRATION_FILENAME.match(path.name)
-        if not match:
-            msg = f"Invalid migration filename (expected NNN_name.sql or init.sql): {path.name}"
-            raise ValueError(msg)
-        version, name = match.groups()
+        # Parse migration filename via Rust
+        rust_parsed = parse_migration_filename_rust(path.name)
+        if rust_parsed is not None:
+            version, name = rust_parsed
+        else:
+            match = _MIGRATION_FILENAME.match(path.name)
+            if not match:
+                msg = f"Invalid migration filename (expected NNN_name.sql or init.sql): {path.name}"
+                raise ValueError(msg)
+            version, name = match.groups()
         sql = path.read_text(encoding="utf-8").strip()
         if not sql:
             msg = f"Migration script is empty: {path}"
@@ -137,8 +139,7 @@ def discover_versioned_scripts(
 
 def _advisory_lock_key(database: str) -> int:
     """Stable 63-bit advisory lock id per logical database."""
-    digest = hashlib.sha256(database.encode("utf-8")).digest()
-    return int.from_bytes(digest[:8], "big") & 0x7FFF_FFFF_FFFF_FFFF
+    return advisory_lock_key_rust(database)
 
 
 async def _execute_statements_async(conn: object, statements: list[str]) -> None:

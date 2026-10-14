@@ -9,7 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from soothe_nano._rust_compat import is_rust_available, rust_rate_limiter_new
+from soothe_nano._rust_compat import (
+    rust_rate_limiter_new,
+    rust_sliding_window_rate_limiter_new,
+)
 from soothe_nano.workspace.workspace_paths import join_workspace_normalized_path
 
 from .path_security import PathValidator, ValidationSeverity
@@ -44,14 +47,24 @@ class OperationRecord:
 
 
 class RateLimiter:
-    """Rate limiter for filesystem operations."""
+    """Rate limiter for filesystem operations.
+
+    Delegates to the Rust ``SlidingWindowRateLimiter`` when the extension is
+    available (fast-path), falling back to the pure-Python sliding-window
+    implementation otherwise.
+    """
 
     def __init__(self, window_seconds: int = 60) -> None:
         self.window_seconds = window_seconds
+        self._rust_limiter: Any = rust_sliding_window_rate_limiter_new(window_seconds)
+        # Python fallback state (used only when Rust is unavailable).
         self.operations: defaultdict[str, list[float]] = defaultdict(list)
         self.path_operations: defaultdict[str, list[float]] = defaultdict(list)
 
     def record(self, operation: str, path: str) -> None:
+        if self._rust_limiter is not None:
+            self._rust_limiter.record(operation, path)
+            return
         now = time.time()
         self.operations[operation].append(now)
         self.path_operations[path].append(now)
@@ -62,6 +75,9 @@ class RateLimiter:
         max_count: int,
         path: str | None = None,
     ) -> tuple[bool, int]:
+        if self._rust_limiter is not None:
+            allowed, count = self._rust_limiter.check_rate(operation, max_count, path)
+            return allowed, count
         now = time.time()
         cutoff = now - self.window_seconds
         self.operations[operation] = [t for t in self.operations[operation] if t > cutoff]
@@ -77,6 +93,8 @@ class RateLimiter:
         return True, count
 
     def get_stats(self) -> dict[str, dict[str, int]]:
+        if self._rust_limiter is not None:
+            return self._rust_limiter.get_stats()
         now = time.time()
         cutoff = now - self.window_seconds
         return {
@@ -113,12 +131,14 @@ class SecurityEnforcer:
         # a reject-only short-circuit: when it denies, the Python sliding-window
         # limiter is skipped; when it allows, the Python limiter still runs to
         # apply its per-path semantics and audit stats.
-        self._rust_rate_limiter: Any = None
-        if enable_rate_limiting and is_rust_available():
-            self._rust_rate_limiter = rust_rate_limiter_new(
+        self._rust_rate_limiter: Any = (
+            rust_rate_limiter_new(
                 capacity=self.policy.max_operations_per_minute,
                 refill_per_minute=self.policy.max_operations_per_minute,
             )
+            if enable_rate_limiting
+            else None
+        )
         self.audit_log: list[OperationRecord] = []
         self.max_audit_entries = 10000
         logger.info(
@@ -390,7 +410,7 @@ class SecurityEnforcer:
         self.policy = policy
         self.validator = self._default_validator()
         # Rebuild the Rust token bucket to match the new policy's capacity.
-        if self.enable_rate_limiting and is_rust_available():
+        if self.enable_rate_limiting:
             self._rust_rate_limiter = rust_rate_limiter_new(
                 capacity=self.policy.max_operations_per_minute,
                 refill_per_minute=self.policy.max_operations_per_minute,

@@ -1,5 +1,6 @@
 //! Local filesystem operations: read, write, edit, grep, glob.
 
+pub mod discovery_hints;
 pub mod file_ops;
 pub mod glob;
 pub mod grep;
