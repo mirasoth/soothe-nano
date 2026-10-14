@@ -10,7 +10,6 @@ from __future__ import annotations
 from .exceptions import (
     DirectoryNotEmptyError,
     FilesystemError,
-    FileTooLargeError,
     InvalidPathError,
     NotADirectoryError,
     NotAFileError,
@@ -34,7 +33,6 @@ __all__ = [
     "PermissionDeniedError",
     "PathTraversalError",
     "InvalidPathError",
-    "FileTooLargeError",
     "DirectoryNotEmptyError",
     "NotADirectoryError",
     "NotAFileError",

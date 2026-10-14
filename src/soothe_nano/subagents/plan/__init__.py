@@ -22,7 +22,6 @@ from .engine import (  # noqa: F401 — register soothe.subagent.planner.* on im
 
 __all__ = [
     "PLANNER_READONLY_TOOL_NAMES",
-    "PlanPlugin",
     "PlanRefinement",
     "PlanSubagentConfig",
     "PlannerProgressEvent",

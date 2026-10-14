@@ -10,7 +10,6 @@ __all__ = [
     "LifecycleEvent",
     "ProtocolEvent",
     "SubagentEvent",
-    "OutputEvent",
     "ErrorEvent",
     # Event registry (canonical, shared across the stack)
     "EventMeta",
@@ -57,14 +56,11 @@ __all__ = [
     "ValidationError",
     "DependencyError",
     "InitializationError",
-    "ToolCreationError",
-    "SubagentCreationError",
     "ConfigurationError",
     # Types
     "VerbosityLevel",
     # Verbosity
     "VerbosityTier",
-    "should_show",
 ]
 
 from soothe_nano.core.events import (
@@ -97,7 +93,6 @@ from soothe_nano.core.events import (
     WIRED_SUBAGENT_STARTED,
     ErrorEvent,
     LifecycleEvent,
-    OutputEvent,
     ProtocolEvent,
     SootheEvent,
     SubagentEvent,
@@ -108,8 +103,6 @@ from soothe_nano.core.exceptions import (
     DiscoveryError,
     InitializationError,
     PluginError,
-    SubagentCreationError,
-    ToolCreationError,
     ValidationError,
 )
 from soothe_nano.core.registry import (
@@ -121,4 +114,4 @@ from soothe_nano.core.registry import (
     register_event,
 )
 from soothe_nano.core.types import VerbosityLevel
-from soothe_nano.core.verbosity import VerbosityTier, should_show
+from soothe_nano.core.verbosity import VerbosityTier

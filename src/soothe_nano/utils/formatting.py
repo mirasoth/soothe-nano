@@ -89,12 +89,8 @@ def convert_and_abbreviate_path(path: str, base_dir: str | None = None) -> str:
     return str(p)
 
 
-# Re-export get_tool_display_name from tools.metadata (canonical registry)
-from soothe_nano.tools.metadata import get_tool_display_name  # noqa: E402, F401, I001 -- re-export after code
-
 __all__ = [
     "format_cli_error",
     "log_preview",
     "convert_and_abbreviate_path",
-    "get_tool_display_name",
 ]

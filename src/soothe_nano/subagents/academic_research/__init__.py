@@ -12,7 +12,6 @@ from .protocol import AcademicResearchConfig, GatherContext, SourceResult
 
 __all__ = [
     "AcademicResearchConfig",
-    "AcademicResearchPlugin",
     "GatherContext",
     "SourceResult",
     "create_academic_research_subagent",

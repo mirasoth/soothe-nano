@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from soothe_nano.config import SootheConfig
 
-from ._resolver_infra import resolve_checkpointer, resolve_durability
+from ._resolver_infra import resolve_checkpointer
 from ._resolver_tools import (
     SUBAGENT_FACTORIES,
     resolve_subagents,
@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "SUBAGENT_FACTORIES",
     "resolve_checkpointer",
-    "resolve_durability",
     "resolve_memory",
     "resolve_planner",
     "resolve_policy",
