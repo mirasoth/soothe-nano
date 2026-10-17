@@ -94,10 +94,11 @@ class TestApplyDiffUpstreamContract:
         assert module.ApplyDiffSchema is ApplyDiffSchema
 
     def test_daemon_startup_import_chain_resolves(self) -> None:
-        """Mirror the runner -> resolver -> file_ops_catalog import chain."""
-        catalog = importlib.import_module("soothe_nano.toolkits.file_ops_catalog")
-        assert catalog.SootheFilesystemMiddleware is SootheFilesystemMiddleware
-        assert "apply_diff" in catalog.SURGICAL_FILE_OP_TOOL_NAMES
+        """Mirror the runner -> resolver -> filesystem_tools import chain."""
+        fs_tools = importlib.import_module("soothe_nano.toolkits.filesystem_tools")
+        assert fs_tools.SootheFilesystemMiddleware is SootheFilesystemMiddleware
+        interaction_mode = importlib.import_module("soothe_nano.agent.interaction_mode")
+        assert "apply_diff" in interaction_mode.FILESYSTEM_TOOLS_SANDBOX
 
     def test_pyproject_requires_deepagents_with_apply_diff(self) -> None:
         """Keep soothe-deepagents floor at the ApplyDiffSchema release."""

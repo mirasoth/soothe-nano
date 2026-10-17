@@ -143,7 +143,7 @@ def test_filesystem_virtual_mode_from_soothe_config() -> None:
 def test_resolve_file_ops_file_info_virtual_path_with_soothe_config(tmp_path: Path) -> None:
     """Resolver-built file_ops tools use ``virtual_mode`` from ``SootheConfig``."""
     from soothe_nano.config.settings import SootheConfig
-    from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
+    from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
     wdir = tmp_path / "agent_ws"
     wdir.mkdir()
@@ -153,31 +153,12 @@ def test_resolve_file_ops_file_info_virtual_path_with_soothe_config(tmp_path: Pa
     cfg.filesystem_middleware.workspace_root = str(wdir)
     cfg.security.allow_paths_outside_workspace = False
 
-    tools = _resolve_single_tool_group_uncached("file_ops", config=cfg)
+    tools = _resolve_single_tool_group_uncached("file_info", config=cfg)
     file_info = next(t for t in tools if t.name == "file_info")
     out = file_info.func(path="/marks.csv", runtime=_tool_runtime())
     assert out is not None
     assert "File not found" not in out.content
     assert "marks.csv" in out.content or "bytes" in out.content.lower()
-
-
-def test_get_data_info_resolves_virtual_path(tmp_path: Path) -> None:
-    """Data toolkit resolves virtual paths when ``SootheConfig`` is set."""
-    from soothe_nano.config.settings import SootheConfig
-    from soothe_nano.toolkits.data import GetDataInfoTool
-
-    wdir = tmp_path / "agent_ws"
-    wdir.mkdir()
-    (wdir / "data.csv").write_text("x\n")
-
-    cfg = SootheConfig()
-    cfg.filesystem_middleware.workspace_root = str(wdir)
-    cfg.security.allow_paths_outside_workspace = False
-
-    tool = GetDataInfoTool(config=cfg)
-    out = tool.invoke({"file_path": "/data.csv"})
-    assert "File not found" not in out
-    assert "data.csv" in out or "Size" in out
 
 
 def test_soothe_filesystem_middleware_uses_workspace_relative_artifact_prefix(

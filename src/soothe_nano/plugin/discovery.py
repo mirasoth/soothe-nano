@@ -173,22 +173,15 @@ def discover_all_plugins(
     discovered: dict[str, tuple[str, dict, PluginDiscoverySource]] = {}
 
     # Built-in plugins must use ``module:ClassName`` — PluginLoader rejects bare paths.
-    # Do not list removed/never-shipped toolkits (goals, audio, video).
+    # Do not list removed/never-shipped toolkits (goals, audio, video, data, image).
     _builtin_plugins: list[tuple[str, str]] = [
         ("planner", "soothe_nano.subagents.plan:PlanPlugin"),
         ("deep_research", "soothe_nano.subagents.deep_research:DeepResearchPlugin"),
-        (
-            "academic_research",
-            "soothe_nano.subagents.academic_research:AcademicResearchPlugin",
-        ),
         ("browser_use", "soothe_nano.subagents.browser_use:BrowserUsePlugin"),
-        ("execution", "soothe_nano.toolkits.execution:ExecutionPlugin"),
-        ("file_ops", "soothe_nano.toolkits.file_ops:FileOpsPlugin"),
-        ("data", "soothe_nano.toolkits.data:DataPlugin"),
+        ("shell", "soothe_nano.toolkits.shell:ShellPlugin"),
         ("datetime", "soothe_nano.toolkits.datetime:DatetimePlugin"),
         ("wizsearch", "soothe_nano.toolkits.wizsearch:WizsearchPlugin"),
         ("http_requests", "soothe_nano.toolkits.http_requests:HttpRequestsPlugin"),
-        ("image", "soothe_nano.toolkits.image:ImagePlugin"),
     ]
     for plugin_name, module_path in _builtin_plugins:
         discovered[plugin_name] = (module_path, {}, "built-in")

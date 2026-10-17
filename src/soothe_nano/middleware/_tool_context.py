@@ -34,23 +34,15 @@ BUILTIN_TOOL_TRIGGERS: dict[str, list[str]] = {
     "run_background": ["WORKSPACE"],
     "kill_process": [],
     # Web tools
-    "search_web": [],  # No workspace dependency
-    "crawl_web": [],
+    "wizsearch_search": [],  # No workspace dependency
+    "wizsearch_crawl": [],
     "requests_get": [],
     "requests_post": [],
     "requests_patch": [],
     "requests_put": [],
     "requests_delete": [],
-    # Data tools
-    "inspect_data": ["WORKSPACE"],
-    "summarize_data": ["WORKSPACE"],
-    "check_data_quality": ["WORKSPACE"],
-    "extract_text": ["WORKSPACE"],
-    "get_data_info": ["WORKSPACE"],
-    "ask_about_file": ["WORKSPACE"],
-    # Subagents (task tool targets — core: plan, deep_research, academic_research; plugins add more)
+    # Subagents (task tool targets — core: plan, deep_research; plugins add more)
     "deep_research": ["DEEP_RESEARCH_RULES", "context"],
-    "academic_research": ["ACADEMIC_RESEARCH_RULES", "context"],
     # Datetime
     "datetime": [],
 }

@@ -30,7 +30,7 @@ from soothe_nano.llm.structured import invoke_structured_chat_typed
 from soothe_nano.utils.progress import emit_progress
 from soothe_nano.utils.subagent_emit import emit_subagent_wire_event
 from soothe_nano.utils.text_preview import log_preview
-from soothe_nano.ux.stream_tool_wire import STREAM_TOOL_CALL_UPDATE
+from soothe_nano.wire.stream_tool_wire import STREAM_TOOL_CALL_UPDATE
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -123,11 +123,19 @@ register_event(
 # ---------------------------------------------------------------------------
 
 
-def get_planner_readonly_tools(workspace: str | None = None) -> list[Any]:
+def get_planner_readonly_tools(
+    workspace: str | None = None,
+    *,
+    backend: Any | None = None,
+) -> list[Any]:
     """Build the planner recon tool surface (no write/edit/delete/execute).
 
     Args:
-        workspace: Workspace root; defaults to the process cwd.
+        workspace: Workspace root; defaults to ``backend.workspace_root`` or
+            the process cwd (host mode).
+        backend: Optional injected backend (sandbox mode: the guest backend).
+            When omitted, a host-side ``FilesystemBackend`` over ``workspace``
+            is constructed.
 
     Returns:
         Ordered langchain tool instances present on ``SootheFilesystemMiddleware``.
@@ -136,8 +144,9 @@ def get_planner_readonly_tools(workspace: str | None = None) -> list[Any]:
 
     from soothe_nano.middleware.filesystem import SootheFilesystemMiddleware
 
-    root = workspace or os.getcwd()
-    backend = FilesystemBackend(root_dir=Path(root), virtual_mode=False)
+    root = workspace or getattr(backend, "workspace_root", None) or os.getcwd()
+    if backend is None:
+        backend = FilesystemBackend(root_dir=Path(root), virtual_mode=False)
     middleware = SootheFilesystemMiddleware(
         backend=backend,
         backup_enabled=False,
@@ -167,16 +176,31 @@ def create_plan_subagent(
         model: Primary chat model for proposal-design loops (resolver passes
             ``subagents.planner.model`` when set, else ``model_role``, default ``think``).
         config: Soothe configuration.
-        context: Optional resolver context (``work_dir`` / ``workspace``).
+        context: Optional resolver context (``work_dir`` / ``workspace``;
+            ``sandbox_backend`` threads the sandbox backend for recon tools).
 
     Returns:
         Dict with ``name``, ``description``, and ``runnable`` graph.
     """
     workspace = str(context.get("work_dir") or context.get("workspace") or "").strip() or None
+    sandbox_backend = context.get("sandbox_backend")
+    if sandbox_backend is not None:
+        # Sandbox mode: recon targets the guest workspace root, not the
+        # host-resolved work_dir (RFC §7.2-7).
+        guest_default = getattr(sandbox_backend, "default", sandbox_backend)
+        guest_root = getattr(guest_default, "workspace_root", None)
+        if guest_root:
+            workspace = str(guest_root)
     sub_cfg = config.subagents.get("planner", SubagentConfig())
     plan_opts = PlanSubagentConfig(**sub_cfg.config)
 
-    runnable = build_plan_engine(model, plan_opts, soothe_config=config, workspace=workspace)
+    runnable = build_plan_engine(
+        model,
+        plan_opts,
+        soothe_config=config,
+        workspace=workspace,
+        backend=sandbox_backend,
+    )
 
     return {
         "name": "planner",
@@ -379,8 +403,18 @@ def build_plan_engine(
     *,
     soothe_config: Any | None = None,
     workspace: str | None = None,
+    backend: Any | None = None,
 ) -> Any:
-    """Compile the plan subagent graph."""
+    """Compile the plan subagent graph.
+
+    Args:
+        model: Chat model for proposal-design loops.
+        plan_config: Planner options.
+        soothe_config: Soothe configuration (LLM invoke policy).
+        workspace: Workspace root for recon tools (host default: cwd).
+        backend: Optional injected backend — recon tools bind to it
+            (sandbox mode threads the composite sandbox backend).
+    """
     from soothe_nano.llm.invoke_policy import (
         await_with_llm_call_policy,
         llm_rate_limit_config_from,
@@ -388,7 +422,7 @@ def build_plan_engine(
 
     llm_policy = llm_rate_limit_config_from(soothe_config)
     tools = (
-        get_planner_readonly_tools(workspace)
+        get_planner_readonly_tools(workspace, backend=backend)
         if plan_config.enable_recon and plan_config.max_recon_rounds > 0
         else []
     )

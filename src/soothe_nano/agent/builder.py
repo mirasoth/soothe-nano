@@ -14,8 +14,10 @@ from soothe_nano.agent.interaction_mode import (
     FILESYSTEM_TOOLS_AGENT,
     FILESYSTEM_TOOLS_ASK,
     FILESYSTEM_TOOLS_PLAN,
+    FILESYSTEM_TOOLS_SANDBOX,
     PLAN_POLICY_PROFILE,
     READONLY_GP_SYSTEM_PROMPT,
+    SANDBOX_EXCLUDED_TOOL_GROUPS,
     InteractionMode,
     append_ask_system_prompt,
     append_bypass_system_prompt,
@@ -29,7 +31,7 @@ from soothe_nano.agent.interaction_mode import (
 from soothe_nano.config import SootheConfig
 from soothe_nano.middleware import build_soothe_middleware_stack
 from soothe_nano.protocols.core_agent import CoreAgentCapabilities
-from soothe_nano.resolve import (
+from soothe_nano.utils.resolver import (
     resolve_memory,
     resolve_planner,
     resolve_policy,
@@ -51,6 +53,7 @@ if TYPE_CHECKING:
     from soothe_nano.protocols.memory import MemoryProtocol
     from soothe_nano.protocols.planner import PlannerProtocol
     from soothe_nano.protocols.policy import PolicyProtocol
+    from soothe_nano.sandbox.placement import ToolPlacementReport
 
 from langchain_core.language_models import BaseChatModel  # noqa: E402
 
@@ -123,12 +126,27 @@ class AgentBuilder:
 
         self._load_plugins()
 
+        # Backend resolution must precede tool resolution: a sandbox backend
+        # rebinds the shell tool group and rewrites the FS surface below.
+        resolved_backend = backend or self._initialize_backend(resolved_policy)
+        sandbox_backend = self._extract_sandbox_backend(resolved_backend)
+        if sandbox_backend is not None:
+            resolved_backend = self._wrap_sandbox_backend(
+                sandbox_backend, resolved_backend, resolved_policy
+            )
+
         tools_start = time.perf_counter()
+        excluded_groups: set[str] = set()
+        if is_readonly:
+            excluded_groups |= set(ASK_MUTATING_TOOL_GROUPS)
+        if sandbox_backend is not None:
+            excluded_groups |= set(SANDBOX_EXCLUDED_TOOL_GROUPS)
         config_tools = resolve_tools(
             self._config.tools,
             lazy=True,
             config=self._config,
-            exclude_tool_groups=ASK_MUTATING_TOOL_GROUPS if is_readonly else None,
+            exclude_tool_groups=excluded_groups or None,
+            sandbox_backend=sandbox_backend,
         )
         all_tools: list[BaseTool | Callable | dict[str, Any]] = list(config_tools)
         if tools:
@@ -166,6 +184,13 @@ class AgentBuilder:
             all_tools.append(create_search_skills_tool())
             all_tools.append(create_invoke_skill_tool())
 
+        if sandbox_backend is not None:
+            # Placement finalization (RFC §7.5.4): every tool gets a placement;
+            # deny'd tools never register (fail-closed), shuttle tools are
+            # wrapped for guest-path byte transfer.
+            self._resolved_backend = resolved_backend
+            all_tools = self._finalize_tool_placements(all_tools)
+
         tools_ms = (time.perf_counter() - tools_start) * 1000
         logger.info("[Init] Tools resolved: %d tools (%.1fms)", len(all_tools), tools_ms)
 
@@ -174,6 +199,9 @@ class AgentBuilder:
             self._config,
             default_model=default_model_instance,
             lazy=True,
+            # RFC §7.2-7: the planner's recon tools bind to the composite
+            # sandbox backend so readonly recon sees the guest workspace.
+            sandbox_backend=resolved_backend if sandbox_backend is not None else None,
         )
         all_subagents: list[SubAgent | CompiledSubAgent] = list(config_subagents)
         if subagents:
@@ -183,8 +211,6 @@ class AgentBuilder:
         logger.info(
             "[Init] Subagents resolved: %d agents (%.1fms)", len(all_subagents), subagents_ms
         )
-
-        resolved_backend = backend or self._initialize_backend(resolved_policy)
 
         policy_profile = (
             ASK_POLICY_PROFILE
@@ -235,16 +261,35 @@ class AgentBuilder:
         elif is_bypass:
             system_prompt = append_bypass_system_prompt(system_prompt)
 
-        filesystem_tools = (
-            FILESYSTEM_TOOLS_ASK
-            if is_ask
-            else (FILESYSTEM_TOOLS_PLAN if is_plan else FILESYSTEM_TOOLS_AGENT)
-        )
-        fs_permissions = (
-            ask_permissions()
-            if is_ask
-            else (plan_permissions() if is_plan else (bypass_permissions() if is_bypass else None))
-        )
+        if sandbox_backend is not None:
+            # Guest FS surface: agent/bypass get the extended list (line-edit
+            # family included); readonly modes keep the read-only allowlist.
+            # Permissions are dropped entirely: FilesystemMiddleware refuses
+            # non-empty permission lists on execution-capable backends whose
+            # paths do not all fall inside the composite routes, so readonly
+            # enforcement relies on the tool allowlist alone.
+            filesystem_tools = FILESYSTEM_TOOLS_ASK if is_readonly else FILESYSTEM_TOOLS_SANDBOX
+            fs_permissions = None
+            if is_ask or is_plan or is_bypass:
+                logger.warning(
+                    "[Init] Sandbox backend active in %s mode: fs write-deny permissions "
+                    "dropped (unsupported on sandbox backends); readonly enforcement "
+                    "falls back to the tool allowlist.",
+                    mode,
+                )
+        else:
+            filesystem_tools = (
+                FILESYSTEM_TOOLS_ASK
+                if is_ask
+                else (FILESYSTEM_TOOLS_PLAN if is_plan else FILESYSTEM_TOOLS_AGENT)
+            )
+            fs_permissions = (
+                ask_permissions()
+                if is_ask
+                else (
+                    plan_permissions() if is_plan else (bypass_permissions() if is_bypass else None)
+                )
+            )
 
         def _compile_deep_agent(cp: Checkpointer | None) -> Any:
             gp_mode = self._config.agent.runtime.general_purpose_subagent
@@ -263,7 +308,7 @@ class AgentBuilder:
 
                 gp_profile = GeneralPurposeSubagentProfile(
                     filesystem_tools=list(FILESYSTEM_TOOLS_ASK),
-                    permissions=ask_permissions(),
+                    permissions=ask_permissions() if sandbox_backend is None else [],
                     description=(
                         "Read-only research subagent for inspecting the workspace, searching "
                         "for files and content, and gathering context without modifying files."
@@ -295,7 +340,7 @@ class AgentBuilder:
                     "middleware": [
                         FilesystemMiddleware(
                             backend=resolved_backend,
-                            _permissions=ask_permissions(),
+                            _permissions=ask_permissions() if sandbox_backend is None else None,
                             tools=list(FILESYSTEM_TOOLS_ASK),
                         ),
                     ],
@@ -352,6 +397,7 @@ class AgentBuilder:
             metadata={
                 "runtime_kind": "coding",
                 "interaction_mode": mode,
+                "sandbox": sandbox_backend is not None,
                 "tool_count": len(all_tools),
                 "subagent_count": len(graph_subagents),
             },
@@ -505,6 +551,140 @@ class AgentBuilder:
             config=self._config,
             policy=policy,
         )
+
+    @staticmethod
+    def _extract_sandbox_backend(backend: Any) -> Any:
+        """Return the guest-execution backend, unwrapping ``CompositeBackend``.
+
+        A ``CompositeBackend`` exposes its default (the sandbox) as
+        ``.default``; a bare sandbox backend is returned unchanged. Returns
+        ``None`` for host-only backends (no sandbox execution mode).
+        """
+        from soothe_deepagents.backends.protocol import SandboxBackendProtocol
+
+        candidate = getattr(backend, "default", backend)
+        return candidate if isinstance(candidate, SandboxBackendProtocol) else None
+
+    def _wrap_sandbox_backend(
+        self,
+        sandbox_backend: Any,
+        passed_backend: Any,
+        policy: PolicyProtocol | None,
+    ) -> Any:
+        """Route framework state (``/memories``, ``/.soothe``) to the host.
+
+        A bare sandbox backend passed by the caller is wrapped so memory and
+        framework state survive sandbox teardown; a composite assembled by
+        the caller is trusted as-is.
+
+        Framework-state prefixes cover the upstream middleware defaults
+        (verified: ``FilesystemMiddleware`` resolves them to absolute
+        ``/large_tool_results`` and ``/conversation_history`` under an
+        execution-capable backend). The host backend's virtual-root
+        semantics map every routed prefix to ``<host-workspace>/...``,
+        exactly like non-sandbox mode. Guest-space paths such as
+        ``/workspace/.soothe/background/bg-*.log`` intentionally fall
+        through to the sandbox default.
+        """
+        from soothe_deepagents.backends.composite import CompositeBackend
+
+        if passed_backend is not sandbox_backend:
+            return passed_backend
+        host_backend = self._initialize_backend(policy)
+        return CompositeBackend(
+            default=sandbox_backend,
+            routes={
+                "/memories": host_backend,
+                "/.soothe": host_backend,
+                "/large_tool_results": host_backend,
+                "/conversation_history": host_backend,
+            },
+        )
+
+    _SANDBOX_HOST_INFRA_TOOL_NAMES = frozenset(
+        {
+            # Catalog/listing tools: pure metadata over the host tool
+            # registry — no filesystem or execution reach.
+            "search_tools",
+            "search_skills",
+            "invoke_skill",
+            "search_mcp_tools",
+            "mcp_resources_list",
+        }
+    )
+    """Host-placement infra tools allowed in sandbox mode by name."""
+
+    def _finalize_tool_placements(self, all_tools: list[Any]) -> list[Any]:
+        """Assign a placement to every tool (RFC §7.5.3/7.5.4).
+
+        Resolution order per tool: config ``placement_overrides`` > explicit
+        declaration (``@tool(placement=...)`` / ``ToolMeta.placement``) >
+        default derivation table > ``deny`` (registry miss, fail-closed).
+        ``deny`` tools drop or raise per ``sandbox.on_deny``; ``shuttle``
+        tools are wrapped with the guest byte-transfer adapter. The full
+        report is kept on ``self.placement_report`` for tests and logs.
+        """
+        from soothe_nano.sandbox.placement import (
+            PLACEMENT_DENY,
+            PLACEMENT_SHUTTLE,
+            ToolPlacementReport,
+            resolve_placement,
+            wrap_shuttle_tool,
+        )
+
+        sandbox_cfg = self._config.sandbox
+        placements: dict[str, str] = {}
+        kept: list[Any] = []
+        dropped: list[str] = []
+        for tool in all_tools:
+            name = self._tool_name(tool)
+            placement = resolve_placement(name, tool=tool, config=self._config)
+            placements[name] = placement
+            if placement == PLACEMENT_DENY:
+                dropped.append(name)
+                continue
+            if placement == PLACEMENT_SHUTTLE:
+                tool = wrap_shuttle_tool(tool, backend=self._resolved_backend, config=self._config)
+            kept.append(tool)
+
+        self._placement_report = ToolPlacementReport(
+            placements=placements, dropped=tuple(sorted(set(dropped)))
+        )
+        logger.info(
+            "[Init] Tool placements: %s",
+            ", ".join(f"{n}={p}" for n, p in sorted(placements.items())),
+        )
+
+        if not dropped:
+            return kept
+        if sandbox_cfg.on_deny == "drop":
+            logger.warning(
+                "[Init] Sandbox mode: dropping tools without a declared placement: %s",
+                ", ".join(sorted(set(dropped))),
+            )
+            return kept
+        msg = (
+            "Sandbox mode refuses tools without a declared placement: "
+            f"{', '.join(sorted(set(dropped)))}. Declare one via @tool(placement=...), "
+            "ToolMeta.placement, or config.sandbox.placement_overrides; "
+            "or set sandbox.on_deny='drop' to remove them instead."
+        )
+        raise ValueError(msg)
+
+    @property
+    def placement_report(self) -> ToolPlacementReport | None:
+        """Placement decisions from the last sandbox-mode build, if any."""
+        return getattr(self, "_placement_report", None)
+
+    @staticmethod
+    def _tool_name(tool: Any) -> str:
+        """Best-effort model-visible name for BaseTool / callable / dict specs."""
+        name = getattr(tool, "name", None)
+        if name:
+            return str(name)
+        if isinstance(tool, dict):
+            return str(tool.get("name", ""))
+        return str(getattr(tool, "__name__", "") or "")
 
 
 def create_nano_agent(

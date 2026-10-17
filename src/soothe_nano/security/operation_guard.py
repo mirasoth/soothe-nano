@@ -336,7 +336,7 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         `kill 12345` against the live daemon / self / parent.
         """
         # Lazy import avoids a cycle: execution.py imports this module.
-        from soothe_nano.toolkits.execution import _protected_kill_refusal
+        from soothe_nano.toolkits.shell import _protected_kill_refusal
 
         for match in _KILL_INVOCATION_RE.finditer(command):
             for pid in self._pids_from_kill_args(match.group("args") or ""):
@@ -403,7 +403,7 @@ def build_operation_security_request(
             operation_kind = "filesystem_write"
         else:
             operation_kind = "filesystem_read"
-    elif meta and meta.category == "execution":
+    elif meta and meta.category == "shell":
         command_value = tool_args.get("command") or tool_args.get("cmd")
         if command_value is not None:
             command = str(command_value)

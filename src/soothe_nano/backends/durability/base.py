@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from soothe_nano.backends.persistence import AsyncPersistStore
 from soothe_nano.protocols.durability import ThreadFilter, ThreadInfo, ThreadMetadata
-from soothe_nano.utils.thread_id import generate_thread_id
 
 
 class BasePersistStoreDurability:
@@ -51,7 +51,7 @@ class BasePersistStoreDurability:
         """
         now = datetime.now(tz=UTC)
         info = ThreadInfo(
-            thread_id=thread_id or generate_thread_id(),
+            thread_id=thread_id or str(uuid.uuid4()),
             status="active",
             created_at=now,
             updated_at=now,

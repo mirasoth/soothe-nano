@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextvars import Token
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, NotRequired
 
 from langchain.agents.middleware.types import AgentMiddleware, ContextT, ModelRequest, ModelResponse
@@ -17,9 +18,9 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from soothe_nano.config import SootheConfig
-    from soothe_nano.intention.models import RoutingClassification
     from soothe_nano.middleware._tool_context import ToolContextRegistry, ToolTriggerRegistry
     from soothe_nano.protocols.memory import MemoryItem
+    from soothe_nano.protocols.routing import RoutingClassification
 
 logger = logging.getLogger(__name__)
 
@@ -388,7 +389,13 @@ class SystemPromptMiddleware(AgentMiddleware):
         if env_section is None:
             env_section = self._build_environment_section()
 
-        workspace = self._resolve_workspace_for_prompt(state)
+        # modify_request already resolved the workspace into state on this
+        # request; only fall back to the full resolution chain when absent.
+        workspace = state.get("workspace") if state else None
+        if isinstance(workspace, str) and workspace.strip():
+            workspace = str(Path(workspace.strip()))
+        else:
+            workspace = self._resolve_workspace_for_prompt(state)
 
         # ── Static prelude (behavioral core; workspace blocks live at tail) ─
         # Block order:
@@ -416,11 +423,18 @@ class SystemPromptMiddleware(AgentMiddleware):
 
         # ── Gated static blocks ─────────────────────────────────────────
 
+        # Recent tool names feed three gated blocks below (memory triggers,
+        # protocol triggers, per-tool context sections); extract once and
+        # derive trigger sections once.
+        recent_tools: list[str] = []
+        triggered: set[str] = set()
+        if state and (self._tool_trigger_registry or self._tool_context_registry):
+            recent_tools = self._extract_recent_tool_calls(state.get("messages", []))
+            if self._tool_trigger_registry:
+                triggered = self._tool_trigger_registry.get_triggered_sections(recent_tools)
+
         # Memory summary — long-term persona/preferences only
         if state and self._tool_trigger_registry:
-            messages = state.get("messages", [])
-            recent_tools = self._extract_recent_tool_calls(messages)
-            triggered = self._tool_trigger_registry.get_triggered_sections(recent_tools)
             memories = state.get("recalled_memories")
             if memories and "memory" in triggered:
                 static_sections.append(self._build_memory_section(memories))
@@ -438,7 +452,7 @@ class SystemPromptMiddleware(AgentMiddleware):
                 f"- Do NOT substitute or override this choice with a different subagent\n"
                 f"- The user selected {subagent_directive} for a specific reason and will be confused if you use a different one\n"
                 f"\n"
-                f"Do not use search_web, filesystem, shell, or other tools at the root agent — delegate "
+                f"Do not use wizsearch_search, filesystem, shell, or other tools at the root agent — delegate "
                 f"via '{_TASK_TOOL_NAME}' only. Provide a detailed task description in the tool call.\n"
                 f"</SUBAGENT_ROUTING_DIRECTIVE>"
             )
@@ -455,9 +469,6 @@ class SystemPromptMiddleware(AgentMiddleware):
 
         # Protocol summary (complex only)
         if complexity == "complex" and state and self._tool_trigger_registry:
-            messages = state.get("messages", [])
-            recent_tools = self._extract_recent_tool_calls(messages)
-            triggered = self._tool_trigger_registry.get_triggered_sections(recent_tools)
             if "PROTOCOLS" in triggered:
                 proto_section = self._build_protocols_section(state.get("protocol_summary", {}))
                 if proto_section:
@@ -465,8 +476,6 @@ class SystemPromptMiddleware(AgentMiddleware):
 
         # Tool-specific sections from context registry (semi-static)
         if state and self._tool_context_registry:
-            messages = state.get("messages", [])
-            recent_tools = self._extract_recent_tool_calls(messages)
             for tool_name in recent_tools:
                 tool_section = self._tool_context_registry.get_system_context(tool_name)
                 if tool_section:

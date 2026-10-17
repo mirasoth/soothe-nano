@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from soothe_nano.middleware.progressive_listing import ProgressiveListingMiddleware
     from soothe_nano.middleware.system_prompt import SystemPromptMiddleware
     from soothe_nano.middleware.tool_enforcement import ToolEnforcementMiddleware
-    from soothe_nano.middleware.tool_optimization_middleware import ToolOptimizationMiddleware
+    from soothe_nano.middleware.tool_optimization import ToolOptimizationMiddleware
     from soothe_nano.middleware.workspace_context import WorkspaceContextMiddleware
 
 __all__ = [
@@ -101,7 +101,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
         "ToolEnforcementMiddleware",
     ),
     "ToolOptimizationMiddleware": (
-        "soothe_nano.middleware.tool_optimization_middleware",
+        "soothe_nano.middleware.tool_optimization",
         "ToolOptimizationMiddleware",
     ),
     "WorkspaceContextMiddleware": (

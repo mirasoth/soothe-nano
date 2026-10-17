@@ -314,7 +314,7 @@ class SubagentConfig(BaseModel):
         default=None,
         description=(
             "Explicit ``provider:model`` override for subagents that support it "
-            "(``planner``, ``deep_research``, ``academic_research``). "
+            "(``planner``, ``deep_research``). "
             "Takes precedence over ``model_role``. ``browser_use`` uses ``model_role`` only."
         ),
     )
@@ -438,11 +438,11 @@ class ToolConfig(BaseModel):
     enabled: bool = True
 
 
-class ExecutionToolsConfig(ToolConfig):
-    """Configuration for host execution tools (run_command, run_background, etc.).
+class ShellToolsConfig(ToolConfig):
+    """Configuration for shell tools (run_command, run_python, run_background, etc.).
 
     Args:
-        enabled: Whether execution tools are bound to the agent.
+        enabled: Whether shell tools are bound to the agent.
         background_log_dir: Optional directory for `run_background` stdout/stderr logs.
             When null, logs go under `<workspace>/.soothe/background` or soothe home.
         background_log_retention_days: Prune `bg-*.log` older than this on spawn (0=off).
@@ -546,24 +546,39 @@ class ToolsConfig(BaseModel):
 
     Args:
         execution: Execution tools config (run_command, run_python, etc.).
-        file_ops: File operation tools config.
         datetime: DateTime tool config.
-        data: Data inspection tools config.
-        image: Image understanding tools config (`analyze_image`).
         wizsearch: Tarzi-backed multi-engine search/crawl tools config
             (tool names `wizsearch_*` kept for wire/config compatibility).
         http_requests: LangChain Requests toolkit (HTTP GET/POST/PATCH/PUT/DELETE).
         deepxiv: DeepXiv academic paper search tools (disabled by default).
     """
 
-    execution: ExecutionToolsConfig = Field(default_factory=ExecutionToolsConfig)
-    file_ops: ToolConfig = Field(default_factory=ToolConfig)
+    shell: ShellToolsConfig = Field(default_factory=ShellToolsConfig)
     datetime: ToolConfig = Field(default_factory=ToolConfig)
-    data: ToolConfig = Field(default_factory=ToolConfig)
-    image: ToolConfig = Field(default_factory=ToolConfig)
     wizsearch: WebSearchConfig = Field(default_factory=WebSearchConfig)
     http_requests: HttpRequestsToolsConfig = Field(default_factory=HttpRequestsToolsConfig)
     deepxiv: DeepxivToolsConfig = Field(default_factory=lambda: DeepxivToolsConfig(enabled=False))
+
+
+class SandboxConfig(BaseModel):
+    """Sandbox-mode tool placement policy (active only with a sandbox backend).
+
+    Args:
+        on_deny: Action for tools whose placement resolves to ``deny``
+            (registry miss with no declaration). "raise" (default,
+            fail-closed) aborts the build; "drop" removes them with a warning.
+        placement_overrides: Per-tool placement declarations by the operator,
+            e.g. ``{"analyze_image": "shuttle", "my_tool": "host"}``. Valid
+            values: protocol / guest / shuttle / host / deny. Overrides beat
+            explicit tool declarations and the default derivation table.
+        max_shuttle_bytes: Upper bound for a single ``shuttle`` transfer
+            (RFC §7.5.6); over-limit transfers error out instead of silently
+            shuttling large datasets.
+    """
+
+    on_deny: Literal["raise", "drop"] = Field(default="raise")
+    placement_overrides: dict[str, str] = Field(default_factory=dict)
+    max_shuttle_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
 
 
 class SqliteRuntimeConfig(BaseModel):
