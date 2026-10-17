@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from soothe_nano.subagents.research_wire import ResearchWireEmitter
+from soothe_nano.subagents.deep_research.wire import ResearchWireEmitter
 
 
 class _FakeProgress:
@@ -54,7 +54,7 @@ def test_research_wire_emitter_calls_subagent_emit(monkeypatch: Any) -> None:
         emitted.append(event)
 
     monkeypatch.setattr(
-        "soothe_nano.subagents.research_wire.emit_subagent_wire_event",
+        "soothe_nano.subagents.deep_research.wire.emit_subagent_wire_event",
         _capture,
     )
     emitter = ResearchWireEmitter(

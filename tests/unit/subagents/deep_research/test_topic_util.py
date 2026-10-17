@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from soothe_nano.subagents._research_topic_util import (
+from soothe_nano.subagents.deep_research.topic_util import (
     planned_research_topic,
     topic_without_attachments,
     ui_language_suffix,

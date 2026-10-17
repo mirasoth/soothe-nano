@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from soothe_nano.subagents._research_timeouts import effective_source_timeout_sec
 from soothe_nano.subagents.deep_research.protocol import DeepResearchConfig
+from soothe_nano.subagents.deep_research.timeouts import effective_source_timeout_sec
 
 
 def test_effective_source_timeout_covers_default_wizsearch() -> None:

@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolver dead code: unused `_resolve_postgres_checkpointer`/`_mask_dsn` (superseded by the shared checkpointer pool), `clear_tool_cache`/`get_cache_stats` (no callers in any repo), the fake parallel subagent branch, the never-supplied `LazySubagentRunnable(materialize=...)` parameter, and the unused dict-like methods on `SUBAGENT_FACTORIES` (`__getitem__`/`keys`/`items`/`__len__`).
 
 ### Changed
+- Folded the now-`deep_research`-only research helper modules into the `deep_research` package: `_research_json_util` merged into `deep_research.json_util` (was a pure re-export), `_research_timeouts` → `deep_research.timeouts`, `_research_topic_util` → `deep_research.topic_util`, `research_wire` → `deep_research.wire` (hard moves, no shims). Their unit tests moved to `tests/unit/subagents/deep_research/`.
 - `soothe_nano.resolve` is now the full public host-resolution API: `resolve_checkpointer` and `resolve_durability` are exported so hosts bind their own pools via public imports (previously only reachable through the private `_resolver_infra` module path).
 - Consolidated `soothe_nano.middleware` tool-* modules (9 → 5 files), zero behavior change; import `ToolCallArgsMiddleware` / `ToolResultStorageMiddleware` / `ToolResultEvictionMiddleware` from their new modules.
 - Renamed the `execution` tool group to `shell` (module, plugin, config key `tools.shell`, `ToolMeta.category`); tool names are unchanged.
