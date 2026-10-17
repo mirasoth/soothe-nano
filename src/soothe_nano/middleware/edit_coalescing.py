@@ -20,6 +20,8 @@ from langchain_core.messages import ToolMessage
 from soothe_deepagents.backends.edit_locks import FileEditLockRegistry
 from soothe_deepagents.backends.protocol import BatchedEditOperation
 
+from soothe_nano.middleware._scope import request_scope_id
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
@@ -265,10 +267,12 @@ class EditCoalescingMiddleware(AgentMiddleware):
         self._config = config or EditCoalescingConfig()
 
         self._detection_window_ms = self._config.detection_window_ms
-        self._pending_edits: dict[str, list[PendingEdit]] = {}
-        # Staging buffer: path -> list of (old_string, new_string, replace_all)
-        self._staging_buffer: dict[str, list[StringReplacement]] = {}
-        self._window_task: asyncio.Task[None] | None = None
+        # Per-scope (thread_id:checkpoint_ns) pending state: concurrent graph
+        # threads share this middleware instance and must not co-mingle edits.
+        self._pending_edits: dict[str, dict[str, list[PendingEdit]]] = {}
+        # Staging buffer: scope -> (path -> list of (old_string, new_string, replace_all))
+        self._staging_buffer: dict[str, dict[str, list[StringReplacement]]] = {}
+        self._window_tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
         self._lock_registry = lock_registry or FileEditLockRegistry()
 
@@ -336,6 +340,7 @@ class EditCoalescingMiddleware(AgentMiddleware):
             return await handler(request)
 
         tool_call_id = str(tool_call.get("id", ""))
+        scope = request_scope_id(request)
 
         # edit_file uses the string-replacement staging buffer
         if tool_name == "edit_file":
@@ -358,7 +363,8 @@ class EditCoalescingMiddleware(AgentMiddleware):
 
             async with self._lock:
                 # Check staging buffer capacity / eviction
-                entries = self._staging_buffer.setdefault(file_path, [])
+                scope_staging = self._staging_buffer.setdefault(scope, {})
+                entries = scope_staging.setdefault(file_path, [])
                 if len(entries) >= self._config.staging_buffer_max_entries:
                     policy = self._config.staging_buffer_eviction_policy
                     if policy == "reject_newest":
@@ -392,13 +398,15 @@ class EditCoalescingMiddleware(AgentMiddleware):
                 )
 
                 # Also track in pending_edits so _process_after_window picks it up
-                if file_path not in self._pending_edits:
-                    self._pending_edits[file_path] = []
-                self._pending_edits[file_path].append(pending_edit)
+                scope_pending = self._pending_edits.setdefault(scope, {})
+                scope_pending.setdefault(file_path, []).append(pending_edit)
 
                 # Start detection window if not running
-                if self._window_task is None:
-                    self._window_task = asyncio.create_task(self._process_after_window())
+                task = self._window_tasks.get(scope)
+                if task is None or task.done():
+                    self._window_tasks[scope] = asyncio.create_task(
+                        self._process_after_window(scope)
+                    )
 
             # Wait for result (filled by batch execution)
             return await result_future
@@ -419,18 +427,18 @@ class EditCoalescingMiddleware(AgentMiddleware):
         )
 
         async with self._lock:
-            if file_path not in self._pending_edits:
-                self._pending_edits[file_path] = []
-            self._pending_edits[file_path].append(pending_edit)
+            scope_pending = self._pending_edits.setdefault(scope, {})
+            scope_pending.setdefault(file_path, []).append(pending_edit)
 
             # Start detection window if not running
-            if self._window_task is None:
-                self._window_task = asyncio.create_task(self._process_after_window())
+            task = self._window_tasks.get(scope)
+            if task is None or task.done():
+                self._window_tasks[scope] = asyncio.create_task(self._process_after_window(scope))
 
         # Wait for result (filled by batch execution)
         return await result_future
 
-    async def _process_after_window(self) -> None:
+    async def _process_after_window(self, scope: str) -> None:
         """Process pending edits after detection window closes.
 
         Fast path: after one event-loop tick, if only a single edit is
@@ -439,16 +447,14 @@ class EditCoalescingMiddleware(AgentMiddleware):
         """
         await asyncio.sleep(0)
         async with self._lock:
-            solo = sum(len(edits) for edits in self._pending_edits.values()) <= 1
+            solo = sum(len(e) for e in self._pending_edits.get(scope, {}).values()) <= 1
         if not solo:
             await asyncio.sleep(self._detection_window_ms / 1000.0)
 
         async with self._lock:
-            pending = self._pending_edits.copy()
-            self._pending_edits.clear()
-            staging = self._staging_buffer.copy()
-            self._staging_buffer.clear()
-            self._window_task = None
+            pending = self._pending_edits.pop(scope, {})
+            staging = self._staging_buffer.pop(scope, {})
+            self._window_tasks.pop(scope, None)
 
         if not pending:
             return

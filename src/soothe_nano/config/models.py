@@ -564,16 +564,21 @@ class SandboxConfig(BaseModel):
     """Sandbox-mode tool placement policy (active only with a sandbox backend).
 
     Args:
-        on_deny: Action for tools without a known sandbox placement.
-            "raise" (default, fail-closed) aborts the build;
-            "drop" removes them with a warning.
-        placement_overrides: Tool names the operator declares safe for this
-            deployment — host-bound custom / MCP / plugin tools that were
-            reviewed and may run outside the sandbox backend.
+        on_deny: Action for tools whose placement resolves to ``deny``
+            (registry miss with no declaration). "raise" (default,
+            fail-closed) aborts the build; "drop" removes them with a warning.
+        placement_overrides: Per-tool placement declarations by the operator,
+            e.g. ``{"analyze_image": "shuttle", "my_tool": "host"}``. Valid
+            values: protocol / guest / shuttle / host / deny. Overrides beat
+            explicit tool declarations and the default derivation table.
+        max_shuttle_bytes: Upper bound for a single ``shuttle`` transfer
+            (RFC §7.5.6); over-limit transfers error out instead of silently
+            shuttling large datasets.
     """
 
     on_deny: Literal["raise", "drop"] = Field(default="raise")
-    placement_overrides: set[str] = Field(default_factory=set)
+    placement_overrides: dict[str, str] = Field(default_factory=dict)
+    max_shuttle_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
 
 
 class SqliteRuntimeConfig(BaseModel):

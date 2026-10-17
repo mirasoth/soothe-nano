@@ -326,8 +326,10 @@ class ToolOptimizationMiddleware(AgentMiddleware):
 
     def __init__(self) -> None:
         super().__init__()
-        self._pending_searches: list[PendingSearch] = []
-        self._search_window_task: asyncio.Task[None] | None = None
+        # Per-scope (thread_id:checkpoint_ns) pending state: concurrent graph
+        # threads share this middleware instance and must not co-mingle searches.
+        self._pending_searches: dict[str, list[PendingSearch]] = {}
+        self._search_window_tasks: dict[str, asyncio.Task[None]] = {}
         self._search_lock = asyncio.Lock()
 
     async def awrap_tool_call(
@@ -522,24 +524,27 @@ class ToolOptimizationMiddleware(AgentMiddleware):
             ToolMessage or Command result from the (possibly batched) execution.
         """
         async with self._search_lock:
-            pending = PendingSearch(
+            scope = _scope_id_for_request(request)
+            pending_search = PendingSearch(
                 tool_name=tool_name,
                 args=args,
                 tool_call_id=tool_call_id,
                 request=request,
                 handler=handler,
             )
-            self._pending_searches.append(pending)
-            if self._search_window_task is None or self._search_window_task.done():
-                self._search_window_task = asyncio.create_task(
-                    self._flush_pending_searches_after_window()
+            pending = self._pending_searches.setdefault(scope, [])
+            pending.append(pending_search)
+            task = self._search_window_tasks.get(scope)
+            if task is None or task.done():
+                self._search_window_tasks[scope] = asyncio.create_task(
+                    self._flush_pending_searches_after_window(scope)
                 )
-            result_future = pending.result_future
+            result_future = pending_search.result_future
 
         result: ToolMessage | Command[Any] = await result_future
         return result
 
-    async def _flush_pending_searches_after_window(self) -> None:
+    async def _flush_pending_searches_after_window(self, scope: str) -> None:
         """Wait for the detection window, then flush pending searches.
 
         Fast path: after one event-loop tick, if no sibling search has joined
@@ -547,17 +552,16 @@ class ToolOptimizationMiddleware(AgentMiddleware):
         """
         await asyncio.sleep(0)
         async with self._search_lock:
-            solo = len(self._pending_searches) == 1
+            solo = len(self._pending_searches.get(scope, [])) == 1
         if not solo:
             await asyncio.sleep(self._SEARCH_DETECTION_WINDOW_MS / 1000.0)
-        await self._flush_pending_searches()
+        await self._flush_pending_searches(scope)
 
-    async def _flush_pending_searches(self) -> None:
+    async def _flush_pending_searches(self, scope: str) -> None:
         """Execute pending searches concurrently and resolve futures."""
         async with self._search_lock:
-            pending = self._pending_searches
-            self._pending_searches = []
-            self._search_window_task = None
+            pending = self._pending_searches.pop(scope, [])
+            self._search_window_tasks.pop(scope, None)
 
         if not pending:
             return

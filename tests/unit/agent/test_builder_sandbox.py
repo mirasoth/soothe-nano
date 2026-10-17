@@ -141,6 +141,7 @@ class TestAgentBuilderSandboxMode:
         tools: list[Any] | None = None,
         config_subagents: list[Any] | None = None,
         subagent_kwargs: dict[str, Any] | None = None,
+        _builder: Any = None,
     ) -> Any:
         def _fake_create_deep_agent(**kwargs: Any) -> MagicMock:
             captured.update(kwargs)
@@ -186,7 +187,7 @@ class TestAgentBuilderSandboxMode:
                 return_value=False,
             ),
         ):
-            return AgentBuilder(cfg).build(
+            return (_builder if _builder is not None else AgentBuilder(cfg)).build(
                 backend=backend,
                 interaction_mode=interaction_mode,
                 tools=tools,
@@ -284,7 +285,7 @@ class TestSandboxToolPlacementGate:
 
     def test_override_declares_tool(self) -> None:
         cfg = SootheConfig()
-        cfg.sandbox.placement_overrides.add("my_custom_tool")
+        cfg.sandbox.placement_overrides = {"my_custom_tool": "host"}
         sandbox = make_sandbox()
         captured: dict[str, Any] = {}
         resolve_kwargs: dict[str, Any] = {}
@@ -303,7 +304,7 @@ class TestSandboxToolPlacementGate:
             cfg, sandbox, resolve_kwargs, captured, tools=[self._fake_tool("mcp_fs_read")]
         )
         assert all(getattr(t, "name", "") != "mcp_fs_read" for t in captured["tools"])
-        assert any("dropping undeclared tools" in rec.message for rec in caplog.records)
+        assert any("dropping tools without a declared placement" in rec.message for rec in caplog.records)
 
     def test_host_mode_never_gates(self) -> None:
         cfg = SootheConfig()
@@ -328,6 +329,32 @@ class TestSandboxToolPlacementGate:
         )
         names = {getattr(t, "name", "") for t in captured["tools"]}
         assert {"search_tools", "mcp_resources_list"} <= names
+
+    def test_placement_report_covers_all_tools(self) -> None:
+        """§7.5.8: the report covers every tool, incl. builtin group tools."""
+        from soothe_nano.agent.builder import AgentBuilder
+
+        cfg = SootheConfig()
+        cfg.sandbox.placement_overrides = {"my_custom_tool": "host"}
+        sandbox = make_sandbox()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        builder = AgentBuilder(cfg)
+        TestAgentBuilderSandboxMode()._build_with_patches(
+            cfg,
+            sandbox,
+            resolve_kwargs,
+            captured,
+            tools=[self._fake_tool("my_custom_tool")],
+            _builder=builder,
+        )
+        report = builder.placement_report
+        assert report is not None
+        tool_names = {getattr(t, "name", "") for t in captured["tools"]}
+        assert tool_names
+        assert tool_names <= set(report.placements)
+        assert report.placements["my_custom_tool"] == "host"
+        assert report.dropped == ()
 
 
 class TestSandboxPlannerThreading:

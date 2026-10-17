@@ -16,7 +16,7 @@ import hashlib
 from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parents[2] / "src" / "soothe_nano" / "tools"
-METADATA_SHA256 = "82ec2c04654c865085b2a81e4484095f8f113a64b994f2d9832c445eb028b871"
+METADATA_SHA256 = "0f84189a057ebb9370616618008ede81f0e645ee8db92a673f62dd468c893fdd"
 INIT_NORMALIZED_SHA256 = "85df3369f5c3595b3a76d2af382aded5afc1d15ab83dd7da59aa55103cbb7116"
 
 

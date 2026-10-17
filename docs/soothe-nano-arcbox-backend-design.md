@@ -1161,31 +1161,40 @@ output offsets / resume，用其恢复读取同一次 execution 的输出。
 -   LLM API Key 永远留在宿主机；
 -   ArcBox 不可用时失败关闭，不回退到本机执行。
 
-## 16. Phase-2 候选：`file_ops` 与中间件 FS 统一（仅记录，未排期）
+## 16. Phase-2：`file_ops` 与中间件 FS 统一（2026-10-18 落地）
 
-**方向**：把 `file_ops` 手术工具组与主循环 `FilesystemMiddleware` 统一为
-「同一 allowlist + 同一份中间件 + 仅 backend 不同」，消除双实例。评审结论：
-事实基础成立（`file_ops` 本就是中间件工厂所造工具的镜像面；`delete`
-的"双注册"实为 `ToolNode.tools_by_name` dict 后写覆盖，确定性遮蔽而非
-重复注册），但**必须作为独立 phase-2 PR**，不能塞进 ArcBox phase 1。
-评审中发现的方案未覆盖的四个坑：
+**结果**：`file_ops` 工具组整体退役——中间件 FS 面成为文件工具唯一来源，
+「同一 allowlist + 同一份中间件 + 仅 backend 不同」达成。
 
-1.  **by-name replace 对 Soothe 子类失效**：upstream
-    `_apply_custom_middleware`（`graph.py:357`）按 `AgentMiddleware.name`
-    替换，`name` 默认取 `self.__class__.__name__`——nano 的
-    `SootheFilesystemMiddleware` 子类名字不匹配，需显式
-    `name = "FilesystemMiddleware"` 覆盖，否则定制版根本不生效。
-2.  **progressive 分层会静默吞 deferred 工具**：`DEFERRED_FROM_CORE`
-    含 `delete` / `file_info` / `apply_diff`（`registry.py:41-50`），
-    `ProgressiveToolMiddleware._ensure_catalog` 只在目录为空时填充、
-    `bound_tools` 纯过滤——统一后这三个工具会从目录管道静默消失，
-    必须显式处理分层口径。
-3.  **subagent 中间件不继承**：upstream 只继承 parent 的 tools
-    （`graph.py:995`）不继承 middleware（`graph.py:992/871`）——统一后
-    subagent 的 FS 行为分层与主 agent 不对称，需三处显式接线。
-4.  **行为回归面**：`file_ops` 目录拦截语义（目录拦截口径、错误文案、
-    与 `NormalizedPathBackend` 相关的既有单测 golden）需逐一映射；
-    统一是删除而非重写，回归验证靠既有测试套。
+**探查后修正的事实**（与原方案假设有出入）：主图 FS 从来不是
+`SootheFilesystemMiddleware` 进栈——builder 走
+`create_deep_agent(filesystem_tools=...)`，上游在图内自建裸
+`FilesystemMiddleware`（`graph.py:1038`）；`SootheFilesystemMiddleware`
+只是工具工厂。双实例只存在于 host 模式（file_ops 组工具与中间件同名工具
+同屏，`ToolNode.tools_by_name` 后写覆盖、file_ops 实例胜出，两者同源
+同行为）。subagent 中间件本就复用同一 `filesystem_tools` allowlist
+（`graph.py:870-880`）——坑 3 由统一自动消解。
+
+**四个坑的实际处置**：
+
+1.  **by-name replace**：不适用——没有自定义中间件进栈，无需 name 覆盖。
+2.  **progressive deferred 工具**：`DEFERRED_FROM_CORE` 的
+    `file_info` / `apply_diff` / `delete` 不再依赖组实例；目录填充回落
+    `_ensure_catalog(request.tools)`（request.tools 本就含中间件工具），
+    单一来源成立。
+3.  **subagent 不对称**：subagent 的 FS 中间件本就带同一 allowlist，
+    统一后 subagent 的手术工具与主 agent 同源（含 wrap 行为）。
+4.  **行为回归面**：行为等价性由既有测试套保证（1980 单测全绿 +
+    15 真机 E2E 全绿）；`tools.file_ops.enabled=False` 语义收窄为
+    「从 allowlist 剔除手术族（`delete` 除外，属基础变面，与统一前
+    生效行为一致）」，`builder.py` 在 allowlist 选择处统一施加。
+
+**改动清单**：`FILESYSTEM_TOOLS_AGENT` 并入手术族；`SANDBOX_EXCLUDED_TOOL_GROUPS`
+清空、`ASK_MUTATING_TOOL_GROUPS` 只剩 `shell`；resolver 移除组注册与
+surgical 单独路由（单名路由统一走 `build_filesystem_tools`）；插件注册表
+移除 `FileOpsPlugin`；`toolkits/file_ops.py` 删除，
+`build_filesystem_tools` 迁至 `toolkits/filesystem_tools.py`，
+`SURGICAL_FILE_OP_TOOL_NAMES` 收编进 `interaction_mode.py`。
 
 （另：`file_ops` 统一后 §7.5 placement 模型的必要性进一步下降——
 剩余受益者只剩 document/自定义工具场景。）

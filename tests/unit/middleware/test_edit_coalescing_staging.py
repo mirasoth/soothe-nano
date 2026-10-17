@@ -320,9 +320,9 @@ class TestStagingBufferCoalescing:
         # Give tasks time to register
         await asyncio.sleep(0.05)
 
-        # Both should be in the staging buffer
-        assert "/tmp/test.txt" in middleware._staging_buffer
-        entries = middleware._staging_buffer["/tmp/test.txt"]
+        # Both should be in the staging buffer (mock requests share scope ":")
+        assert "/tmp/test.txt" in middleware._staging_buffer[":"]
+        entries = middleware._staging_buffer[":"]["/tmp/test.txt"]
         assert len(entries) == 2
         assert entries[0].tool_call_id == "call-1"
         assert entries[1].tool_call_id == "call-2"
@@ -505,10 +505,7 @@ class TestStagingBufferFlush:
 
         await middleware.awrap_tool_call(request, _make_async_handler("pass-through"))
 
-        assert (
-            file_path not in middleware._staging_buffer
-            or len(middleware._staging_buffer.get(file_path, [])) == 0
-        )
+        assert all(file_path not in files for files in middleware._staging_buffer.values())
 
     @pytest.mark.asyncio
     async def test_buffer_cleared_on_flush(self) -> None:
@@ -518,33 +515,39 @@ class TestStagingBufferFlush:
         )
 
         # Manually populate staging buffer and pending edits (two edits → batch path)
-        middleware._staging_buffer["/fake.txt"] = [
-            StringReplacement("old", "new", False, "call-1"),
-            StringReplacement("other", "OTHER", False, "call-2"),
-        ]
+        middleware._staging_buffer[":"] = {
+            "/fake.txt": [
+                StringReplacement("old", "new", False, "call-1"),
+                StringReplacement("other", "OTHER", False, "call-2"),
+            ]
+        }
         loop = asyncio.get_running_loop()
         future1: asyncio.Future = loop.create_future()
         future2: asyncio.Future = loop.create_future()
-        middleware._pending_edits["/fake.txt"] = [
-            MagicMock(
-                tool_call_id="call-1",
-                tool_name="edit_file",
-                file_path="/fake.txt",
-                args={"old_string": "old", "new_string": "new"},
-                result_future=future1,
-                handler=_make_async_handler(),
-                request=_make_edit_file_request("/fake.txt", "old", "new", call_id="call-1"),
-            ),
-            MagicMock(
-                tool_call_id="call-2",
-                tool_name="edit_file",
-                file_path="/fake.txt",
-                args={"old_string": "other", "new_string": "OTHER"},
-                result_future=future2,
-                handler=_make_async_handler(),
-                request=_make_edit_file_request("/fake.txt", "other", "OTHER", call_id="call-2"),
-            ),
-        ]
+        middleware._pending_edits[":"] = {
+            "/fake.txt": [
+                MagicMock(
+                    tool_call_id="call-1",
+                    tool_name="edit_file",
+                    file_path="/fake.txt",
+                    args={"old_string": "old", "new_string": "new"},
+                    result_future=future1,
+                    handler=_make_async_handler(),
+                    request=_make_edit_file_request("/fake.txt", "old", "new", call_id="call-1"),
+                ),
+                MagicMock(
+                    tool_call_id="call-2",
+                    tool_name="edit_file",
+                    file_path="/fake.txt",
+                    args={"old_string": "other", "new_string": "OTHER"},
+                    result_future=future2,
+                    handler=_make_async_handler(),
+                    request=_make_edit_file_request(
+                        "/fake.txt", "other", "OTHER", call_id="call-2"
+                    ),
+                ),
+            ]
+        }
 
         # Run the window processor (mock _dispatch_string_replacements to avoid FS)
         call_dispatch = False
@@ -568,7 +571,7 @@ class TestStagingBufferFlush:
 
         middleware._dispatch_string_replacements = mock_dispatch  # type: ignore[assignment]
 
-        await middleware._process_after_window()
+        await middleware._process_after_window(":")
 
         assert call_dispatch is True
         assert len(middleware._staging_buffer) == 0
@@ -640,7 +643,7 @@ class TestStagingBufferEviction:
         assert "buffer full" in result3.content.lower() or "full" in result3.content.lower()
 
         # Buffer should still have only 2 entries
-        entries = middleware._staging_buffer.get("/test.txt", [])
+        entries = middleware._staging_buffer.get(":", {}).get("/test.txt", [])
         assert len(entries) == 2
 
         # Clean up
@@ -677,7 +680,7 @@ class TestStagingBufferEviction:
         task3 = asyncio.create_task(middleware.awrap_tool_call(req3, _make_async_handler()))
         await asyncio.sleep(0.02)
 
-        entries = middleware._staging_buffer.get("/test.txt", [])
+        entries = middleware._staging_buffer.get(":", {}).get("/test.txt", [])
         assert len(entries) == 2
         # The oldest (c1) should be evicted, c2 and c3 should remain
         call_ids = [e.tool_call_id for e in entries]
@@ -716,7 +719,7 @@ class TestStagingBufferEviction:
 
         await asyncio.sleep(0.05)
 
-        entries = middleware._staging_buffer.get("/test.txt", [])
+        entries = middleware._staging_buffer.get(":", {}).get("/test.txt", [])
         assert len(entries) == 3
 
         for t in tasks:

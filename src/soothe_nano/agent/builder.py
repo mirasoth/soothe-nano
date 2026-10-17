@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from soothe_nano.protocols.memory import MemoryProtocol
     from soothe_nano.protocols.planner import PlannerProtocol
     from soothe_nano.protocols.policy import PolicyProtocol
+    from soothe_nano.sandbox.placement import ToolPlacementReport
 
 from langchain_core.language_models import BaseChatModel  # noqa: E402
 
@@ -184,9 +185,11 @@ class AgentBuilder:
             all_tools.append(create_invoke_skill_tool())
 
         if sandbox_backend is not None:
-            # Fail-closed gate (RFC §7.5.5): tools without a declared
-            # sandbox placement never silently run on the host.
-            all_tools = self._enforce_sandbox_tool_placement(all_tools, config_tools)
+            # Placement finalization (RFC §7.5.4): every tool gets a placement;
+            # deny'd tools never register (fail-closed), shuttle tools are
+            # wrapped for guest-path byte transfer.
+            self._resolved_backend = resolved_backend
+            all_tools = self._finalize_tool_placements(all_tools)
 
         tools_ms = (time.perf_counter() - tools_start) * 1000
         logger.info("[Init] Tools resolved: %d tools (%.1fms)", len(all_tools), tools_ms)
@@ -611,38 +614,67 @@ class AgentBuilder:
     )
     """Host-placement infra tools allowed in sandbox mode by name."""
 
-    def _enforce_sandbox_tool_placement(
-        self,
-        all_tools: list[Any],
-        config_tools: list[Any],
-    ) -> list[Any]:
-        """Fail-closed gate for tools without a declared sandbox placement.
+    def _finalize_tool_placements(self, all_tools: list[Any]) -> list[Any]:
+        """Assign a placement to every tool (RFC §7.5.3/7.5.4).
 
-        Tools resolved from the builtin groups are validated by construction
-        (shell is guest-bound; datetime/wizsearch/http/deepxiv are
-        host-placement by design). Everything else — custom ``tools=[...]``,
-        MCP tools, third-party plugin tools — must be declared in
-        ``config.sandbox.placement_overrides``, else raise (default) or drop.
+        Resolution order per tool: config ``placement_overrides`` > explicit
+        declaration (``@tool(placement=...)`` / ``ToolMeta.placement``) >
+        default derivation table > ``deny`` (registry miss, fail-closed).
+        ``deny`` tools drop or raise per ``sandbox.on_deny``; ``shuttle``
+        tools are wrapped with the guest byte-transfer adapter. The full
+        report is kept on ``self.placement_report`` for tests and logs.
         """
-        sandbox_cfg = self._config.sandbox
-        allowed = (
-            {self._tool_name(t) for t in config_tools}
-            | set(self._SANDBOX_HOST_INFRA_TOOL_NAMES)
-            | set(sandbox_cfg.placement_overrides)
+        from soothe_nano.sandbox.placement import (
+            PLACEMENT_DENY,
+            PLACEMENT_SHUTTLE,
+            ToolPlacementReport,
+            resolve_placement,
+            wrap_shuttle_tool,
         )
-        undeclared = [t for t in all_tools if self._tool_name(t) not in allowed]
-        if not undeclared:
-            return all_tools
-        names = sorted({self._tool_name(t) for t in undeclared})
+
+        sandbox_cfg = self._config.sandbox
+        placements: dict[str, str] = {}
+        kept: list[Any] = []
+        dropped: list[str] = []
+        for tool in all_tools:
+            name = self._tool_name(tool)
+            placement = resolve_placement(name, tool=tool, config=self._config)
+            placements[name] = placement
+            if placement == PLACEMENT_DENY:
+                dropped.append(name)
+                continue
+            if placement == PLACEMENT_SHUTTLE:
+                tool = wrap_shuttle_tool(tool, backend=self._resolved_backend, config=self._config)
+            kept.append(tool)
+
+        self._placement_report = ToolPlacementReport(
+            placements=placements, dropped=tuple(sorted(set(dropped)))
+        )
+        logger.info(
+            "[Init] Tool placements: %s",
+            ", ".join(f"{n}={p}" for n, p in sorted(placements.items())),
+        )
+
+        if not dropped:
+            return kept
         if sandbox_cfg.on_deny == "drop":
-            logger.warning("[Init] Sandbox mode: dropping undeclared tools: %s", ", ".join(names))
-            return [t for t in all_tools if self._tool_name(t) in allowed]
+            logger.warning(
+                "[Init] Sandbox mode: dropping tools without a declared placement: %s",
+                ", ".join(sorted(set(dropped))),
+            )
+            return kept
         msg = (
             "Sandbox mode refuses tools without a declared placement: "
-            f"{', '.join(names)}. Declare them via config.sandbox.placement_overrides "
+            f"{', '.join(sorted(set(dropped)))}. Declare one via @tool(placement=...), "
+            "ToolMeta.placement, or config.sandbox.placement_overrides; "
             "or set sandbox.on_deny='drop' to remove them instead."
         )
         raise ValueError(msg)
+
+    @property
+    def placement_report(self) -> ToolPlacementReport | None:
+        """Placement decisions from the last sandbox-mode build, if any."""
+        return getattr(self, "_placement_report", None)
 
     @staticmethod
     def _tool_name(tool: Any) -> str:

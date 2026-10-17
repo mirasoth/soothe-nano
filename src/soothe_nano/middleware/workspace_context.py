@@ -7,7 +7,7 @@ Does not depend on injecting ``soothe_config``.
 
 from __future__ import annotations
 
-from contextvars import Token
+from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +16,14 @@ from langchain.agents.middleware.types import AgentMiddleware
 if TYPE_CHECKING:
     from langchain.agents.middleware.types import AgentState
     from langgraph.runtime import Runtime
+
+# Task-local token storage: the middleware instance is shared by concurrent
+# graph threads, so the reset token must live in the per-task context instead
+# of instance state (which interleaved turns would clobber).
+_pending_token: ContextVar[Token[Any] | None] = ContextVar(
+    "workspace_context_pending_token",
+    default=None,
+)
 
 
 def _virtual_mode_without_soothe_config() -> bool:
@@ -56,9 +64,6 @@ class WorkspaceContextMiddleware(AgentMiddleware):
 
     # Opt into general-purpose subagent inheritance (deepagents generic flag).
     propagate_to_general_purpose = True
-
-    def __init__(self) -> None:
-        self._workspace_token: Token[Any] | None = None
 
     async def abefore_agent(
         self,
@@ -105,10 +110,11 @@ class WorkspaceContextMiddleware(AgentMiddleware):
         if workspace_path is None:
             return None
 
-        self._workspace_token = set_workspace_context(
+        token = set_workspace_context(
             workspace=Path(workspace_path),
             virtual_mode=_virtual_mode_without_soothe_config(),
         )
+        _pending_token.set(token)
 
         return {"workspace": str(workspace_path)}
 
@@ -128,6 +134,6 @@ class WorkspaceContextMiddleware(AgentMiddleware):
         """
         from soothe_nano.workspace.workspace_runtime import reset_workspace_context
 
-        reset_workspace_context(self._workspace_token)
-        self._workspace_token = None
+        reset_workspace_context(_pending_token.get())
+        _pending_token.set(None)
         return None

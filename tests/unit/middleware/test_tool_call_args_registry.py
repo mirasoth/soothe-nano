@@ -140,8 +140,8 @@ async def test_outer_tool_call_args_records_before_coalescing_intercepts_edit_fi
     for task in tasks:
         with pytest.raises(asyncio.CancelledError):
             await task
-    if coalescing._window_task is not None:
-        coalescing._window_task.cancel()
+    for window_task in coalescing._window_tasks.values():
+        window_task.cancel()
 
     for cid in tool_call_ids:
         recorded = get_recorded_tool_call_args(cid)

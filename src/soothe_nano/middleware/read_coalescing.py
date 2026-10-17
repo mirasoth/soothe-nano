@@ -19,6 +19,8 @@ from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+from soothe_nano.middleware._scope import request_scope_id
+
 if TYPE_CHECKING:
     pass
 
@@ -53,8 +55,10 @@ class ReadCoalescingMiddleware(AgentMiddleware):
     def __init__(self, *, detection_window_ms: int = 50) -> None:
         super().__init__()
         self._detection_window_ms = detection_window_ms
-        self._pending_reads: list[PendingRead] = []
-        self._window_task: asyncio.Task[None] | None = None
+        # Per-scope (thread_id:checkpoint_ns) pending state: concurrent graph
+        # threads share this middleware instance and must not co-mingle reads.
+        self._pending_reads: dict[str, list[PendingRead]] = {}
+        self._window_tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
 
     async def awrap_tool_call(
@@ -78,31 +82,22 @@ class ReadCoalescingMiddleware(AgentMiddleware):
         if tool_name != self.READ_TOOL_NAME:
             return await handler(request)
 
+        scope = request_scope_id(request)
         async with self._lock:
-            if self._window_task is None or self._window_task.done():
-                # First read in window — start timer and execute immediately
-                # if no other reads arrive within the window.
-                pending = PendingRead(
-                    request=request,
-                    handler=handler,
-                    tool_call_id=tool_call_id,
-                )
-                self._pending_reads.append(pending)
-                self._window_task = asyncio.create_task(self._flush_after_window())
-                result_future = pending.result_future
-            else:
-                # Additional read within window — add to batch
-                pending = PendingRead(
-                    request=request,
-                    handler=handler,
-                    tool_call_id=tool_call_id,
-                )
-                self._pending_reads.append(pending)
-                result_future = pending.result_future
+            pending = self._pending_reads.setdefault(scope, [])
+            pending_read = PendingRead(
+                request=request,
+                handler=handler,
+                tool_call_id=tool_call_id,
+            )
+            pending.append(pending_read)
+            task = self._window_tasks.get(scope)
+            if task is None or task.done():
+                self._window_tasks[scope] = asyncio.create_task(self._flush_after_window(scope))
 
-        return await result_future
+        return await pending_read.result_future
 
-    async def _flush_after_window(self) -> None:
+    async def _flush_after_window(self, scope: str) -> None:
         """Wait for the detection window, then flush pending reads.
 
         Fast path: after one event-loop tick, if no sibling read has joined
@@ -110,17 +105,16 @@ class ReadCoalescingMiddleware(AgentMiddleware):
         """
         await asyncio.sleep(0)
         async with self._lock:
-            solo = len(self._pending_reads) == 1
+            solo = len(self._pending_reads.get(scope, [])) == 1
         if not solo:
             await asyncio.sleep(self._detection_window_ms / 1000.0)
-        await self._flush_pending_reads()
+        await self._flush_pending_reads(scope)
 
-    async def _flush_pending_reads(self) -> None:
+    async def _flush_pending_reads(self, scope: str) -> None:
         """Execute all pending reads concurrently and resolve futures."""
         async with self._lock:
-            pending = self._pending_reads
-            self._pending_reads = []
-            self._window_task = None
+            pending = self._pending_reads.pop(scope, [])
+            self._window_tasks.pop(scope, None)
 
         if not pending:
             return

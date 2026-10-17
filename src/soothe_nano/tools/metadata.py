@@ -39,6 +39,9 @@ class ToolMeta:
         has_header_info: True when ``format_tool_display()`` already renders
             the key information in the header line, so the args body
             should be suppressed in ``ToolCallMessage``.
+        placement: Sandbox-mode tool placement (RFC §7.5) — one of
+            ``protocol`` / ``guest`` / ``shuttle`` / ``host`` / ``deny``.
+            ``None`` derives from the default table by category/outcome_type.
     """
 
     name: str
@@ -50,6 +53,7 @@ class ToolMeta:
     outcome_type: str | None = None
     source: str = "soothe"
     has_header_info: bool = False
+    placement: str | None = None
 
     def get_display_name(self) -> str:
         """Return the user-facing display name, with fallback."""

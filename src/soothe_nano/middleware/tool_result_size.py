@@ -8,6 +8,7 @@ tool-result token estimate exceeds a threshold.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -217,6 +218,43 @@ def maybe_persist_tool_result(
     return tool_message.model_copy(update={"content": reference})
 
 
+async def amaybe_persist_tool_result(
+    tool_message: ToolMessage,
+    session_id: str,
+    workspace_root: Path,
+    persist_threshold: int = DEFAULT_PERSIST_THRESHOLD_CHARS,
+    preview_chars: int = DEFAULT_PREVIEW_CHARS,
+) -> ToolMessage:
+    """Async variant of :func:`maybe_persist_tool_result`.
+
+    Disk I/O runs in a worker thread so large outputs never block the
+    event loop.
+    """
+    content = str(tool_message.content or "")
+    if len(content) <= persist_threshold:
+        return tool_message
+
+    result = await asyncio.to_thread(
+        persist_tool_result,
+        content,
+        tool_message.tool_call_id,
+        session_id,
+        workspace_root,
+        preview_chars,
+    )
+    if result is None:
+        return tool_message
+
+    reference = build_persisted_output_message(
+        result["filepath"],
+        result["original_size"],
+        result["preview"],
+        result["has_more"],
+        preview_chars=preview_chars,
+    )
+    return tool_message.model_copy(update={"content": reference})
+
+
 # ---------------------------------------------------------------------------
 # Persist-to-disk middleware
 # ---------------------------------------------------------------------------
@@ -272,7 +310,7 @@ class ToolResultStorageMiddleware(AgentMiddleware):
                 return result
             if len(content) <= self._persist_threshold:
                 return result
-            return maybe_persist_tool_result(
+            return await amaybe_persist_tool_result(
                 result,
                 self._session_id,
                 Path(self._workspace_root),
@@ -294,7 +332,7 @@ class ToolResultStorageMiddleware(AgentMiddleware):
                                 not is_persisted_content(content)
                                 and len(content) > self._persist_threshold
                             ):
-                                msg = maybe_persist_tool_result(
+                                msg = await amaybe_persist_tool_result(
                                     msg,
                                     self._session_id,
                                     Path(self._workspace_root),
@@ -341,7 +379,7 @@ class ToolResultStorageMiddleware(AgentMiddleware):
         for idx, msg, size in candidates:
             if total_size <= self._per_message_budget:
                 break
-            persisted = maybe_persist_tool_result(
+            persisted = await amaybe_persist_tool_result(
                 msg,
                 self._session_id,
                 Path(self._workspace_root),
@@ -419,34 +457,6 @@ class ToolResultEvictionMiddleware(AgentMiddleware):
             return []
         return list(messages)
 
-    def _estimate_tool_result_tokens(self, messages: list[Any]) -> int:
-        """Sum token estimates for all ToolMessages in the list."""
-        total = 0
-        for msg in messages:
-            if isinstance(msg, ToolMessage):
-                total += self._estimate_tokens(msg.content)
-        return total
-
-    def _find_evictable(self, messages: list[Any]) -> list[tuple[int, ToolMessage]]:
-        """Find evictable ToolMessages, oldest first, skipping protected recent."""
-        tool_msg_indices: list[tuple[int, ToolMessage]] = []
-        for i, msg in enumerate(messages):
-            if not isinstance(msg, ToolMessage):
-                continue
-            if msg.name not in EVICTABLE_TOOLS:
-                continue
-            if msg.tool_call_id in self._evicted_ids:
-                continue
-            tool_msg_indices.append((i, msg))
-
-        if not tool_msg_indices:
-            return []
-
-        cutoff = len(tool_msg_indices) - self._protect_recent
-        if cutoff <= 0:
-            return []
-        return tool_msg_indices[:cutoff]
-
     def _build_stub(self, msg: ToolMessage) -> str:
         """Build a compact stub replacing evicted content."""
         self._evicted_ids.add(msg.tool_call_id)
@@ -462,23 +472,33 @@ class ToolResultEvictionMiddleware(AgentMiddleware):
         if not messages:
             return await handler(request)
 
-        tool_result_tokens = self._estimate_tool_result_tokens(messages)
+        # Single pass: accumulate the total tool-result token estimate and
+        # collect evictable candidates (oldest first).
+        tool_result_tokens = 0
+        evictable_candidates: list[tuple[int, ToolMessage, int]] = []
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, ToolMessage):
+                continue
+            tokens = self._estimate_tokens(msg.content)
+            tool_result_tokens += tokens
+            if msg.name in EVICTABLE_TOOLS and msg.tool_call_id not in self._evicted_ids:
+                evictable_candidates.append((i, msg, tokens))
+
         if tool_result_tokens <= self._max_tokens:
             return await handler(request)
 
-        evictable = self._find_evictable(messages)
-        if not evictable:
+        cutoff = len(evictable_candidates) - self._protect_recent
+        if cutoff <= 0:
             return await handler(request)
 
         patched = list(messages)
         changed = False
-        for idx, msg in evictable:
+        for idx, msg, tokens in evictable_candidates[:cutoff]:
             if tool_result_tokens <= self._max_tokens:
                 break
-            evicted_tokens = self._estimate_tokens(msg.content)
             stub = self._build_stub(msg)
             patched[idx] = msg.model_copy(update={"content": stub})
-            tool_result_tokens -= evicted_tokens
+            tool_result_tokens -= tokens
             changed = True
 
         if changed:
@@ -496,6 +516,7 @@ __all__ = [
     "PERSISTED_OUTPUT_TAG",
     "ToolResultEvictionMiddleware",
     "ToolResultStorageMiddleware",
+    "amaybe_persist_tool_result",
     "build_persisted_output_message",
     "is_persisted_content",
     "maybe_persist_tool_result",
