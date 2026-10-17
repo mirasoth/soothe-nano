@@ -5,8 +5,11 @@ from __future__ import annotations
 import sys
 from unittest.mock import patch
 
-from soothe_nano.toolkits.shell import RunBackgroundTool, RunCommandShellTool
-from soothe_nano.toolkits.shell_compat import macos_shell_compatibility_error
+from soothe_nano.toolkits.shell import (
+    RunBackgroundTool,
+    RunCommandShellTool,
+    macos_shell_compatibility_error,
+)
 
 
 def test_macos_shell_compatibility_error_detects_gnu_timeout() -> None:
