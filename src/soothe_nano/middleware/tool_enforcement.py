@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain.agents.middleware.types import (
@@ -11,7 +10,6 @@ from langchain.agents.middleware.types import (
     ContextT,
     ModelRequest,
     ModelResponse,
-    ToolCallRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,11 +126,3 @@ class ToolEnforcementMiddleware(AgentMiddleware):
     ) -> ModelResponse[Any]:
         """Async wrapper that applies enforcement before model invocation."""
         return await handler(self.modify_request(request))
-
-    async def awrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], Awaitable[Any]],
-    ) -> Any:
-        """Pass tool calls through (host layers may add further policy)."""
-        return await handler(request)

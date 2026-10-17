@@ -26,8 +26,16 @@ FILESYSTEM_TOOLS_AGENT: list[FsToolName] = [
     "delete",
     "glob",
     "grep",
+    "file_info",
+    "edit_lines",
+    "insert_lines",
+    "delete_lines",
+    "apply_diff",
 ]
-"""Built-in FS tools for AGENT mode (no sandbox ``execute``)."""
+"""Built-in FS tools for AGENT mode (no sandbox ``execute``).
+
+Includes the surgical family — the middleware FS surface is the single
+source of file tools."""
 
 FILESYSTEM_TOOLS_ASK: list[FsToolName] = [
     "ls",
@@ -59,13 +67,12 @@ FILESYSTEM_TOOLS_SANDBOX: list[FsToolName] = [
 family. All file tools are guest-side via the sandbox backend; the built-in
 ``execute`` stays off (nano's ``run_command`` owns the single shell)."""
 
-ASK_MUTATING_TOOL_GROUPS: frozenset[str] = frozenset({"shell", "file_ops"})
+ASK_MUTATING_TOOL_GROUPS: frozenset[str] = frozenset({"shell"})
 """Tool groups omitted when resolving tools for Ask / Plan mode."""
 
-SANDBOX_EXCLUDED_TOOL_GROUPS: frozenset[str] = frozenset({"file_ops"})
-"""Tool groups dropped in sandbox mode: the group self-builds host-side
-filesystem backends and has no guest equivalent in phase 1 — middleware FS
-tools (same tool names) take over via the sandbox backend."""
+SANDBOX_EXCLUDED_TOOL_GROUPS: frozenset[str] = frozenset()
+"""Tool groups dropped in sandbox mode — empty (middleware FS tools are the
+single file-tool source via the sandbox backend)."""
 
 ASK_SUBAGENT_ALLOWLIST: frozenset[str] = frozenset({"planner"})
 """Subagents allowed on the Ask ``task`` catalog."""

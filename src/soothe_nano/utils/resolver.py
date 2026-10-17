@@ -17,11 +17,7 @@ from typing import TYPE_CHECKING, Any
 from soothe_nano.config import SootheConfig, SubagentConfig
 from soothe_nano.config.models import ModelRole
 from soothe_nano.core.exceptions import ConfigurationError
-from soothe_nano.toolkits.file_ops import (
-    SURGICAL_FILE_OP_TOOL_NAME_SET,
-    build_filesystem_tools,
-    build_surgical_file_ops_tools,
-)
+from soothe_nano.toolkits.filesystem_tools import build_filesystem_tools
 from soothe_nano.workspace.workspace_paths import (
     filesystem_virtual_mode_from_soothe_config,
     max_file_size_mb_for_filesystem_backend,
@@ -105,11 +101,7 @@ def _workspace_backend_factory(
     return factory
 
 
-def _build_soothe_file_tools(
-    config: SootheConfig | None,
-    *,
-    surgical_only: bool = False,
-) -> list[BaseTool]:
+def _build_soothe_file_tools(config: SootheConfig | None) -> list[BaseTool]:
     """Create filesystem tools bound to the effective workspace."""
     resolved_cwd = str(resolve_effective_tool_workspace(config))
     virtual_mode = filesystem_virtual_mode_from_soothe_config(config) if config else False
@@ -118,17 +110,6 @@ def _build_soothe_file_tools(
         virtual_mode=virtual_mode,
         max_file_size_mb=max_file_size_mb,
     )(resolved_cwd)
-    if surgical_only:
-        return build_surgical_file_ops_tools(
-            backend=backend,
-            backup_enabled=True,
-            workspace_root=resolved_cwd,
-            workspace_backend_factory=_workspace_backend_factory(
-                virtual_mode=virtual_mode,
-                max_file_size_mb=max_file_size_mb,
-            ),
-            tool_token_limit_before_evict=20000,
-        )
     return build_filesystem_tools(
         backend=backend,
         backup_enabled=True,
@@ -243,7 +224,7 @@ def resolve_tools(
             metadata probing.
         config: Optional Soothe config for tool configuration.
         exclude_tool_groups: Optional tool group names to skip (e.g. Ask mode
-        omits `shell` and `file_ops`).
+        omits `shell`).
         sandbox_backend: Optional sandbox backend; when set, the shell tool
         group is rebuilt with a ``BackendShellExecutor`` bound to this
         backend (never cached, never resolved from plugins — both would
@@ -258,7 +239,6 @@ def resolve_tools(
     # Note: "deep_research" is a subagent, not a tool group - handled in resolve_subagents()
     _tool_groups = [
         "shell",
-        "file_ops",
         "datetime",
         "wizsearch",
         "http_requests",
@@ -499,9 +479,6 @@ def _resolve_single_tool_group_uncached(
         logger.warning("Tool '%s' not found in ShellToolkit", name)
         return []
 
-    if name == "file_ops":
-        return _build_soothe_file_tools(config, surgical_only=True)
-
     # Support individual tool names (map to consolidated group)
     if name in (
         "read_file",
@@ -515,14 +492,6 @@ def _resolve_single_tool_group_uncached(
         "delete_lines",
         "apply_diff",
     ):
-        if name in SURGICAL_FILE_OP_TOOL_NAME_SET:
-            surgical_tools = _build_soothe_file_tools(config, surgical_only=True)
-            surgical_tool_map = {tool.name: tool for tool in surgical_tools}
-            if name in surgical_tool_map:
-                return [surgical_tool_map[name]]
-            logger.warning("Tool '%s' not found in surgical file_ops catalog", name)
-            return []
-
         full_tool_map = {tool.name: tool for tool in _build_soothe_file_tools(config)}
         if name in full_tool_map:
             return [full_tool_map[name]]

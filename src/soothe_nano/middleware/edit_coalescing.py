@@ -431,8 +431,17 @@ class EditCoalescingMiddleware(AgentMiddleware):
         return await result_future
 
     async def _process_after_window(self) -> None:
-        """Process pending edits after detection window closes."""
-        await asyncio.sleep(self._detection_window_ms / 1000.0)
+        """Process pending edits after detection window closes.
+
+        Fast path: after one event-loop tick, if only a single edit is
+        pending, skip the full detection wait — batching cannot help a
+        singleton.
+        """
+        await asyncio.sleep(0)
+        async with self._lock:
+            solo = sum(len(edits) for edits in self._pending_edits.values()) <= 1
+        if not solo:
+            await asyncio.sleep(self._detection_window_ms / 1000.0)
 
         async with self._lock:
             pending = self._pending_edits.copy()

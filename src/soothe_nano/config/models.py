@@ -546,7 +546,6 @@ class ToolsConfig(BaseModel):
 
     Args:
         execution: Execution tools config (run_command, run_python, etc.).
-        file_ops: File operation tools config.
         datetime: DateTime tool config.
         wizsearch: Tarzi-backed multi-engine search/crawl tools config
             (tool names `wizsearch_*` kept for wire/config compatibility).
@@ -555,7 +554,6 @@ class ToolsConfig(BaseModel):
     """
 
     shell: ShellToolsConfig = Field(default_factory=ShellToolsConfig)
-    file_ops: ToolConfig = Field(default_factory=ToolConfig)
     datetime: ToolConfig = Field(default_factory=ToolConfig)
     wizsearch: WebSearchConfig = Field(default_factory=WebSearchConfig)
     http_requests: HttpRequestsToolsConfig = Field(default_factory=HttpRequestsToolsConfig)

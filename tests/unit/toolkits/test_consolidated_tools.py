@@ -221,25 +221,26 @@ class TestResolverToolkitNames:
         assert tools[0].name == "wizsearch_search"
         assert tools[1].name == "wizsearch_crawl"
 
-    def test_file_ops_resolves(self) -> None:
-        """File_ops toolkit should resolve to 6 surgical tools."""
+    def test_surgical_file_names_resolve_individually(self) -> None:
+        """Surgical FS names resolve via single-name routing (file_ops group retired)."""
         from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
-        tools = _resolve_single_tool_group_uncached("file_ops")
-        assert len(tools) == 6
-        tool_names = {t.name for t in tools}
-        # Surgical file operations (not basic read/write)
-        assert "delete" in tool_names
-        assert "file_info" in tool_names
-        assert "edit_lines" in tool_names
-        assert "insert_lines" in tool_names
-        assert "delete_lines" in tool_names
-        assert "apply_diff" in tool_names
-        # NOT included (provided by soothe_deepagents)
-        assert "read_file" not in tool_names
-        assert "write_file" not in tool_names
-        assert "search_files" not in tool_names
-        assert "list_files" not in tool_names
+        expected = {
+            "delete",
+            "file_info",
+            "edit_lines",
+            "insert_lines",
+            "delete_lines",
+            "apply_diff",
+        }
+        for name in expected:
+            tools = _resolve_single_tool_group_uncached(name)
+            assert len(tools) == 1, f"expected exactly one tool for {name}"
+            assert tools[0].name == name
+        # Base surface names resolve through the same middleware factory.
+        for base_name in ("read_file", "write_file"):
+            tools = _resolve_single_tool_group_uncached(base_name)
+            assert {t.name for t in tools} == {base_name}
 
     def test_execution_resolves(self) -> None:
         """Execution toolkit should resolve to 5 tools."""

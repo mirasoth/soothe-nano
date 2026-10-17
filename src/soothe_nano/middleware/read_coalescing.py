@@ -33,7 +33,7 @@ class PendingRead:
     handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]]
     tool_call_id: str
     result_future: asyncio.Future[ToolMessage | Command[Any]] = field(
-        default_factory=lambda: asyncio.get_event_loop().create_future()
+        default_factory=lambda: asyncio.get_running_loop().create_future()
     )
 
 
@@ -103,8 +103,16 @@ class ReadCoalescingMiddleware(AgentMiddleware):
         return await result_future
 
     async def _flush_after_window(self) -> None:
-        """Wait for the detection window, then flush pending reads."""
-        await asyncio.sleep(self._detection_window_ms / 1000.0)
+        """Wait for the detection window, then flush pending reads.
+
+        Fast path: after one event-loop tick, if no sibling read has joined
+        the window, skip the full wait — batching cannot help a singleton.
+        """
+        await asyncio.sleep(0)
+        async with self._lock:
+            solo = len(self._pending_reads) == 1
+        if not solo:
+            await asyncio.sleep(self._detection_window_ms / 1000.0)
         await self._flush_pending_reads()
 
     async def _flush_pending_reads(self) -> None:

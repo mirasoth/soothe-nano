@@ -153,7 +153,7 @@ def test_resolve_file_ops_file_info_virtual_path_with_soothe_config(tmp_path: Pa
     cfg.filesystem_middleware.workspace_root = str(wdir)
     cfg.security.allow_paths_outside_workspace = False
 
-    tools = _resolve_single_tool_group_uncached("file_ops", config=cfg)
+    tools = _resolve_single_tool_group_uncached("file_info", config=cfg)
     file_info = next(t for t in tools if t.name == "file_info")
     out = file_info.func(path="/marks.csv", runtime=_tool_runtime())
     assert out is not None

@@ -73,7 +73,7 @@ class PendingSearch:
     request: ToolCallRequest
     handler: Any  # Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]]
     result_future: asyncio.Future[Any] = field(
-        default_factory=lambda: asyncio.get_event_loop().create_future()
+        default_factory=lambda: asyncio.get_running_loop().create_future()
     )
 
 
@@ -540,8 +540,16 @@ class ToolOptimizationMiddleware(AgentMiddleware):
         return result
 
     async def _flush_pending_searches_after_window(self) -> None:
-        """Wait for the detection window, then flush pending searches."""
-        await asyncio.sleep(self._SEARCH_DETECTION_WINDOW_MS / 1000.0)
+        """Wait for the detection window, then flush pending searches.
+
+        Fast path: after one event-loop tick, if no sibling search has joined
+        the window, skip the full wait — batching cannot help a singleton.
+        """
+        await asyncio.sleep(0)
+        async with self._search_lock:
+            solo = len(self._pending_searches) == 1
+        if not solo:
+            await asyncio.sleep(self._SEARCH_DETECTION_WINDOW_MS / 1000.0)
         await self._flush_pending_searches()
 
     async def _flush_pending_searches(self) -> None:

@@ -101,36 +101,51 @@ async def test_outer_tool_call_args_records_before_coalescing_intercepts_edit_fi
         config=EditCoalescingConfig(detection_window_ms=60_000),
     )
     args_middleware = ToolCallArgsMiddleware()
-    request = ToolCallRequest(
-        tool_call={
-            "name": "edit_file",
-            "args": {
-                "file_path": "/tmp/example.py",
-                "old_string": "foo",
-                "new_string": "bar",
+    tool_call_ids = ["functions.edit_file:9", "functions.edit_file:10"]
+
+    def make_request(call_id: str) -> ToolCallRequest:
+        return ToolCallRequest(
+            tool_call={
+                "name": "edit_file",
+                "args": {
+                    "file_path": "/tmp/example.py",
+                    "old_string": "foo",
+                    "new_string": "bar",
+                },
+                "id": call_id,
             },
-            "id": "functions.edit_file:9",
-        },
-        tool=None,
-        state={"messages": []},
-        runtime=MagicMock(),
-    )
+            tool=None,
+            state={"messages": []},
+            runtime=MagicMock(),
+        )
+
     inner_handler = AsyncMock(
-        return_value=ToolMessage(content="should not run", tool_call_id="functions.edit_file:9")
+        side_effect=lambda req: ToolMessage(
+            content="should not run", tool_call_id=req.tool_call["id"]
+        )
     )
 
     async def coalescing_handler(req: ToolCallRequest) -> ToolMessage:
         return await coalescing.awrap_tool_call(req, inner_handler)
 
-    # Do not await coalescing's future; intercept queues the edit and waits on the window.
-    record_task = asyncio.create_task(args_middleware.awrap_tool_call(request, coalescing_handler))
-    await asyncio.sleep(0)
-    record_task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await record_task
+    # Two queued edits keep the detection window open (a lone edit now
+    # fast-flushes straight to the handler after one event-loop tick).
+    tasks = [
+        asyncio.create_task(args_middleware.awrap_tool_call(make_request(cid), coalescing_handler))
+        for cid in tool_call_ids
+    ]
+    await asyncio.sleep(0.01)
+    for task in tasks:
+        task.cancel()
+    for task in tasks:
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    if coalescing._window_task is not None:
+        coalescing._window_task.cancel()
 
-    recorded = get_recorded_tool_call_args("functions.edit_file:9")
-    assert recorded.get("file_path") == "/tmp/example.py"
-    assert recorded.get("old_string") == "foo"
-    assert recorded.get("new_string") == "bar"
+    for cid in tool_call_ids:
+        recorded = get_recorded_tool_call_args(cid)
+        assert recorded.get("file_path") == "/tmp/example.py"
+        assert recorded.get("old_string") == "foo"
+        assert recorded.get("new_string") == "bar"
     inner_handler.assert_not_awaited()

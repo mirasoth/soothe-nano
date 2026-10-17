@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deleted the `soothe_nano.toolkits.file_ops_catalog` module — its catalog constants and filesystem-tool builders moved into `soothe_nano.toolkits.file_ops` (hard move, no shim).
 - Deleted the `data` and `image` toolkits (host-path-bound file-inspection tools duplicating `read_file` + `run_python`), including their config groups, plugin registrations, registry entries, and prompt guide listings.
 - Resolver dead code: unused `_resolve_postgres_checkpointer`/`_mask_dsn` (superseded by the shared checkpointer pool), `clear_tool_cache`/`get_cache_stats` (no callers in any repo), the fake parallel subagent branch, the never-supplied `LazySubagentRunnable(materialize=...)` parameter, and the unused dict-like methods on `SUBAGENT_FACTORIES` (`__getitem__`/`keys`/`items`/`__len__`).
+- Removed the legacy `tools.file_ops` config field and the corresponding builder gating of the surgical FS allowlist — the middleware FS surface is the single source of file tools; the removed constants (`SURGICAL_FILE_OP_TOOL_NAMES`/`_SET`) had no remaining consumers.
 
 ### Changed
 - The planner subagent now works in sandbox mode (RFC §7.2-7): `resolve_subagents` threads the composite sandbox backend through the subagent context, and the planner's readonly recon tools bind to it with the guest workspace root — previously the planner was disabled entirely in sandbox mode because its host-bound `FilesystemBackend` could not see the guest workspace. Host mode is unchanged.
@@ -35,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - System-prompt guides now reference real bound tool names: `wizsearch_search`/`wizsearch_crawl` instead of the legacy deepagents aliases `search_web`/`crawl_web` (aliases exist only in the permission-layer registry — the model was steered to names never bound); the data guide directs tabular/document work to `read_file` + `run_python` + `file_info` instead of the deleted tools; `run_python` persistence claims hedge the sandbox one-shot mode. Tool-trigger registry keys renamed to match.
+- Coalescing middlewares no longer impose a fixed 50 ms latency floor on lone calls: `ReadCoalescingMiddleware`, `ToolOptimizationMiddleware` (grep/glob batch window), and `EditCoalescingMiddleware` fast-flush after one event-loop tick when no sibling call has joined the window; batched calls still wait the full detection window. `read_coalescing`/`tool_optimization` futures now use `asyncio.get_running_loop()` instead of the deprecated `get_event_loop()`.
+- `RoleRoutingMiddleware` no longer rescans the full message history for its debug log on every hop (the hop index is only computed when debug logging is enabled).
+- Eviction dead branch removed in `ToolResultEvictionMiddleware` (`NON_EVICTABLE_TOOLS` re-check is subsumed by the `EVICTABLE_TOOLS` membership test) and the never-called `_time_since_last_assistant` placeholder deleted.
 
 ## [1.4.2] - 2026-10-13
 

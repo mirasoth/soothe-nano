@@ -435,8 +435,6 @@ class ToolResultEvictionMiddleware(AgentMiddleware):
                 continue
             if msg.name not in EVICTABLE_TOOLS:
                 continue
-            if msg.name in NON_EVICTABLE_TOOLS:
-                continue
             if msg.tool_call_id in self._evicted_ids:
                 continue
             tool_msg_indices.append((i, msg))
@@ -486,11 +484,6 @@ class ToolResultEvictionMiddleware(AgentMiddleware):
         if changed:
             request = request.override(messages=patched)
         return await handler(request)
-
-    def _time_since_last_assistant(self, messages: list[Any]) -> float:
-        """Return minutes since the last AIMessage (placeholder, IG-778 A.3.3)."""
-        del messages  # unused for now
-        return 0.0
 
 
 __all__ = [

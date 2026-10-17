@@ -169,7 +169,12 @@ class CodeInterpreterMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
     ) -> ToolMessage | Command[Any]:
-        """Pass through — QuickJS middleware uses model-call hooks, not tool wrapping."""
+        """Pass through — QuickJS middleware uses model-call hooks, not tool wrapping.
+
+        Kept as an explicit async override: the inner QuickJS middleware only
+        implements sync ``wrap_tool_call``, so letting langchain compose its
+        default async hook would raise ``NotImplementedError`` on astream runs.
+        """
         return await handler(request)
 
     def wrap_model_call(

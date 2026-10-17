@@ -179,7 +179,6 @@ def discover_all_plugins(
         ("deep_research", "soothe_nano.subagents.deep_research:DeepResearchPlugin"),
         ("browser_use", "soothe_nano.subagents.browser_use:BrowserUsePlugin"),
         ("shell", "soothe_nano.toolkits.shell:ShellPlugin"),
-        ("file_ops", "soothe_nano.toolkits.file_ops:FileOpsPlugin"),
         ("datetime", "soothe_nano.toolkits.datetime:DatetimePlugin"),
         ("wizsearch", "soothe_nano.toolkits.wizsearch:WizsearchPlugin"),
         ("http_requests", "soothe_nano.toolkits.http_requests:HttpRequestsPlugin"),
