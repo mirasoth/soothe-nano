@@ -1,8 +1,9 @@
-"""Persist large tool results to disk instead of truncating.
+"""Keep tool results from saturating model context.
 
-Replaces the truncate-and-discard strategy with persist-to-disk + compact
-reference. The model can re-fetch the full output via read_file if needed,
-but the default path keeps context small without information loss.
+Two complementary strategies: persist oversized results to disk behind a
+compact ``<persisted-output>`` reference (the model can re-fetch via
+``read_file``), and evict old evictable results to a stub when total
+tool-result token estimate exceeds a threshold.
 """
 
 from __future__ import annotations
@@ -17,10 +18,12 @@ from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
+from soothe_nano.config.models import ToolResultEvictionConfig
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants
+# Persist-to-disk (storage) constants
 # ---------------------------------------------------------------------------
 
 PERSISTED_OUTPUT_TAG = "<persisted-output>"
@@ -30,17 +33,47 @@ DEFAULT_PERSIST_THRESHOLD_CHARS = 10_000
 DEFAULT_PREVIEW_CHARS = 2_000
 DEFAULT_PER_MESSAGE_BUDGET_CHARS = 200_000
 
+# ---------------------------------------------------------------------------
+# Evict-to-stub (eviction) constants
+# ---------------------------------------------------------------------------
+
+_CHARS_PER_TOKEN = 4
+
+EVICTABLE_TOOLS = frozenset(
+    {
+        "read_file",
+        "grep",
+        "glob",
+        "run_command",
+        "run_python",
+        "ls",
+        "file_info",
+    }
+)
+
+NON_EVICTABLE_TOOLS = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "edit_lines",
+        "insert_lines",
+        "delete_lines",
+        "apply_diff",
+        "delete",
+        "move_file",
+        "write_todos",
+        "task",
+    }
+)
+
+
+# ---------------------------------------------------------------------------
+# Persist-to-disk helpers
+# ---------------------------------------------------------------------------
+
 
 def _session_tool_results_dir(session_id: str, workspace_root: Path) -> Path:
-    """Return the directory for persisting tool results for a session.
-
-    Args:
-        session_id: Unique session identifier.
-        workspace_root: Workspace root path.
-
-    Returns:
-        Path to ``{workspace_root}/.soothe/tool-results/{session_id}``.
-    """
+    """Return ``{workspace_root}/.soothe/tool-results/{session_id}``."""
     return workspace_root / ".soothe" / "tool-results" / session_id
 
 
@@ -50,17 +83,7 @@ def _get_tool_result_path(
     tool_call_id: str,
     is_json: bool,
 ) -> Path:
-    """Return the file path for a persisted tool result.
-
-    Args:
-        session_id: Session identifier.
-        workspace_root: Workspace root path.
-        tool_call_id: Unique tool call ID (used as filename).
-        is_json: Whether the content is JSON (affects extension).
-
-    Returns:
-        File path for the persisted result.
-    """
+    """Return the file path for a persisted tool result."""
     ext = "json" if is_json else "txt"
     safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in tool_call_id)
     return _session_tool_results_dir(session_id, workspace_root) / f"{safe_id}.{ext}"
@@ -68,10 +91,6 @@ def _get_tool_result_path(
 
 def _generate_preview(content: str, max_chars: int) -> tuple[str, bool]:
     """Generate a preview of content, truncating at a line boundary.
-
-    Args:
-        content: Full content string.
-        max_chars: Maximum characters in the preview.
 
     Returns:
         Tuple of (preview, has_more). The preview is truncated at the last
@@ -87,14 +106,7 @@ def _generate_preview(content: str, max_chars: int) -> tuple[str, bool]:
 
 
 def _format_file_size(size: int) -> str:
-    """Format a byte/char count as a human-readable size string.
-
-    Args:
-        size: Size in characters (approximated as bytes for display).
-
-    Returns:
-        Human-readable size string like "2.0KB" or "150.0KB".
-    """
+    """Format a byte/char count as a human-readable size string."""
     if size < 1024:
         return f"{size}B"
     if size < 1024 * 1024:
@@ -114,13 +126,6 @@ def persist_tool_result(
     Writes the full content to
     ``{workspace_root}/.soothe/tool-results/{session_id}/{tool_call_id}.txt``
     and returns a dict with the file path, original size, and preview.
-
-    Args:
-        content: Full tool result content.
-        tool_call_id: Unique tool call ID.
-        session_id: Session identifier.
-        workspace_root: Workspace root path.
-        preview_chars: Maximum preview characters.
 
     Returns:
         Dict with keys: filepath, original_size, preview, has_more.
@@ -155,18 +160,7 @@ def build_persisted_output_message(
     has_more: bool,
     preview_chars: int = DEFAULT_PREVIEW_CHARS,
 ) -> str:
-    """Build the compact reference message for a persisted tool result.
-
-    Args:
-        filepath: Path to the persisted file on disk.
-        original_size: Original content size in characters.
-        preview: Preview text to include in the reference.
-        has_more: Whether the preview was truncated.
-        preview_chars: Preview size for display label.
-
-    Returns:
-        Compact reference string wrapped in persisted-output tags.
-    """
+    """Build the compact reference message for a persisted tool result."""
     lines = [
         PERSISTED_OUTPUT_TAG,
         f"Output too large ({_format_file_size(original_size)}). Full output saved to: {filepath}",
@@ -181,14 +175,7 @@ def build_persisted_output_message(
 
 
 def is_persisted_content(content: Any) -> bool:
-    """Check if content has already been replaced with a persisted reference.
-
-    Args:
-        content: ToolMessage content.
-
-    Returns:
-        True if content starts with the persisted-output tag.
-    """
+    """Check if content has already been replaced with a persisted reference."""
     return isinstance(content, str) and content.startswith(PERSISTED_OUTPUT_TAG)
 
 
@@ -200,13 +187,6 @@ def maybe_persist_tool_result(
     preview_chars: int = DEFAULT_PREVIEW_CHARS,
 ) -> ToolMessage:
     """Persist a tool result to disk if it exceeds the threshold.
-
-    Args:
-        tool_message: Original ToolMessage with full content.
-        session_id: Session identifier.
-        workspace_root: Workspace root path.
-        persist_threshold: Character threshold above which to persist.
-        preview_chars: Preview size for the compact reference.
 
     Returns:
         Original ToolMessage if under threshold, or a new ToolMessage with
@@ -235,6 +215,11 @@ def maybe_persist_tool_result(
         preview_chars=preview_chars,
     )
     return tool_message.model_copy(update={"content": reference})
+
+
+# ---------------------------------------------------------------------------
+# Persist-to-disk middleware
+# ---------------------------------------------------------------------------
 
 
 class ToolResultStorageMiddleware(AgentMiddleware):
@@ -278,16 +263,7 @@ class ToolResultStorageMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
     ) -> ToolMessage | Command[Any]:
-        """Persist large single-tool results to disk after execution.
-
-        Args:
-            request: Tool call request.
-            handler: Next handler in the middleware chain.
-
-        Returns:
-            ToolMessage with compact reference if persisted, or original
-            result if under threshold.
-        """
+        """Persist large single-tool results to disk after execution."""
         result = await handler(request)
 
         if isinstance(result, ToolMessage):
@@ -336,15 +312,7 @@ class ToolResultStorageMiddleware(AgentMiddleware):
         request: Any,
         handler: Callable[[Any], Awaitable[Any]],
     ) -> Any:
-        """Enforce per-message aggregate budget on tool results.
-
-        Args:
-            request: Model request containing messages.
-            handler: Next handler in the middleware chain.
-
-        Returns:
-            Model response from handler (with possibly modified messages).
-        """
+        """Enforce per-message aggregate budget on tool results."""
         messages = list(getattr(request, "messages", None) or [])
         if not messages:
             return await handler(request)
@@ -391,12 +359,149 @@ class ToolResultStorageMiddleware(AgentMiddleware):
         return await handler(request)
 
 
+# ---------------------------------------------------------------------------
+# Evict-to-stub middleware
+# ---------------------------------------------------------------------------
+
+
+class ToolResultEvictionMiddleware(AgentMiddleware):
+    """Evict old tool results from context to prevent re-read churn.
+
+    Replaces ToolMessage.content for old evictable tool results with a
+    compact stub when total tool-result token estimate exceeds a threshold.
+    Runs in ``awrap_model_call`` so the eviction is visible to the model
+    on the next hop without persisting to checkpoint.
+    """
+
+    name = "ToolResultEvictionMiddleware"
+
+    def __init__(
+        self,
+        *,
+        config: ToolResultEvictionConfig | None = None,
+        max_tokens: int | None = None,
+        protect_recent: int | None = None,
+    ) -> None:
+        super().__init__()
+        if config is not None:
+            self._max_tokens = config.max_tokens
+            self._protect_recent = config.protect_recent
+        else:
+            from soothe_nano.config.constants import (
+                DEFAULT_TOOL_RESULT_EVICTION_MAX_TOKENS,
+                DEFAULT_TOOL_RESULT_EVICTION_PROTECT_RECENT,
+            )
+
+            self._max_tokens = max_tokens or DEFAULT_TOOL_RESULT_EVICTION_MAX_TOKENS
+            self._protect_recent = protect_recent or DEFAULT_TOOL_RESULT_EVICTION_PROTECT_RECENT
+        self._evicted_ids: set[str] = set()
+
+    def _estimate_tokens(self, content: Any) -> int:
+        """Estimate token count from content (string or list of blocks)."""
+        if isinstance(content, str):
+            return len(content) // _CHARS_PER_TOKEN
+        if isinstance(content, list):
+            total = 0
+            for block in content:
+                if isinstance(block, dict):
+                    total += len(str(block.get("text", ""))) // _CHARS_PER_TOKEN
+                elif isinstance(block, str):
+                    total += len(block) // _CHARS_PER_TOKEN
+            return total
+        return len(str(content)) // _CHARS_PER_TOKEN
+
+    def _effective_messages(self, request: Any) -> list[Any]:
+        """Extract the message list from a model request."""
+        messages = getattr(request, "messages", None)
+        if messages is None:
+            messages = getattr(request, "input", None)
+        if messages is None:
+            return []
+        return list(messages)
+
+    def _estimate_tool_result_tokens(self, messages: list[Any]) -> int:
+        """Sum token estimates for all ToolMessages in the list."""
+        total = 0
+        for msg in messages:
+            if isinstance(msg, ToolMessage):
+                total += self._estimate_tokens(msg.content)
+        return total
+
+    def _find_evictable(self, messages: list[Any]) -> list[tuple[int, ToolMessage]]:
+        """Find evictable ToolMessages, oldest first, skipping protected recent."""
+        tool_msg_indices: list[tuple[int, ToolMessage]] = []
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, ToolMessage):
+                continue
+            if msg.name not in EVICTABLE_TOOLS:
+                continue
+            if msg.name in NON_EVICTABLE_TOOLS:
+                continue
+            if msg.tool_call_id in self._evicted_ids:
+                continue
+            tool_msg_indices.append((i, msg))
+
+        if not tool_msg_indices:
+            return []
+
+        cutoff = len(tool_msg_indices) - self._protect_recent
+        if cutoff <= 0:
+            return []
+        return tool_msg_indices[:cutoff]
+
+    def _build_stub(self, msg: ToolMessage) -> str:
+        """Build a compact stub replacing evicted content."""
+        self._evicted_ids.add(msg.tool_call_id)
+        return f"[Evicted: {msg.name}(tool_call_id={msg.tool_call_id}) — re-invoke if needed]"
+
+    async def awrap_model_call(
+        self,
+        request: Any,
+        handler: Callable[[Any], Awaitable[Any]],
+    ) -> Any:
+        """Evict old tool results before the model sees them."""
+        messages = self._effective_messages(request)
+        if not messages:
+            return await handler(request)
+
+        tool_result_tokens = self._estimate_tool_result_tokens(messages)
+        if tool_result_tokens <= self._max_tokens:
+            return await handler(request)
+
+        evictable = self._find_evictable(messages)
+        if not evictable:
+            return await handler(request)
+
+        patched = list(messages)
+        changed = False
+        for idx, msg in evictable:
+            if tool_result_tokens <= self._max_tokens:
+                break
+            evicted_tokens = self._estimate_tokens(msg.content)
+            stub = self._build_stub(msg)
+            patched[idx] = msg.model_copy(update={"content": stub})
+            tool_result_tokens -= evicted_tokens
+            changed = True
+
+        if changed:
+            request = request.override(messages=patched)
+        return await handler(request)
+
+    def _time_since_last_assistant(self, messages: list[Any]) -> float:
+        """Return minutes since the last AIMessage (placeholder, IG-778 A.3.3)."""
+        del messages  # unused for now
+        return 0.0
+
+
 __all__ = [
     "DEFAULT_PER_MESSAGE_BUDGET_CHARS",
     "DEFAULT_PERSIST_THRESHOLD_CHARS",
     "DEFAULT_PREVIEW_CHARS",
+    "EVICTABLE_TOOLS",
+    "NON_EVICTABLE_TOOLS",
     "PERSISTED_OUTPUT_CLOSING_TAG",
     "PERSISTED_OUTPUT_TAG",
+    "ToolResultEvictionMiddleware",
     "ToolResultStorageMiddleware",
     "build_persisted_output_message",
     "is_persisted_content",

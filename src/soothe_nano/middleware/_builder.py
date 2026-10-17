@@ -143,7 +143,7 @@ def build_soothe_middleware_stack(
     # this middleware the registry stays empty and the TUI shows no tool args.
     # Must wrap EditCoalescingMiddleware (outer): coalescing intercepts edit tools
     # without calling inner handlers, so kwargs must be captured before that path.
-    from .tool_call_args_middleware import ToolCallArgsMiddleware
+    from .tool_call_args_registry import ToolCallArgsMiddleware
     from .tool_optimization import ToolOptimizationMiddleware
 
     stack.append(ToolCallArgsMiddleware())
@@ -179,7 +179,7 @@ def build_soothe_middleware_stack(
     mw_config = agent_middleware_config(config)
     storage_config = mw_config.tool_result_storage
     if storage_config.enabled:
-        from .tool_result_storage import ToolResultStorageMiddleware
+        from .tool_result_size import ToolResultStorageMiddleware
 
         stack.append(
             ToolResultStorageMiddleware(
@@ -210,7 +210,7 @@ def build_soothe_middleware_stack(
     # 9b. Evict old tool results to prevent re-read churn (microcompact analog, IG-778 §2)
     eviction_config = mw_config.tool_result_eviction
     if eviction_config.enabled:
-        from .tool_result_eviction import ToolResultEvictionMiddleware
+        from .tool_result_size import ToolResultEvictionMiddleware
 
         stack.append(
             ToolResultEvictionMiddleware(

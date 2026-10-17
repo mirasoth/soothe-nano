@@ -10,8 +10,8 @@ from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 
 # IG-519: Use ToolCallArgsMiddleware (semaphore removed from stack)
-from soothe_nano.middleware.tool_call_args_middleware import ToolCallArgsMiddleware
 from soothe_nano.middleware.tool_call_args_registry import (
+    ToolCallArgsMiddleware,
     get_recorded_tool_call_args,
     init_tool_call_args_registry,
     record_tool_call_args_from_request,
