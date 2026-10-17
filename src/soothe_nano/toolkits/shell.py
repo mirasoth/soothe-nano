@@ -8,6 +8,7 @@ import logging
 import os
 import queue
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -15,9 +16,10 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Protocol
 
 from langchain_core.callbacks.manager import (
     AsyncCallbackManagerForToolRun,
@@ -565,6 +567,105 @@ def _collect_capped_stdout(
     )
 
 
+# ---------------------------------------------------------------------------
+# Command executor seam (host subprocess vs. sandbox backend, single path)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExecutorOutcome:
+    """Outcome of one command via a :class:`CommandExecutor`.
+
+    Errors and timeouts surface as data so the tool layer can format the
+    model-visible messages in one place, identical for host and sandbox.
+    """
+
+    stdout: str = ""
+    exit_code: int | None = None
+    timed_out: bool = False
+    error: str | None = None
+
+
+class CommandExecutor(Protocol):
+    """Seam between the shell toolkit and command execution.
+
+    Host mode uses the existing subprocess implementation unchanged
+    (:class:`HostShellExecutor`); sandbox mode injects the backend
+    (:class:`BackendShellExecutor`). ``workspace_root`` distinguishes the
+    two: ``None`` means host paths, a guest path means sandbox execution.
+    """
+
+    workspace_root: str | None
+
+    def run(self, command: str, *, cwd: str | None, timeout: int) -> ExecutorOutcome:
+        """Run one command and return its outcome (never raises for timeouts)."""
+        ...
+
+
+class HostShellExecutor:
+    """Host subprocess executor — identical semantics to the pre-seam path."""
+
+    workspace_root: str | None = None
+
+    def __init__(self, *, max_output_chars: int | None = None) -> None:
+        self._max_output_chars = max_output_chars
+
+    def run(self, command: str, *, cwd: str | None, timeout: int) -> ExecutorOutcome:
+        try:
+            completed = _run_shell_command_sync(
+                command,
+                cwd=cwd,
+                timeout=timeout,
+                max_output_chars=self._max_output_chars,
+            )
+        except (subprocess.TimeoutExpired, TimeoutError):
+            return ExecutorOutcome(stdout="", exit_code=None, timed_out=True)
+        except OSError as e:
+            return ExecutorOutcome(stdout="", exit_code=None, error=str(e))
+        return ExecutorOutcome(stdout=completed.stdout or "", exit_code=completed.returncode)
+
+
+class BackendShellExecutor:
+    """Route shell commands to an injected ``SandboxBackendProtocol`` backend.
+
+    Commands run inside the sandbox guest; ``cwd`` is the guest workspace
+    root. Uses ``execute_with_offload`` when the backend opts into capture
+    offload (large output stays in the guest with a head/tail preview,
+    preserving the exit code), plain ``execute`` otherwise.
+    """
+
+    def __init__(self, backend: Any, *, workspace_root: str | None = None) -> None:
+        self._backend = backend
+        self.workspace_root = workspace_root or getattr(backend, "workspace_root", "/workspace")
+
+    def run(self, command: str, *, cwd: str | None, timeout: int) -> ExecutorOutcome:
+        target = cwd or self.workspace_root
+        wrapped = f"cd {shlex.quote(target)} && {command}" if target else command
+        effective = int(timeout)
+        if getattr(self._backend, "enable_capture_offload", False):
+            capture_path = f"{self.workspace_root}/.soothe/captures/cmd-{uuid.uuid4().hex[:16]}.log"
+            offloaded = self._backend.execute_with_offload(
+                wrapped,
+                capture_path,
+                max_inline_bytes=_EXECUTOR_MAX_INLINE_BYTES,
+                timeout=effective,
+            )
+            response = offloaded.response
+        else:
+            response = self._backend.execute(wrapped, timeout=effective)
+        if response.exit_code is None and response.output.startswith("Error:"):
+            return ExecutorOutcome(stdout="", exit_code=None, error=response.output)
+        # Backend timeout convention (RFC §10.1): exit_code=124 + note text.
+        timed_out = response.exit_code == 124
+        return ExecutorOutcome(
+            stdout=response.output, exit_code=response.exit_code, timed_out=timed_out
+        )
+
+
+_EXECUTOR_MAX_INLINE_BYTES = 100_000
+"""Inline byte budget for capture-offloaded sandbox commands."""
+
+
 def _run_shell_command_sync(
     command: str,
     *,
@@ -632,6 +733,10 @@ class RunCommandShellTool(BaseTool):
     timeout: int = Field(default=DEFAULT_EXECUTE_TIMEOUT, description="Command timeout in seconds")
     max_output_length: int = Field(default=DEFAULT_CODE_EXEC_MAX_OUTPUT_CHARS)
     security_config: Any = Field(default=None, description="Security configuration object")
+    executor: Any = Field(
+        default=None,
+        description="CommandExecutor; defaults to host subprocess executor",
+    )
 
     def _get_effective_workspace(self, tool_runtime: Any = None) -> str | None:
         """Expose workspace resolution for tests."""
@@ -677,41 +782,48 @@ class RunCommandShellTool(BaseTool):
             logger.warning("Operation security denied command: %s (%s)", command, reason)
             return f"Error: {reason}"
 
-        shell_error = macos_shell_compatibility_error(command)
-        if shell_error is not None:
-            return shell_error
+        executor = self.executor or HostShellExecutor(max_output_chars=self.max_output_length)
+        sandboxed = executor.workspace_root is not None
+
+        if not sandboxed:
+            shell_error = macos_shell_compatibility_error(command)
+            if shell_error is not None:
+                return shell_error
 
         actual_timeout = clamp_execute_timeout(timeout if timeout is not None else self.timeout)
-        cwd_raw = _resolve_workspace(self.workspace_root, runtime)
-        cwd = str(expand_path(cwd_raw)) if cwd_raw else None
 
-        command = _translate_virtual_paths_in_command(
-            command,
-            cwd,
-            virtual_mode=_virtual_mode_from_security(self.security_config),
-        )
+        if sandboxed:
+            # Guest paths are real paths: no host virtual-path translation,
+            # and the guest is Linux so the macOS guard does not apply.
+            cwd = executor.workspace_root
+        else:
+            cwd_raw = _resolve_workspace(self.workspace_root, runtime)
+            cwd = str(expand_path(cwd_raw)) if cwd_raw else None
+            command = _translate_virtual_paths_in_command(
+                command,
+                cwd,
+                virtual_mode=_virtual_mode_from_security(self.security_config),
+            )
 
         try:
-            completed = _run_shell_command_sync(
-                command,
-                cwd=cwd,
-                timeout=actual_timeout,
-                max_output_chars=self.max_output_length,
-            )
-        except (subprocess.TimeoutExpired, TimeoutError):
+            outcome = executor.run(command, cwd=cwd, timeout=actual_timeout)
+        except Exception as e:
+            logger.exception("CLI command failed")
+            return f"Error executing command: {e}"
+
+        if outcome.timed_out:
             return (
                 f"Error: Command timed out after {actual_timeout}s. "
                 "The process group was terminated. "
                 "For servers/daemons or open-ended jobs, use run_background; "
                 "for bounded sync work, pass a higher timeout argument."
             )
-        except OSError as e:
-            return f"Error executing command: {e}"
-        except Exception as e:
-            logger.exception("CLI command failed")
-            return f"Error executing command: {e}"
+        if outcome.error is not None:
+            if outcome.error.startswith("Error"):
+                return outcome.error
+            return f"Error executing command: {outcome.error}"
 
-        output = completed.stdout or ""
+        output = outcome.stdout or ""
         output = _ANSI_ESCAPE.sub("", output) if output else ""
         return output.strip()
 
@@ -792,6 +904,29 @@ class RunPythonREPLTool(BaseTool):
     args_schema: type[BaseModel] = RunPythonInput
     python_repl: _SoothePythonREPL = Field(default_factory=_soothe_python_repl)
     sanitize_input: bool = True
+    executor: Any = Field(
+        default=None,
+        description="CommandExecutor; sandbox mode runs python3 in the guest",
+    )
+    timeout: int = Field(default=DEFAULT_EXECUTE_TIMEOUT, description="Guest run_python timeout")
+
+    def _run_in_sandbox(self, code: str) -> Any:
+        """Run the snippet as a one-shot guest ``python3`` heredoc process."""
+        root = self.executor.workspace_root
+        if "PY_EOF" in code:  # would terminate the heredoc early
+            return "Error: code contains the reserved heredoc marker PY_EOF"
+        command = f"python3 - <<'PY_EOF'\n{code}\nPY_EOF"
+        actual_timeout = clamp_execute_timeout(self.timeout)
+        try:
+            outcome = self.executor.run(command, cwd=root, timeout=actual_timeout)
+        except Exception as e:
+            logger.exception("Sandbox python execution failed")
+            return f"Error executing command: {e}"
+        if outcome.timed_out:
+            return f"Error: Python execution timed out after {actual_timeout}s."
+        if outcome.error is not None:
+            return outcome.error if outcome.error.startswith("Error") else f"Error: {outcome.error}"
+        return outcome.stdout
 
     def _run(
         self,
@@ -800,6 +935,8 @@ class RunPythonREPLTool(BaseTool):
     ) -> Any:
         if self.sanitize_input:
             code = _sanitize_python_repl_input(code)
+        if self.executor is not None and self.executor.workspace_root is not None:
+            return self._run_in_sandbox(code)
         return self.python_repl.run(code)
 
     async def _arun(
@@ -809,6 +946,8 @@ class RunPythonREPLTool(BaseTool):
     ) -> Any:
         if self.sanitize_input:
             code = _sanitize_python_repl_input(code)
+        if self.executor is not None and self.executor.workspace_root is not None:
+            return await run_in_executor(None, self._run_in_sandbox, code)
         return await run_in_executor(None, self.python_repl.run, code)
 
 
@@ -844,6 +983,10 @@ class RunBackgroundTool(BaseTool):
         description="Delete bg-*.log files older than this many days on spawn (0=off)",
     )
     security_config: Any = Field(default=None, description="Security configuration object")
+    executor: Any = Field(
+        default=None,
+        description="CommandExecutor; sandbox mode spawns the job inside the guest",
+    )
 
     def _security_decision(self, command: str, tool_runtime: Any = None) -> tuple[str, str]:
         evaluator = WorkspaceToolOperationSecurity()
@@ -862,6 +1005,49 @@ class RunBackgroundTool(BaseTool):
         )
         return decision.verdict, decision.reason
 
+    def _run_in_sandbox(self, command: str, executor: Any) -> dict[str, Any]:
+        """Start the job via guest ``nohup``; return guest PID and log path.
+
+        Mirrors the host flow (pending log, then rename to ``bg-{pid}.log``)
+        inside one guest shell line: the ``&`` backgrounds only the ``nohup``
+        job, ``$!`` captures its PID, and the rename happens after spawn so
+        the open fd follows the inode. ``< /dev/null`` releases the session
+        stdio so the exec call returns without waiting on the job.
+        """
+        root = executor.workspace_root
+        bg_dir = f"{root}/.soothe/background"
+        pending = f"{bg_dir}/bg-pending-{uuid.uuid4().hex[:12]}.log"
+        header = _format_background_log_header(command)
+        inner = f"printf {shlex.quote(header)}; exec sh -c {shlex.quote(command)}"
+        one_liner = (
+            f"mkdir -p {shlex.quote(bg_dir)} || exit 1; "
+            f"nohup sh -c {shlex.quote(inner)} > {shlex.quote(pending)} 2>&1 < /dev/null & "
+            f'pid=$!; mv {shlex.quote(pending)} "{bg_dir}/bg-$pid.log"; echo $pid'
+        )
+        try:
+            outcome = executor.run(one_liner, cwd=root, timeout=30)
+        except Exception as e:
+            return _background_run_error(f"Error starting background process: {e}")
+        if outcome.error is not None or outcome.timed_out:
+            detail = outcome.error or "guest spawn command timed out"
+            return _background_run_error(f"Error starting background process: {detail}")
+        pid_text = (outcome.stdout or "").strip()
+        if not pid_text.isdigit():
+            return _background_run_error(
+                f"Error starting background process: unexpected guest response: {pid_text!r}"
+            )
+        pid = int(pid_text)
+        log_path = f"{bg_dir}/bg-{pid}.log"
+        return {
+            "pid": pid,
+            "status": "running",
+            "message": (
+                f"Background process started with PID: {pid} (guest). "
+                f"Log file: {log_path} (use tail_background_log or read_file to inspect output)."
+            ),
+            "log_path": log_path,
+        }
+
     def _run(
         self,
         command: str,
@@ -879,6 +1065,10 @@ class RunBackgroundTool(BaseTool):
         verdict, reason = self._security_decision(command, runtime)
         if verdict != "allow":
             return _background_run_error(f"Error: {reason}")
+
+        executor = self.executor
+        if executor is not None and executor.workspace_root is not None:
+            return self._run_in_sandbox(command, executor)
 
         shell_error = macos_shell_compatibility_error(command)
         if shell_error is not None:
@@ -976,6 +1166,10 @@ class TailBackgroundLogTool(BaseTool):
         default=None,
         description="Optional override for background log directory",
     )
+    executor: Any = Field(
+        default=None,
+        description="CommandExecutor; sandbox mode tails the guest log via guest tail",
+    )
 
     def _run(
         self,
@@ -987,6 +1181,9 @@ class TailBackgroundLogTool(BaseTool):
         if pid <= 0:
             return f"Error: invalid process ID {pid}"
 
+        if self.executor is not None and self.executor.workspace_root is not None:
+            return self._run_in_sandbox(pid, lines, self.executor)
+
         cwd_raw = _resolve_workspace(self.workspace_root, runtime)
         cwd = str(expand_path(cwd_raw)) if cwd_raw else None
         log_dir = _resolve_background_log_dir(
@@ -996,6 +1193,24 @@ class TailBackgroundLogTool(BaseTool):
         )
         log_path = _background_log_path_for_pid(pid, log_dir)
         return _tail_text_file(log_path, max_lines=lines)
+
+    def _run_in_sandbox(self, pid: int, lines: int, executor: Any) -> str:
+        """Tail the guest ``bg-{pid}.log`` with the guest's own ``tail``."""
+        root = executor.workspace_root
+        log_path = f"{root}/.soothe/background/bg-{pid}.log"
+        count = max(1, min(int(lines), 5000))
+        try:
+            outcome = executor.run(
+                f"tail -n {count} {shlex.quote(log_path)}",
+                cwd=root,
+                timeout=30,
+            )
+        except Exception as e:
+            return f"Error reading log file: {e}"
+        if outcome.error is not None or outcome.timed_out or (outcome.exit_code or 0) != 0:
+            return f"Error: log file not found: {log_path}"
+        output = outcome.stdout or ""
+        return output if output.endswith("\n") or not output else f"{output}\n"
 
     async def _arun(
         self,
@@ -1034,6 +1249,35 @@ class KillProcessTool(BaseTool):
         default=None,
         description="Optional override for background log directory",
     )
+    executor: Any = Field(
+        default=None,
+        description="CommandExecutor; sandbox mode kills the guest PID directly",
+    )
+
+    def _run_in_sandbox(self, pid: int, executor: Any) -> str:
+        """Kill a guest PID (TERM then KILL) with the same status wording."""
+        root = executor.workspace_root
+        log_path = f"{root}/.soothe/background/bg-{pid}.log"
+        one_liner = (
+            f"kill -0 {pid} 2>/dev/null || {{ echo NOT_FOUND; exit 0; }}; "
+            f"kill {pid} 2>/dev/null; "
+            f"kill -0 {pid} 2>/dev/null && kill -9 {pid} 2>/dev/null; "
+            f"printf '\\n[soothe] process {pid} terminated\\n' >> {shlex.quote(log_path)} 2>/dev/null; "
+            f"kill -0 {pid} 2>/dev/null && echo ALIVE || echo DEAD"
+        )
+        try:
+            outcome = executor.run(one_liner, cwd=root, timeout=30)
+        except Exception as e:
+            return f"Error killing process: {e}"
+        if outcome.error is not None or outcome.timed_out:
+            detail = outcome.error or "guest kill command timed out"
+            return f"Error killing process: {detail}"
+        status = (outcome.stdout or "").strip()
+        if status == "NOT_FOUND":
+            return f"Process {pid} not found or already terminated"
+        if status == "DEAD":
+            return f"Process {pid} terminated"
+        return f"Process {pid} termination signaled (process may still be shutting down)"
 
     def _run(
         self,
@@ -1055,6 +1299,9 @@ class KillProcessTool(BaseTool):
         # ``TypeError`` on the ``<=`` comparison and abort the whole step.
         if not isinstance(pid, int) or pid <= 0:
             return f"Error: invalid process ID {pid!r}"
+
+        if self.executor is not None and self.executor.workspace_root is not None:
+            return self._run_in_sandbox(pid, self.executor)
 
         refusal = _protected_kill_refusal(pid)
         if refusal is not None:
@@ -1115,6 +1362,7 @@ class ShellToolkit:
         max_output_length: int = DEFAULT_CODE_EXEC_MAX_OUTPUT_CHARS,
         background_log_dir: str | None = None,
         background_log_retention_days: int = 7,
+        executor: Any = None,
     ) -> None:
         """Initialize toolkit.
 
@@ -1125,6 +1373,8 @@ class ShellToolkit:
             max_output_length: Max stdout chars for run_command.
             background_log_dir: Optional override for run_background log directory.
             background_log_retention_days: Prune bg-*.log older than this (0=off).
+            executor: Optional ``CommandExecutor``; sandbox backends route
+                all five tools into the guest, None keeps host subprocesses.
         """
         self._workspace_root = workspace_root
         self._timeout = timeout
@@ -1132,30 +1382,43 @@ class ShellToolkit:
         self._max_output_length = max_output_length
         self._background_log_dir = background_log_dir
         self._background_log_retention_days = background_log_retention_days
+        self._executor = executor
 
     def get_tools(self) -> list[BaseTool]:
         """Return the five execution tool instances for this toolkit."""
+        python_tool_kwargs: dict[str, Any] = {}
+        if self._executor is not None:
+            python_tool_kwargs["executor"] = self._executor
+            python_tool_kwargs["description"] = (
+                "Execute Python code in the sandbox guest via a one-shot python3 process. "
+                "Variables and imports do NOT persist between calls — each call is a "
+                "fresh process. Parameters: code (required). Use print(...) to display values."
+            )
         return [
             RunCommandShellTool(
                 workspace_root=self._workspace_root,
                 timeout=self._timeout,
                 security_config=self._security_config,
                 max_output_length=self._max_output_length,
+                executor=self._executor,
             ),
-            RunPythonREPLTool(),
+            RunPythonREPLTool(**python_tool_kwargs),
             RunBackgroundTool(
                 workspace_root=self._workspace_root,
                 security_config=self._security_config,
                 background_log_dir=self._background_log_dir,
                 background_log_retention_days=self._background_log_retention_days,
+                executor=self._executor,
             ),
             TailBackgroundLogTool(
                 workspace_root=self._workspace_root,
                 background_log_dir=self._background_log_dir,
+                executor=self._executor,
             ),
             KillProcessTool(
                 workspace_root=self._workspace_root,
                 background_log_dir=self._background_log_dir,
+                executor=self._executor,
             ),
         ]
 
@@ -1167,6 +1430,7 @@ def build_shell_toolkit(
     timeout: int = DEFAULT_EXECUTE_TIMEOUT,
     security_config: Any | None = None,
     max_output_length: int | None = None,
+    executor: Any = None,
 ) -> ShellToolkit:
     """Construct :class:`ShellToolkit` from resolver or plugin config."""
     if security_config is None and config is not None:
@@ -1182,6 +1446,7 @@ def build_shell_toolkit(
         ),
         background_log_dir=_background_log_dir_from_config(config),
         background_log_retention_days=_background_log_retention_from_config(config),
+        executor=executor,
     )
 
 

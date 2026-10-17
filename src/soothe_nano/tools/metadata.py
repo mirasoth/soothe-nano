@@ -484,18 +484,6 @@ _register(
 
 _register(
     ToolMeta(
-        name="analyze_image",
-        display_name="AnalyzeImage",
-        arg_keys=("image_path",),
-        path_arg_keys=("image_path",),
-        category="media",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
         name="extract_text_from_image",
         display_name="ExtractTextFromImage",
         arg_keys=("image_path",),
@@ -549,82 +537,6 @@ _register(
         arg_keys=("audio_path",),
         path_arg_keys=("audio_path",),
         category="media",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-# ---------------------------------------------------------------------------
-# soothe data tools
-# ---------------------------------------------------------------------------
-
-_register(
-    ToolMeta(
-        name="inspect_data",
-        display_name="InspectData",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="summarize_data",
-        display_name="SummarizeData",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="check_data_quality",
-        display_name="CheckDataQuality",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="extract_text",
-        display_name="ExtractText",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="get_data_info",
-        display_name="GetDataInfo",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="ask_about_file",
-        display_name="AskAboutFile",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
         outcome_type="file_read",
         source="soothe",
     )

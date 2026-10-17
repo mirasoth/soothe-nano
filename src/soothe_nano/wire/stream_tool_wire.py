@@ -35,7 +35,7 @@ def unified_tool_update_allowed_without_args(tool_call_id: str) -> bool:
     Step-level ``task`` delegations are excluded; they are ingested via dedicated paths.
     Raw provider ids (non-unified) still require parsed args before batching.
     """
-    from soothe_nano.ux.task_namespace import (
+    from soothe_nano.wire.task_namespace import (
         is_inner_subgraph_task_tool_id,
         is_step_level_task_tool_id,
         parse_unified_tool_call_id,

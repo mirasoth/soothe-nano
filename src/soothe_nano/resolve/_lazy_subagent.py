@@ -46,13 +46,11 @@ class LazySubagentRunnable:
         kwargs: dict[str, Any],
         name: str,
         *,
-        materialize: Callable[[Callable[..., Any], dict[str, Any]], Any] | None = None,
         pending_config: dict[str, Any] | None = None,
     ) -> None:
         self._factory = factory
         self._kwargs = kwargs
         self._name = name
-        self._materialize_fn = materialize
         self._pending_config = pending_config
         self._delegate: Any | None = None
         self._lock = threading.Lock()
@@ -63,8 +61,7 @@ class LazySubagentRunnable:
         with self._lock:
             if self._delegate is not None:
                 return self._delegate
-            materialize = self._materialize_fn or _default_materialize
-            spec = materialize(self._factory, self._kwargs)
+            spec = _default_materialize(self._factory, self._kwargs)
             runnable = spec["runnable"] if isinstance(spec, dict) else spec.runnable
             if self._pending_config:
                 runnable = runnable.with_config(self._pending_config)
@@ -84,7 +81,6 @@ class LazySubagentRunnable:
             self._factory,
             self._kwargs,
             self._name,
-            materialize=self._materialize_fn,
             pending_config=merged or None,
         )
         if self._delegate is not None:

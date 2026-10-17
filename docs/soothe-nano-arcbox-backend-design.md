@@ -896,6 +896,24 @@ output offsets / resume，用其恢复读取同一次 execution 的输出。
 
 ## 11. 代码改造清单
 
+> **落地状态（2026-10-17，phase 1）**：第 1–4、7、9 项已落地
+> （`sandbox/{__init__,arcbox}.py`、builder composite 包装与 permissions 降级、
+> shell executor seam 五工具 guest 映射、`FILESYSTEM_TOOLS_SANDBOX` +
+> `SANDBOX_EXCLUDED_TOOL_GROUPS`、`pyproject` `arcbox` extra、单测三套
+> `tests/unit/sandbox` / `tests/unit/toolkits/test_shell_executor.py` /
+> `tests/unit/agent/test_builder_sandbox.py`）。
+> **暂缓项**：第 5 项全工具放置模型（placement/shuttle，host-bound 自定义
+> 工具在 sandbox 模式暂由排除组兜底）、第 6 项 plan subagent 后端贯穿
+> （planner 仍用宿主 `FilesystemBackend`，guest 路径对其不可见）、
+> 第 10 项使用文档；均待真实 ArcBox 环境联调后推进。
+> 偏差记录：`run_command` 超时在 guest 侧按 `exit_code=124` 约定回传
+> （§10.1），由 `BackendShellExecutor` 映射回统一的超时文案；
+> `kill_process` guest 分支跳过宿主 protected-kill 钩子（只保护宿主进程）。
+> **2026-10-17 更新**：`data` / `image` 工具组已从 nano 整体删除
+> （§7.1 表中两行与 §7.5 默认推导表中对应的 shuttle 例子随之作废），
+> sandbox 排除组收缩为仅 `file_ops`；shuttle 的剩余受益者只剩
+> document/自定义工具场景，placement 模型（第 5 项）的优先级相应下调。
+
 ### 11.1 `soothe-nano`
 
 1.  新增 `src/soothe_nano/sandbox/{__init__.py,arcbox.py}`：

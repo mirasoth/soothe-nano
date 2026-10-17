@@ -6,7 +6,6 @@ from pathlib import Path
 
 from langchain.tools import ToolRuntime
 
-from soothe_nano.toolkits.data import DataToolkit, InspectDataTool
 from soothe_nano.toolkits.wizsearch import WizsearchCrawlTool, WizsearchSearchTool
 
 # ---------------------------------------------------------------------------
@@ -206,87 +205,6 @@ class TestFileOpsToolkit:
 
 
 # ---------------------------------------------------------------------------
-# Data Tools (replaces DataTool)
-# ---------------------------------------------------------------------------
-
-
-class TestDataTools:
-    """Tests for the data tools."""
-
-    def test_create_returns_six_tools(self) -> None:
-        toolkit = DataToolkit()
-        tools = toolkit.get_tools()
-        assert len(tools) == 6
-        assert isinstance(tools[0], InspectDataTool)
-
-    def test_inspect_data_tool_name(self) -> None:
-        tool = InspectDataTool()
-        assert tool.name == "inspect_data"
-
-    def test_inspect_csv(self, tmp_path: Path) -> None:
-        csv_file = tmp_path / "test.csv"
-        csv_file.write_text("name,age\nAlice,30\nBob,25\n")
-        tool = InspectDataTool()
-        result = tool._run(file_path=str(csv_file))
-        assert "name" in result
-        assert "age" in result
-
-    def test_document_extract(self, tmp_path: Path) -> None:
-        from soothe_nano.toolkits.data import ExtractTextTool
-
-        txt_file = tmp_path / "doc.txt"
-        txt_file.write_text("Hello document world")
-        tool = ExtractTextTool()
-        result = tool._run(file_path=str(txt_file))
-        assert "Hello document world" in result
-
-    def test_document_extract_docx(self, tmp_path: Path) -> None:
-        import zipfile
-
-        from soothe_nano.toolkits.data import ExtractTextTool
-
-        docx_file = tmp_path / "doc.docx"
-        document_xml = (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            "<w:body><w:p><w:r><w:t>Hello DOCX world</w:t></w:r></w:p></w:body>"
-            "</w:document>"
-        )
-        content_types = (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-            '<Default Extension="rels" '
-            'ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-            '<Default Extension="xml" ContentType="application/xml"/>'
-            '<Override PartName="/word/document.xml" '
-            'ContentType="application/vnd.openxmlformats-officedocument'
-            '.wordprocessingml.document.main+xml"/>'
-            "</Types>"
-        )
-        rels = (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" '
-            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
-            'Target="word/document.xml"/>'
-            "</Relationships>"
-        )
-        with zipfile.ZipFile(docx_file, "w") as zf:
-            zf.writestr("[Content_Types].xml", content_types)
-            zf.writestr("_rels/.rels", rels)
-            zf.writestr("word/document.xml", document_xml)
-
-        tool = ExtractTextTool()
-        result = tool._run(file_path=str(docx_file))
-        assert "Hello DOCX world" in result
-
-
-# ---------------------------------------------------------------------------
-# Research tool (renamed inquiry)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
 # Resolver: toolkit names resolve with backward compat
 # ---------------------------------------------------------------------------
 
@@ -333,14 +251,6 @@ class TestResolverToolkitNames:
         tool_names = {t.name for t in tools}
         assert "tail_background_log" in tool_names
 
-    def test_data_resolves(self) -> None:
-        """Data toolkit should resolve to 6 tools."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
-
-        tools = _resolve_single_tool_group_uncached("data")
-        assert len(tools) == 6
-        assert tools[0].name == "inspect_data"
-
 
 class TestResolverOldNamesRejected:
     """Legacy names should not resolve."""
@@ -357,6 +267,10 @@ class TestResolverOldNamesRejected:
             "tabular",
             "document",
             "python_executor",
+            "data",
+            "image",
+            "analyze_image",
+            "inspect_data",
         ):
             tools = _resolve_single_tool_group_uncached(old_name)
             assert tools == [], f"Legacy name '{old_name}' should not resolve"
@@ -380,7 +294,8 @@ class TestDomainScopedPrompts:
             _SUBAGENT_GUIDE,
         )
 
-        assert "websearch" in _RESEARCH_GUIDE or "search_web" in _RESEARCH_GUIDE
+        assert "wizsearch_search" in _RESEARCH_GUIDE
+        assert "wizsearch_crawl" in _RESEARCH_GUIDE
         assert "research" in _RESEARCH_GUIDE.lower()
         assert "read_file" in _FILE_OPS_GUIDE or "file" in _FILE_OPS_GUIDE.lower()
         assert "grep" in _FILE_OPS_GUIDE
@@ -405,7 +320,7 @@ class TestDomainScopedPrompts:
         assert "read_file" in guide_lower or "file" in guide_lower
         assert "run_command" in guide_lower or "shell" in guide_lower
         assert "data" in guide_lower
-        assert "search_web" in guide_lower or "websearch" in guide_lower or "web" in guide_lower
+        assert "wizsearch_search" in guide_lower or "web" in guide_lower
         assert "research" in guide_lower
         assert "native tools first" in guide_lower or "grep tool" in guide_lower
 

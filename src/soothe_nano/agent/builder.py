@@ -14,8 +14,10 @@ from soothe_nano.agent.interaction_mode import (
     FILESYSTEM_TOOLS_AGENT,
     FILESYSTEM_TOOLS_ASK,
     FILESYSTEM_TOOLS_PLAN,
+    FILESYSTEM_TOOLS_SANDBOX,
     PLAN_POLICY_PROFILE,
     READONLY_GP_SYSTEM_PROMPT,
+    SANDBOX_EXCLUDED_TOOL_GROUPS,
     InteractionMode,
     append_ask_system_prompt,
     append_bypass_system_prompt,
@@ -123,12 +125,27 @@ class AgentBuilder:
 
         self._load_plugins()
 
+        # Backend resolution must precede tool resolution: a sandbox backend
+        # rebinds the shell tool group and rewrites the FS surface below.
+        resolved_backend = backend or self._initialize_backend(resolved_policy)
+        sandbox_backend = self._extract_sandbox_backend(resolved_backend)
+        if sandbox_backend is not None:
+            resolved_backend = self._wrap_sandbox_backend(
+                sandbox_backend, resolved_backend, resolved_policy
+            )
+
         tools_start = time.perf_counter()
+        excluded_groups: set[str] = set()
+        if is_readonly:
+            excluded_groups |= set(ASK_MUTATING_TOOL_GROUPS)
+        if sandbox_backend is not None:
+            excluded_groups |= set(SANDBOX_EXCLUDED_TOOL_GROUPS)
         config_tools = resolve_tools(
             self._config.tools,
             lazy=True,
             config=self._config,
-            exclude_tool_groups=ASK_MUTATING_TOOL_GROUPS if is_readonly else None,
+            exclude_tool_groups=excluded_groups or None,
+            sandbox_backend=sandbox_backend,
         )
         all_tools: list[BaseTool | Callable | dict[str, Any]] = list(config_tools)
         if tools:
@@ -184,8 +201,6 @@ class AgentBuilder:
             "[Init] Subagents resolved: %d agents (%.1fms)", len(all_subagents), subagents_ms
         )
 
-        resolved_backend = backend or self._initialize_backend(resolved_policy)
-
         policy_profile = (
             ASK_POLICY_PROFILE
             if is_ask
@@ -235,16 +250,35 @@ class AgentBuilder:
         elif is_bypass:
             system_prompt = append_bypass_system_prompt(system_prompt)
 
-        filesystem_tools = (
-            FILESYSTEM_TOOLS_ASK
-            if is_ask
-            else (FILESYSTEM_TOOLS_PLAN if is_plan else FILESYSTEM_TOOLS_AGENT)
-        )
-        fs_permissions = (
-            ask_permissions()
-            if is_ask
-            else (plan_permissions() if is_plan else (bypass_permissions() if is_bypass else None))
-        )
+        if sandbox_backend is not None:
+            # Guest FS surface: agent/bypass get the extended list (line-edit
+            # family included); readonly modes keep the read-only allowlist.
+            # Permissions are dropped entirely: FilesystemMiddleware refuses
+            # non-empty permission lists on execution-capable backends whose
+            # paths do not all fall inside the composite routes, so readonly
+            # enforcement relies on the tool allowlist alone.
+            filesystem_tools = FILESYSTEM_TOOLS_ASK if is_readonly else FILESYSTEM_TOOLS_SANDBOX
+            fs_permissions = None
+            if is_ask or is_plan or is_bypass:
+                logger.warning(
+                    "[Init] Sandbox backend active in %s mode: fs write-deny permissions "
+                    "dropped (unsupported on sandbox backends); readonly enforcement "
+                    "falls back to the tool allowlist.",
+                    mode,
+                )
+        else:
+            filesystem_tools = (
+                FILESYSTEM_TOOLS_ASK
+                if is_ask
+                else (FILESYSTEM_TOOLS_PLAN if is_plan else FILESYSTEM_TOOLS_AGENT)
+            )
+            fs_permissions = (
+                ask_permissions()
+                if is_ask
+                else (
+                    plan_permissions() if is_plan else (bypass_permissions() if is_bypass else None)
+                )
+            )
 
         def _compile_deep_agent(cp: Checkpointer | None) -> Any:
             gp_mode = self._config.agent.runtime.general_purpose_subagent
@@ -263,7 +297,7 @@ class AgentBuilder:
 
                 gp_profile = GeneralPurposeSubagentProfile(
                     filesystem_tools=list(FILESYSTEM_TOOLS_ASK),
-                    permissions=ask_permissions(),
+                    permissions=ask_permissions() if sandbox_backend is None else [],
                     description=(
                         "Read-only research subagent for inspecting the workspace, searching "
                         "for files and content, and gathering context without modifying files."
@@ -295,7 +329,7 @@ class AgentBuilder:
                     "middleware": [
                         FilesystemMiddleware(
                             backend=resolved_backend,
-                            _permissions=ask_permissions(),
+                            _permissions=ask_permissions() if sandbox_backend is None else None,
                             tools=list(FILESYSTEM_TOOLS_ASK),
                         ),
                     ],
@@ -352,6 +386,7 @@ class AgentBuilder:
             metadata={
                 "runtime_kind": "coding",
                 "interaction_mode": mode,
+                "sandbox": sandbox_backend is not None,
                 "tool_count": len(all_tools),
                 "subagent_count": len(graph_subagents),
             },
@@ -504,6 +539,41 @@ class AgentBuilder:
         return FrameworkFilesystem.initialize(
             config=self._config,
             policy=policy,
+        )
+
+    @staticmethod
+    def _extract_sandbox_backend(backend: Any) -> Any:
+        """Return the guest-execution backend, unwrapping ``CompositeBackend``.
+
+        A ``CompositeBackend`` exposes its default (the sandbox) as
+        ``.default``; a bare sandbox backend is returned unchanged. Returns
+        ``None`` for host-only backends (no sandbox execution mode).
+        """
+        from soothe_deepagents.backends.protocol import SandboxBackendProtocol
+
+        candidate = getattr(backend, "default", backend)
+        return candidate if isinstance(candidate, SandboxBackendProtocol) else None
+
+    def _wrap_sandbox_backend(
+        self,
+        sandbox_backend: Any,
+        passed_backend: Any,
+        policy: PolicyProtocol | None,
+    ) -> Any:
+        """Route framework state (``/memories``, ``/.soothe``) to the host.
+
+        A bare sandbox backend passed by the caller is wrapped so memory and
+        framework state survive sandbox teardown; a composite assembled by
+        the caller is trusted as-is.
+        """
+        from soothe_deepagents.backends.composite import CompositeBackend
+
+        if passed_backend is not sandbox_backend:
+            return passed_backend
+        host_backend = self._initialize_backend(policy)
+        return CompositeBackend(
+            default=sandbox_backend,
+            routes={"/memories": host_backend, "/.soothe": host_backend},
         )
 
 

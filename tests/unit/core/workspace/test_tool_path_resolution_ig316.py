@@ -161,25 +161,6 @@ def test_resolve_file_ops_file_info_virtual_path_with_soothe_config(tmp_path: Pa
     assert "marks.csv" in out.content or "bytes" in out.content.lower()
 
 
-def test_get_data_info_resolves_virtual_path(tmp_path: Path) -> None:
-    """Data toolkit resolves virtual paths when ``SootheConfig`` is set."""
-    from soothe_nano.config.settings import SootheConfig
-    from soothe_nano.toolkits.data import GetDataInfoTool
-
-    wdir = tmp_path / "agent_ws"
-    wdir.mkdir()
-    (wdir / "data.csv").write_text("x\n")
-
-    cfg = SootheConfig()
-    cfg.filesystem_middleware.workspace_root = str(wdir)
-    cfg.security.allow_paths_outside_workspace = False
-
-    tool = GetDataInfoTool(config=cfg)
-    out = tool.invoke({"file_path": "/data.csv"})
-    assert "File not found" not in out
-    assert "data.csv" in out or "Size" in out
-
-
 def test_soothe_filesystem_middleware_uses_workspace_relative_artifact_prefix(
     tmp_path: Path,
 ) -> None:

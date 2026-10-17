@@ -438,7 +438,7 @@ class SystemPromptMiddleware(AgentMiddleware):
                 f"- Do NOT substitute or override this choice with a different subagent\n"
                 f"- The user selected {subagent_directive} for a specific reason and will be confused if you use a different one\n"
                 f"\n"
-                f"Do not use search_web, filesystem, shell, or other tools at the root agent — delegate "
+                f"Do not use wizsearch_search, filesystem, shell, or other tools at the root agent — delegate "
                 f"via '{_TASK_TOOL_NAME}' only. Provide a detailed task description in the tool call.\n"
                 f"</SUBAGENT_ROUTING_DIRECTIVE>"
             )

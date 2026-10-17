@@ -24,7 +24,7 @@ _SHELL_GUIDE = """\
 Execution tools (always bound — not listed in <AVAILABLE_TOOLS>):
 - run_command: Sync shell — waits for completion and returns output. Default timeout 60s; pass timeout for longer bounded jobs (max 5h, e.g. timeout=3600). Use for: ls, curl, git, make test, one-shot scripts. Do NOT use for repo content/path search — use grep / glob instead.
 - run_background: Async shell — returns PID + log_path immediately. Use for: servers, daemons, training, long builds you poll separately. Follow with tail_background_log/read_file; stop with kill_process.
-- run_python: Execute Python code with session persistence. Variables persist across calls.
+- run_python: Execute Python code with session persistence (host mode — variables persist across calls; sandbox mode runs a one-shot guest python3 per call).
 
 Background job management (deferred — search_tools to promote):
 - tail_background_log: Read the last N lines from a run_background log (bg-{{pid}}.log).
@@ -103,19 +103,16 @@ Benefits:
 
 _RESEARCH_GUIDE = """\
 Research tools (deferred by default — see <AVAILABLE_TOOLS> or search_tools):
-- search_web: Quick web search for factual lookups, news, current events (single call).
-- crawl_web: Extract clean content from a web page URL.
+- wizsearch_search: Quick web search for factual lookups, news, current events (single call).
+- wizsearch_crawl: Extract clean content from a web page URL.
 For deeper multi-source research, prefer dedicated research tools or specialists listed in your runtime capabilities.\
 """
 
 _DATA_GUIDE = """\
-Data inspection tools (deferred by default — see <AVAILABLE_TOOLS> or search_tools):
-- inspect_data: Inspect data file structure - columns, types, samples (CSV, Excel, JSON, Parquet).
-- summarize_data: Get statistical summary of data (tabular) or document summary (PDF, DOCX).
-- check_data_quality: Validate data quality - missing values, duplicates, anomalies (tabular only).
-- extract_text: Extract raw text from documents (PDF, DOCX, TXT, MD).
-- get_data_info: Get file metadata - size, format, page count, modification time.
-- ask_about_file: Answer questions about file content (documents use AI, tabular shows schema).\
+Data and document inspection (no dedicated tools — use the general surface):
+- Raw text and markup: read_file; file_info for size/format metadata (deferred — search_tools to promote).
+- Tabular data (CSV/Excel/Parquet/JSON): run_python with pandas/openpyxl — inspect, summarize, and validate in one snippet.
+- Other binary formats: use run_command with a converter available in the environment.\
 """
 
 _SUBAGENT_GUIDE = """\
@@ -168,9 +165,9 @@ Progressive tool binding:
 Key rules:
 - Prefer single-purpose tools over unified dispatch tools.
 - Use surgical editing (edit_lines) instead of full-file rewrites.
-- Use websearch/crawl_web for lookups; use listed specialists for deeper research when available.
+- Use wizsearch_search/wizsearch_crawl for lookups; use listed specialists for deeper research when available.
 - Use run_command for sync shell (pass timeout when the job may exceed 60s); use run_background for servers/daemons and jobs you poll via tail_background_log; kill_process stops only run_background PIDs; run_python for Python code.
-- When you need a deferred tool (data, wizsearch, HTTP, etc.), check <AVAILABLE_TOOLS> or run search_tools first.\
+- When you need a deferred tool (wizsearch, HTTP, etc.), check <AVAILABLE_TOOLS> or run search_tools first.\
 """
 
 SKILL_CONTEXT_ACTIVE_GUIDE = (

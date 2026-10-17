@@ -41,8 +41,31 @@ FILESYSTEM_TOOLS_ASK: list[FsToolName] = [
 FILESYSTEM_TOOLS_PLAN: list[FsToolName] = list(FILESYSTEM_TOOLS_ASK)
 """Plan-mode FS surface: same read-only allowlist as Ask."""
 
+FILESYSTEM_TOOLS_SANDBOX: list[FsToolName] = [
+    "ls",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "delete",
+    "glob",
+    "grep",
+    "file_info",
+    "edit_lines",
+    "insert_lines",
+    "delete_lines",
+    "apply_diff",
+]
+"""Sandbox-mode FS surface: agent allowlist extended with the line-edit
+family. All file tools are guest-side via the sandbox backend; the built-in
+``execute`` stays off (nano's ``run_command`` owns the single shell)."""
+
 ASK_MUTATING_TOOL_GROUPS: frozenset[str] = frozenset({"shell", "file_ops"})
 """Tool groups omitted when resolving tools for Ask / Plan mode."""
+
+SANDBOX_EXCLUDED_TOOL_GROUPS: frozenset[str] = frozenset({"file_ops"})
+"""Tool groups dropped in sandbox mode: the group self-builds host-side
+filesystem backends and has no guest equivalent in phase 1 — middleware FS
+tools (same tool names) take over via the sandbox backend."""
 
 ASK_SUBAGENT_ALLOWLIST: frozenset[str] = frozenset({"planner"})
 """Subagents allowed on the Ask ``task`` catalog."""
@@ -188,9 +211,11 @@ __all__ = [
     "FILESYSTEM_TOOLS_AGENT",
     "FILESYSTEM_TOOLS_ASK",
     "FILESYSTEM_TOOLS_PLAN",
+    "FILESYSTEM_TOOLS_SANDBOX",
     "InteractionMode",
     "PLAN_POLICY_PROFILE",
     "READONLY_GP_SYSTEM_PROMPT",
+    "SANDBOX_EXCLUDED_TOOL_GROUPS",
     "append_ask_system_prompt",
     "append_bypass_system_prompt",
     "append_plan_system_prompt",

@@ -30,7 +30,7 @@ from soothe_nano.llm.structured import invoke_structured_chat_typed
 from soothe_nano.utils.progress import emit_progress
 from soothe_nano.utils.subagent_emit import emit_subagent_wire_event
 from soothe_nano.utils.text_preview import log_preview
-from soothe_nano.ux.stream_tool_wire import STREAM_TOOL_CALL_UPDATE
+from soothe_nano.wire.stream_tool_wire import STREAM_TOOL_CALL_UPDATE
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel

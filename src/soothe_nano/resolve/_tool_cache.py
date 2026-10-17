@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from langchain_core.tools import BaseTool
@@ -39,23 +39,3 @@ def cache_tools(tool_name: str, tools: list[BaseTool], workspace: str | None = N
     logger.debug(
         "Cached tool group '%s' (workspace=%s, %d tools)", tool_name, workspace, len(tools)
     )
-
-
-def clear_tool_cache() -> None:
-    """Clear the tool cache."""
-    global _tool_cache
-    _tool_cache = {}
-    logger.debug("Tool cache cleared")
-
-
-def get_cache_stats() -> dict[str, Any]:
-    """Get tool cache statistics.
-
-    Returns:
-        Dictionary with cache statistics.
-    """
-    return {
-        "cached_groups": len(_tool_cache),
-        "total_tools": sum(len(tools) for tools in _tool_cache.values()),
-        "groups": [k[0] for k in _tool_cache.keys()],
-    }

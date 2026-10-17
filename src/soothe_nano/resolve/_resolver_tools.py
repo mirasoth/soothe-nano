@@ -109,30 +109,10 @@ class _SubagentFactoriesAccessor:
 
     _factories: dict[str, Callable[..., SubAgent | CompiledSubAgent]] | None = None
 
-    def __getitem__(self, key: str) -> Callable[..., SubAgent | CompiledSubAgent]:
-        if self._factories is None:
-            self._factories = _get_subagent_factories()
-        return self._factories[key]
-
     def get(self, key: str, default: Any = None) -> Any:
         if self._factories is None:
             self._factories = _get_subagent_factories()
         return self._factories.get(key, default)
-
-    def keys(self) -> Any:  # type: ignore[override]
-        if self._factories is None:
-            self._factories = _get_subagent_factories()
-        return self._factories.keys()
-
-    def items(self) -> Any:  # type: ignore[override]
-        if self._factories is None:
-            self._factories = _get_subagent_factories()
-        return self._factories.items()
-
-    def __len__(self) -> int:
-        if self._factories is None:
-            self._factories = _get_subagent_factories()
-        return len(self._factories)
 
 
 SUBAGENT_FACTORIES = _SubagentFactoriesAccessor()
@@ -195,6 +175,7 @@ def resolve_tools(
     lazy: bool = False,
     config: SootheConfig | None = None,
     exclude_tool_groups: frozenset[str] | set[str] | None = None,
+    sandbox_backend: Any = None,
 ) -> list[BaseTool]:
     """Resolve tool groups from ToolsConfig to instantiated langchain BaseTool lists.
 
@@ -207,6 +188,10 @@ def resolve_tools(
         config: Optional Soothe config for tool configuration.
         exclude_tool_groups: Optional tool group names to skip (e.g. Ask mode
         omits `shell` and `file_ops`).
+        sandbox_backend: Optional sandbox backend; when set, the shell tool
+        group is rebuilt with a ``BackendShellExecutor`` bound to this
+        backend (never cached, never resolved from plugins — both would
+        leak host-bound shell tools into a sandboxed agent).
 
     Returns:
         Flat list of fully-initialised `BaseTool` instances.
@@ -219,8 +204,6 @@ def resolve_tools(
         "shell",
         "file_ops",
         "datetime",
-        "data",
-        "image",
         "wizsearch",
         "http_requests",
         "deepxiv",
@@ -234,15 +217,16 @@ def resolve_tools(
         if group_cfg and group_cfg.enabled:
             enabled_tools.append(name)
 
-    # Host-execution tools run on the host via subprocess (see toolkits.shell).
+    # Host-execution tools run on the host via subprocess (see toolkits.shell)
+    # unless a sandbox backend rebinds them to the guest below.
 
     total_start = time.perf_counter()
 
     parallel = lazy and len(enabled_tools) > 1
     tools = (
-        _resolve_tools_parallel(enabled_tools, config)
+        _resolve_tools_parallel(enabled_tools, config, sandbox_backend)
         if parallel
-        else _resolve_tools_sequential(enabled_tools, config)
+        else _resolve_tools_sequential(enabled_tools, config, sandbox_backend)
     )
 
     total_elapsed_ms = (time.perf_counter() - total_start) * 1000
@@ -260,12 +244,13 @@ def resolve_tools(
 def _resolve_tools_sequential(
     tool_names: list[str],
     config: SootheConfig | None = None,
+    sandbox_backend: Any = None,
 ) -> list[BaseTool]:
     """Load tool groups one-by-one, skipping failures."""
     tools: list[BaseTool] = []
     for name in tool_names:
         try:
-            resolved = _resolve_single_tool_group(name, config)
+            resolved = _resolve_single_tool_group(name, config, sandbox_backend)
             tools.extend(resolved)
         except Exception:
             logger.warning("Failed to load tool group '%s'", name, exc_info=True)
@@ -275,6 +260,7 @@ def _resolve_tools_sequential(
 def _resolve_tools_parallel(
     tool_names: list[str],
     config: SootheConfig | None = None,
+    sandbox_backend: Any = None,
 ) -> list[BaseTool]:
     """Load tool groups concurrently via ThreadPoolExecutor.
 
@@ -289,7 +275,8 @@ def _resolve_tools_parallel(
 
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="tool-load") as pool:
         futures = {
-            name: pool.submit(_resolve_single_tool_group, name, config) for name in tool_names
+            name: pool.submit(_resolve_single_tool_group, name, config, sandbox_backend)
+            for name in tool_names
         }
         for name in tool_names:
             try:
@@ -303,12 +290,51 @@ def _resolve_tools_parallel(
     return tools
 
 
-def _resolve_single_tool_group(name: str, config: SootheConfig | None = None) -> list[BaseTool]:
+_SHELL_FAMILY_TOOL_NAMES = frozenset(
+    {"run_command", "run_background", "tail_background_log", "kill_process", "run_python"}
+)
+"""Shell tools resolvable individually; sandbox mode must rebind them too."""
+
+
+def _resolve_sandbox_shell_tools(
+    config: SootheConfig | None,
+    sandbox_backend: Any,
+) -> list[BaseTool]:
+    """Build the five shell tools bound to the sandbox guest.
+
+    Bypasses both the tool cache and the plugin registry: cached or plugin
+    shell tools carry no executor and would silently run on the host.
+    """
+    from soothe_nano.toolkits.shell import BackendShellExecutor, build_shell_toolkit
+
+    executor = BackendShellExecutor(sandbox_backend)
+    return build_shell_toolkit(
+        config=config,
+        workspace_root=executor.workspace_root,
+        executor=executor,
+    ).get_tools()
+
+
+def _resolve_single_tool_group(
+    name: str,
+    config: SootheConfig | None = None,
+    sandbox_backend: Any = None,
+) -> list[BaseTool]:
     """Resolve a single tool group name to a list of BaseTool instances with caching and profiling.
 
     This method checks the cache first, and if not found, delegates to the uncached version.
     """
     import time
+
+    if sandbox_backend is not None and (name == "shell" or name in _SHELL_FAMILY_TOOL_NAMES):
+        tools = _resolve_sandbox_shell_tools(config, sandbox_backend)
+        if name == "shell":
+            return tools
+        tool_map = {tool.name: tool for tool in tools}
+        if name in tool_map:
+            return [tool_map[name]]
+        logger.warning("Tool '%s' not found in sandbox ShellToolkit", name)
+        return []
 
     from soothe_nano.workspace.workspace_filesystem import FrameworkFilesystem
 
@@ -451,28 +477,6 @@ def _resolve_single_tool_group_uncached(
         logger.warning("Tool '%s' not found in filesystem tools", name)
         return []
 
-    if name == "data":
-        from soothe_nano.toolkits.data import DataToolkit
-
-        toolkit = DataToolkit(config=config)
-        return toolkit.get_tools()
-
-    if name == "image":
-        from soothe_nano.toolkits.image import ImageToolkit
-
-        toolkit = ImageToolkit(config=config)
-        return toolkit.get_tools()
-
-    if name == "analyze_image":
-        from soothe_nano.toolkits.image import ImageToolkit
-
-        toolkit = ImageToolkit(config=config)
-        tool_map = {tool.name: tool for tool in toolkit.get_tools()}
-        if name in tool_map:
-            return [tool_map[name]]
-        logger.warning("Tool '%s' not found in ImageToolkit", name)
-        return []
-
     if name == "deepxiv":
         from soothe_nano.toolkits.deepxiv import DeepxivToolkit, resolve_deepxiv_token
 
@@ -491,25 +495,6 @@ def _resolve_single_tool_group_uncached(
             max_retries=max_retries,
         )
         return toolkit.get_tools()
-
-    # Support individual data tool names (map to consolidated group)
-    if name in (
-        "inspect_data",
-        "summarize_data",
-        "check_data_quality",
-        "extract_text",
-        "get_data_info",
-        "ask_about_file",
-    ):
-        from soothe_nano.toolkits.data import DataToolkit
-
-        toolkit = DataToolkit(config=config)
-        all_tools = toolkit.get_tools()
-        tool_map = {tool.name: tool for tool in all_tools}
-        if name in tool_map:
-            return [tool_map[name]]
-        logger.warning("Tool '%s' not found in DataToolkit", name)
-        return []
 
     logger.warning("Unknown tool group '%s', skipping.", name)
     return []
@@ -531,12 +516,13 @@ def resolve_subagents(
     Args:
         config: Soothe configuration.
         default_model: Pre-configured model instance to use as default.
-        lazy: If True, create subagent specs in parallel using a thread
-            pool for faster startup.
+        lazy: Accepted for API compatibility with `resolve_tools`; spec
+            registration is already lazy (graphs compile on first invoke).
 
     Returns:
         List of subagent specs for the runtime.
     """
+    del lazy  # Registration is inherently lazy; kept for API compatibility.
     import time
 
     total_start = time.perf_counter()
@@ -630,18 +616,10 @@ def resolve_subagents(
 
         pending.append((name, factory, {"model": model_override, **extra_kwargs}))
 
-    parallel = lazy and len(pending) > 1
-    subagents = (
-        _resolve_subagents_parallel(pending) if parallel else _resolve_subagents_sequential(pending)
-    )
+    subagents = _resolve_subagents_sequential(pending)
 
     total_elapsed_ms = (time.perf_counter() - total_start) * 1000
-    logger.info(
-        "Resolved %d subagents in %.1fms (parallel=%s)",
-        len(subagents),
-        total_elapsed_ms,
-        parallel,
-    )
+    logger.info("Resolved %d subagents in %.1fms", len(subagents), total_elapsed_ms)
 
     return subagents
 
@@ -665,10 +643,3 @@ def _resolve_subagents_sequential(
         except Exception:
             logger.exception("Failed to register subagent '%s'", name)
     return subagents
-
-
-def _resolve_subagents_parallel(
-    pending: list[tuple[str, Callable, dict]],
-) -> list[SubAgent | CompiledSubAgent]:
-    """Register lazy subagent specs concurrently, preserving order."""
-    return _resolve_subagents_sequential(pending)
