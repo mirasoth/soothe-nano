@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +29,38 @@ if TYPE_CHECKING:
     from soothe_deepagents.middleware.subagents import CompiledSubAgent, SubAgent
 
 logger = logging.getLogger(__name__)
+
+# In-process LRU-style cache for resolved tool groups, so groups resolved once
+# (sequentially or via parallel `ThreadPoolExecutor`) are reused on subsequent lookups.
+_tool_cache: dict[tuple[str, str | None], list[BaseTool]] = {}
+
+
+def get_cached_tools(tool_name: str, workspace: str | None = None) -> list[BaseTool] | None:
+    """Get tools from cache if available.
+
+    Args:
+        tool_name: Name of the tool group.
+        workspace: Workspace path for cache scoping. Tools resolved for
+            different workspaces are cached separately.
+
+    Returns:
+        Cached tools or None if not cached.
+    """
+    return _tool_cache.get((tool_name, workspace))
+
+
+def cache_tools(tool_name: str, tools: list[BaseTool], workspace: str | None = None) -> None:
+    """Cache a tool group for reuse.
+
+    Args:
+        tool_name: Name of the tool group.
+        tools: List of tools to cache.
+        workspace: Workspace path for cache scoping.
+    """
+    _tool_cache[(tool_name, workspace)] = tools
+    logger.debug(
+        "Cached tool group '%s' (workspace=%s, %d tools)", tool_name, workspace, len(tools)
+    )
 
 
 def _workspace_backend_factory(
@@ -322,8 +356,6 @@ def _resolve_single_tool_group(
 
     This method checks the cache first, and if not found, delegates to the uncached version.
     """
-    import time
-
     if sandbox_backend is not None and (name == "shell" or name in _SHELL_FAMILY_TOOL_NAMES):
         tools = _resolve_sandbox_shell_tools(config, sandbox_backend)
         if name == "shell":
@@ -335,8 +367,6 @@ def _resolve_single_tool_group(
         return []
 
     from soothe_nano.workspace.workspace_filesystem import FrameworkFilesystem
-
-    from ._tool_cache import cache_tools, get_cached_tools
 
     # Include workspace in cache key to prevent cross-workspace tool reuse
     current_ws = FrameworkFilesystem.get_current_workspace()
@@ -521,7 +551,6 @@ def resolve_subagents(
         List of subagent specs for the runtime.
     """
     del lazy  # Registration is inherently lazy; kept for API compatibility.
-    import time
 
     total_start = time.perf_counter()
 
@@ -626,10 +655,6 @@ def _resolve_subagents_sequential(
     pending: list[tuple[str, Callable, dict]],
 ) -> list[SubAgent | CompiledSubAgent]:
     """Register lazy subagent specs one-by-one (graphs compile on first task invoke)."""
-    import time
-
-    from soothe_nano.resolve._lazy_subagent import lazy_compiled_subagent_spec
-
     subagents: list[SubAgent | CompiledSubAgent] = []
     for name, factory, kwargs in pending:
         start = time.perf_counter()
@@ -641,3 +666,137 @@ def _resolve_subagents_sequential(
         except Exception:
             logger.exception("Failed to register subagent '%s'", name)
     return subagents
+
+
+# ---------------------------------------------------------------------------
+# Deferred subagent graph compilation for faster CoreAgent startup
+# ---------------------------------------------------------------------------
+
+_BUILTIN_DESCRIPTIONS: dict[str, str] = {
+    "plan": (
+        "Planning delegate with agentic loops: iteratively runs multiple readonly "
+        "recon passes per round (and multiple collection rounds) to gather workspace "
+        "evidence, then iteratively refines a full markdown execution plan before "
+        "returning one report. Use when the main thread needs structured recon-plus-plan "
+        "without doing every recon and rewrite itself."
+    ),
+    "deep_research": ("Public-domain research subagent for web, academic, and URL sources."),
+    "computer_use": (
+        "Desktop automation specialist for GUI tasks. Can take screenshots, "
+        "click at screen coordinates, type text, press keyboard keys and "
+        "hotkeys, and scroll. Use for desktop application control, visual "
+        "UI interaction, and screen-based automation."
+    ),
+}
+
+
+def subagent_description(name: str, factory: Callable[..., Any]) -> str:
+    """Resolve task-tool description without compiling the subagent graph."""
+    plugin_desc = getattr(factory, "_subagent_description", None)
+    if isinstance(plugin_desc, str) and plugin_desc.strip():
+        return plugin_desc
+    return _BUILTIN_DESCRIPTIONS.get(name, f"Subagent '{name}'.")
+
+
+class LazySubagentRunnable:
+    """Runnable wrapper that compiles a subagent graph on first invoke."""
+
+    def __init__(
+        self,
+        factory: Callable[..., Any],
+        kwargs: dict[str, Any],
+        name: str,
+        *,
+        pending_config: dict[str, Any] | None = None,
+    ) -> None:
+        self._factory = factory
+        self._kwargs = kwargs
+        self._name = name
+        self._pending_config = pending_config
+        self._delegate: Any | None = None
+        self._lock = threading.Lock()
+
+    def _materialize(self) -> Any:
+        if self._delegate is not None:
+            return self._delegate
+        with self._lock:
+            if self._delegate is not None:
+                return self._delegate
+            spec = _default_materialize(self._factory, self._kwargs)
+            runnable = spec["runnable"] if isinstance(spec, dict) else spec.runnable
+            if self._pending_config:
+                runnable = runnable.with_config(self._pending_config)
+            self._delegate = runnable
+            logger.info("Materialized lazy subagent '%s'", self._name)
+            return self._delegate
+
+    def with_config(self, config: Any = None, **kwargs: Any) -> LazySubagentRunnable:
+        merged = dict(self._pending_config or {})
+        if config:
+            if isinstance(config, dict):
+                merged.update(config)
+            else:
+                merged["config"] = config
+        merged.update(kwargs)
+        cloned = LazySubagentRunnable(
+            self._factory,
+            self._kwargs,
+            self._name,
+            pending_config=merged or None,
+        )
+        if self._delegate is not None:
+            cloned._delegate = self._delegate.with_config(config, **kwargs)
+        return cloned
+
+    def invoke(
+        self,
+        state: dict[str, Any],
+        config: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        return self._materialize().invoke(state, config, **kwargs)
+
+    async def ainvoke(
+        self,
+        state: dict[str, Any],
+        config: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        return await self._materialize().ainvoke(state, config, **kwargs)
+
+    def stream(
+        self,
+        state: dict[str, Any],
+        config: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        return self._materialize().stream(state, config, **kwargs)
+
+    async def astream(
+        self,
+        state: dict[str, Any],
+        config: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        async for chunk in self._materialize().astream(state, config, **kwargs):
+            yield chunk
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._materialize(), name)
+
+
+def _default_materialize(factory: Callable[..., Any], kwargs: dict[str, Any]) -> Any:
+    return _call_subagent_factory(factory, kwargs)
+
+
+def lazy_compiled_subagent_spec(
+    name: str,
+    factory: Callable[..., Any],
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a CompiledSubAgent dict without compiling the underlying graph."""
+    return {
+        "name": name,
+        "description": subagent_description(name, factory),
+        "runnable": LazySubagentRunnable(factory, kwargs, name),
+    }

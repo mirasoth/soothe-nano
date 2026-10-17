@@ -58,6 +58,7 @@ def validate_url(url: str) -> tuple[str, str | None]:
     else:
         return url, None
 
+
 T = TypeVar("T")
 
 TARZI_AVAILABLE = None

@@ -341,10 +341,15 @@ class TestSandboxInvariants:
 
         from soothe_deepagents.middleware.filesystem import FilesystemMiddleware
 
-        cap = inspect.signature(FilesystemMiddleware.__init__).parameters[
-            "max_execute_timeout"
-        ].default
-        assert ArcBoxBackend(sandbox_id="sbx-x", client=FakeClient(CommandRunResult())).default_timeout <= cap
+        cap = (
+            inspect.signature(FilesystemMiddleware.__init__)
+            .parameters["max_execute_timeout"]
+            .default
+        )
+        assert (
+            ArcBoxBackend(sandbox_id="sbx-x", client=FakeClient(CommandRunResult())).default_timeout
+            <= cap
+        )
 
     def test_constructor_surface_holds_no_model_credentials(self) -> None:
         """§12.1: the backend never accepts or stores model-provider credentials."""

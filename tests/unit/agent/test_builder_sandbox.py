@@ -439,9 +439,7 @@ class TestGeneralPurposeSubagentSandbox:
         sandbox = make_sandbox()
         captured: dict[str, Any] = {}
         resolve_kwargs: dict[str, Any] = {}
-        TestAgentBuilderSandboxMode()._build_with_patches(
-            cfg, sandbox, resolve_kwargs, captured
-        )
+        TestAgentBuilderSandboxMode()._build_with_patches(cfg, sandbox, resolve_kwargs, captured)
 
         assert captured["enable_general_purpose_subagent"] is True
         assert captured["general_purpose_subagent_profile"] is None
@@ -463,9 +461,7 @@ class TestGeneralPurposeSubagentSandbox:
         sandbox = make_sandbox()
         captured: dict[str, Any] = {}
         resolve_kwargs: dict[str, Any] = {}
-        TestAgentBuilderSandboxMode()._build_with_patches(
-            cfg, sandbox, resolve_kwargs, captured
-        )
+        TestAgentBuilderSandboxMode()._build_with_patches(cfg, sandbox, resolve_kwargs, captured)
 
         profile = captured["general_purpose_subagent_profile"]
         assert profile is not None

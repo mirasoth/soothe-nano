@@ -15,13 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Deleted the `academic_research` subagent entirely (module tree, resolver factory registration, builtin plugin discovery entry, default config entry, tool metadata, and its tests) — no compat shim; use `deep_research` for all web/academic research.
-- Deleted dead modules with zero consumers: `observability.langfuse._names`, `core.types` (unused `VerbosityLevel` export), and `agent.factory` (`soothe_nano.create_nano_agent` now imports from `agent.builder` directly; public name unchanged).
+- Deleted dead modules with zero consumers: `core.types` (unused `VerbosityLevel` export) and `agent.factory` (`soothe_nano.create_nano_agent` now imports from `agent.builder` directly; public name unchanged).
 - Inlined single-consumer helper modules: `utils.thread_id` into `backends.durability.base`, and `utils.url_validation.validate_url` into `toolkits._internal.wizsearch`.
 - Deleted the `soothe_nano.toolkits.file_ops_catalog` module — its catalog constants and filesystem-tool builders moved into `soothe_nano.toolkits.file_ops` (hard move, no shim).
 - Deleted the `data` and `image` toolkits (host-path-bound file-inspection tools duplicating `read_file` + `run_python`), including their config groups, plugin registrations, registry entries, and prompt guide listings.
 - Resolver dead code: unused `_resolve_postgres_checkpointer`/`_mask_dsn` (superseded by the shared checkpointer pool), `clear_tool_cache`/`get_cache_stats` (no callers in any repo), the fake parallel subagent branch, the never-supplied `LazySubagentRunnable(materialize=...)` parameter, and the unused dict-like methods on `SUBAGENT_FACTORIES` (`__getitem__`/`keys`/`items`/`__len__`).
 
 ### Changed
+- Consolidated `soothe_nano.resolve` (6 → 3 files): `_tool_cache` and `_lazy_subagent` merged into `_resolver_tools` (removing the cross-module lazy import); `_resolver_infra` merged into the package `__init__` (public API unchanged); `shared_checkpointer_pool` renamed to `_shared_checkpointer_pool` (host subclasses update their import). Hard moves, no shims.
 - Folded the now-`deep_research`-only research helper modules into the `deep_research` package: `_research_json_util` merged into `deep_research.json_util` (was a pure re-export), `_research_timeouts` → `deep_research.timeouts`, `_research_topic_util` → `deep_research.topic_util`, `research_wire` → `deep_research.wire` (hard moves, no shims). Their unit tests moved to `tests/unit/subagents/deep_research/`.
 - `soothe_nano.resolve` is now the full public host-resolution API: `resolve_checkpointer` and `resolve_durability` are exported so hosts bind their own pools via public imports (previously only reachable through the private `_resolver_infra` module path).
 - Consolidated `soothe_nano.middleware` tool-* modules (9 → 5 files), zero behavior change; import `ToolCallArgsMiddleware` / `ToolResultStorageMiddleware` / `ToolResultEvictionMiddleware` from their new modules.
