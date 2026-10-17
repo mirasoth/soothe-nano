@@ -214,7 +214,7 @@ class TestResolverToolkitNames:
 
     def test_wizsearch_resolves(self) -> None:
         """Wizsearch toolkit should resolve to 2 tools."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
+        from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
         tools = _resolve_single_tool_group_uncached("wizsearch")
         assert len(tools) == 2
@@ -223,7 +223,7 @@ class TestResolverToolkitNames:
 
     def test_file_ops_resolves(self) -> None:
         """File_ops toolkit should resolve to 6 surgical tools."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
+        from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
         tools = _resolve_single_tool_group_uncached("file_ops")
         assert len(tools) == 6
@@ -243,7 +243,7 @@ class TestResolverToolkitNames:
 
     def test_execution_resolves(self) -> None:
         """Execution toolkit should resolve to 5 tools."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
+        from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
         tools = _resolve_single_tool_group_uncached("shell")
         assert len(tools) == 5
@@ -257,7 +257,7 @@ class TestResolverOldNamesRejected:
 
     def test_old_names_rejected(self) -> None:
         """Legacy names without backward compat should not resolve."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
+        from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
         for old_name in (
             "inquiry",

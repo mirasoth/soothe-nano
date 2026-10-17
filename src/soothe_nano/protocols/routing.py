@@ -1,4 +1,4 @@
-"""Shared routing classification models for CoreAgent execution paths."""
+"""Routing classification models for CoreAgent execution paths."""
 
 from __future__ import annotations
 

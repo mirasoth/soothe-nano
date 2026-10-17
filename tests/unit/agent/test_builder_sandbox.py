@@ -16,8 +16,8 @@ from soothe_nano.agent.interaction_mode import (
     SANDBOX_EXCLUDED_TOOL_GROUPS,
 )
 from soothe_nano.config import SootheConfig
-from soothe_nano.resolve._resolver_tools import resolve_tools
 from soothe_nano.sandbox.arcbox import ArcBoxBackend, CommandRunResult
+from soothe_nano.utils.resolver import resolve_tools
 
 
 class ScriptedClient:
@@ -140,6 +140,7 @@ class TestAgentBuilderSandboxMode:
         interaction_mode: str | None = None,
         tools: list[Any] | None = None,
         config_subagents: list[Any] | None = None,
+        subagent_kwargs: dict[str, Any] | None = None,
     ) -> Any:
         def _fake_create_deep_agent(**kwargs: Any) -> MagicMock:
             captured.update(kwargs)
@@ -148,6 +149,11 @@ class TestAgentBuilderSandboxMode:
         def _fake_resolve_tools(*args: Any, **kwargs: Any) -> list[Any]:
             resolve_kwargs.update(kwargs)
             return []
+
+        def _fake_resolve_subagents(*args: Any, **kwargs: Any) -> list[Any]:
+            if subagent_kwargs is not None:
+                subagent_kwargs.update(kwargs)
+            return list(config_subagents or [])
 
         with (
             patch(
@@ -160,7 +166,7 @@ class TestAgentBuilderSandboxMode:
             ),
             patch(
                 "soothe_nano.agent.builder.resolve_subagents",
-                return_value=list(config_subagents or []),
+                side_effect=_fake_resolve_subagents,
             ),
             patch(
                 "soothe_nano.agent.builder.filter_subagents_for_mode",
@@ -324,14 +330,17 @@ class TestSandboxToolPlacementGate:
         assert {"search_tools", "mcp_resources_list"} <= names
 
 
-class TestSandboxPlannerDisabling:
-    def test_planner_removed_in_sandbox_mode(self, caplog) -> None:
+class TestSandboxPlannerThreading:
+    """RFC §7.2-7: planner recon tools bind to the injected sandbox backend."""
+
+    def test_sandbox_mode_threads_backend_and_keeps_planner(self) -> None:
         from types import SimpleNamespace
 
         cfg = SootheConfig()
         sandbox = make_sandbox()
         captured: dict[str, Any] = {}
         resolve_kwargs: dict[str, Any] = {}
+        subagent_kwargs: dict[str, Any] = {}
         TestAgentBuilderSandboxMode()._build_with_patches(
             cfg,
             sandbox,
@@ -341,26 +350,31 @@ class TestSandboxPlannerDisabling:
                 SimpleNamespace(name="planner"),
                 SimpleNamespace(name="deep_research"),
             ],
+            subagent_kwargs=subagent_kwargs,
         )
         names = [getattr(sa, "name", None) for sa in captured["subagents"]]
-        assert "planner" not in names
+        assert "planner" in names
         assert "deep_research" in names
-        assert any("planner subagent disabled" in rec.message for rec in caplog.records)
+        # Composite (resolved_backend) is threaded for the planner context.
+        assert subagent_kwargs.get("sandbox_backend") is captured["backend"]
 
-    def test_host_mode_keeps_planner(self) -> None:
+    def test_host_mode_passes_no_backend(self) -> None:
         from types import SimpleNamespace
 
         cfg = SootheConfig()
         captured: dict[str, Any] = {}
         resolve_kwargs: dict[str, Any] = {}
+        subagent_kwargs: dict[str, Any] = {}
         TestAgentBuilderSandboxMode()._build_with_patches(
             cfg,
             None,
             resolve_kwargs,
             captured,
             config_subagents=[SimpleNamespace(name="planner")],
+            subagent_kwargs=subagent_kwargs,
         )
         assert any(getattr(sa, "name", None) == "planner" for sa in captured["subagents"])
+        assert subagent_kwargs.get("sandbox_backend") is None
 
 
 class TestAllModesTimesSandbox:

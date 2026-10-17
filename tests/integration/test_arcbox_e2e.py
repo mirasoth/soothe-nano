@@ -71,7 +71,7 @@ class TestImagePrerequisites:
     def test_required_binaries_present(self, backend: ArcBoxBackend) -> None:
         response = backend.execute(
             "for b in setsid nohup tail head kill sh ls mkdir cat mv rm; do "
-            "command -v \"$b\" >/dev/null || { echo \"missing: $b\"; exit 1; }; done"
+            'command -v "$b" >/dev/null || { echo "missing: $b"; exit 1; }; done'
         )
         assert response.exit_code == 0, response.output
 
@@ -146,9 +146,12 @@ class TestCaptureOffload:
             default_timeout=60,
             enable_capture_offload=True,
         )
-        assert backend.write(
-            f"{WORKSPACE}/gen_big.py", "import sys\nsys.stdout.write('x' * 300000)\n"
-        ).error is None
+        assert (
+            backend.write(
+                f"{WORKSPACE}/gen_big.py", "import sys\nsys.stdout.write('x' * 300000)\n"
+            ).error
+            is None
+        )
         offloaded = backend.execute_with_offload(
             "python3 gen_big.py",
             f"{WORKSPACE}/.soothe/captures/e2e-big.log",
@@ -229,7 +232,9 @@ class TestAgentBuildAcceptance:
             default_timeout=60,
         )
         executor = BackendShellExecutor(backend, workspace_root=WORKSPACE)
-        outcome = executor.run("echo e2e-shell-route && python3 -c 'print(6*7)'", cwd=None, timeout=30)
+        outcome = executor.run(
+            "echo e2e-shell-route && python3 -c 'print(6*7)'", cwd=None, timeout=30
+        )
         assert outcome.error is None
         assert outcome.exit_code == 0
         assert "e2e-shell-route" in outcome.stdout

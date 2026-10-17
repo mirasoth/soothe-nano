@@ -84,7 +84,7 @@ Flowjet Server
 
 #### (A) `shell` 与 `file_ops` 工具组完全绕过 Backend
 
-`src/soothe_nano/resolve/_resolver_tools.py`：
+`src/soothe_nano/utils/resolver.py`：
 
 -   L387-394 `shell` 组 → `build_shell_toolkit(workspace_root=resolved_cwd)`，
     工具内部 `_run_shell_command_sync` 直接
@@ -945,15 +945,27 @@ output offsets / resume，用其恢复读取同一次 execution 的输出。
 > （§7.1 表中两行与 §7.5 默认推导表中对应的 shuttle 例子随之作废），
 > sandbox 排除组收缩为仅 `file_ops`；shuttle 的剩余受益者只剩
 > document/自定义工具场景，placement 模型（第 5 项）的优先级相应下调。
-> **2026-10-17 三轮（离线批次）**：第 8、10 项完成——`docs/arcbox-backend.md`
-> 使用文档 + README 链接；`create_nano_agent` 签名复核无需改动。第 7 项
-> 偏差落地：`arcbox` 以主依赖进入 pyproject（§8.3 决策更新）。
-> 测试补全：arcbox 不变量四测（middleware 超时上限覆盖、构造面无模型
-> 凭证、文件工具与 shell 共享 guest 工作区双向、并发写 smoke）、
-> shell 错误路径不碰宿主 `subprocess`、builder 三测（GP per_step/readonly
-> × sandbox 的 permissions-free 变体断言、composite 行为级路由——四前缀
-> 落宿主 tmp / guest 路径落 client / `execute` 恒走 guest、
-> `execute` created-then-hidden 的过滤器级断言）。
+> **2026-10-18 真机 E2E 轮**：§12.4 全部十步 + §12.5 验收清单落地为
+> `tests/integration/test_arcbox_e2e.py`（15 测试全绿，真机 daemon 0.9.0，
+> Apple Silicon）。§13-2/3/4/11 风险随之钉死（`BaseSandbox` 0.8.6 路径
+> 真机可用；四前缀路由行为级验证；offload heredoc 包装与 ArcBox shell
+> 兼容，`offloaded=True` 正常）。**镜像前置检查发现真问题（§13-9 坐实）**：
+> daemon 默认模板**没有 python3**；flowjet-arcbox 草稿模板的 python3 是
+> 坏 wrapper（`exec /app/.venv/bin/python ""` 吞参 + venv 符号链接循环指回
+> wrapper，guest 内无任何可用解释器，构建 bug 属 flowjet 模板范围）。
+> 处置：构建 production 模板 `soothe-nano-e2e`
+> （`python:3.12-slim-bookworm` + util-linux[setsid]/procps[kill -- -PGID]/
+> coreutils/findutils/grep/sed/ca-certificates，512 MiB，digest
+> `sha256:655e0721…`），E2E 以 `ARCBOX_E2E_TEMPLATE` 选择模板、daemon
+> 不可达时干净 skip（无 daemon CI 仍绿）。
+> 平台观察（flowjet/ArcBox 范围，非本仓）：沙箱创建偶发
+> "stopped before becoming ready"（约 1/7，重试即可）。
+> **2026-10-18 planner 贯穿（第 6 项完成，§7.2-7 落地）**：解除 sandbox 模式
+> planner 禁用。`resolve_subagents(..., sandbox_backend=)` 把 composite
+> backend 经 context 传入 `create_plan_subagent`；planner recon 工具
+> （`get_planner_readonly_tools(backend=...)`）直接绑注入 backend，
+> workspace 取 guest 根（`backend.workspace_root`，非宿主 work_dir）。
+> host 模式零变化（`sandbox_backend=None` 走原 `FilesystemBackend` 路径）。
 
 ### 11.1 `soothe-nano`
 

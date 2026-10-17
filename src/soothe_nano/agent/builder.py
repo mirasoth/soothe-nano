@@ -31,7 +31,7 @@ from soothe_nano.agent.interaction_mode import (
 from soothe_nano.config import SootheConfig
 from soothe_nano.middleware import build_soothe_middleware_stack
 from soothe_nano.protocols.core_agent import CoreAgentCapabilities
-from soothe_nano.resolve import (
+from soothe_nano.utils.resolver import (
     resolve_memory,
     resolve_planner,
     resolve_policy,
@@ -196,24 +196,14 @@ class AgentBuilder:
             self._config,
             default_model=default_model_instance,
             lazy=True,
+            # RFC §7.2-7: the planner's recon tools bind to the composite
+            # sandbox backend so readonly recon sees the guest workspace.
+            sandbox_backend=resolved_backend if sandbox_backend is not None else None,
         )
         all_subagents: list[SubAgent | CompiledSubAgent] = list(config_subagents)
         if subagents:
             all_subagents.extend(subagents)
         all_subagents = filter_subagents_for_mode(all_subagents, mode)
-        if sandbox_backend is not None:
-            # Planner builds its own host-bound FilesystemBackend
-            # (subagents/plan/engine.py) and cannot see the guest workspace;
-            # disable it until backend threading lands (RFC §7.2-7).
-            planner = next(
-                (sa for sa in all_subagents if getattr(sa, "name", None) == "planner"), None
-            )
-            if planner is not None:
-                logger.warning(
-                    "[Init] Sandbox mode: planner subagent disabled — its host-bound "
-                    "read-only tools cannot see the guest workspace."
-                )
-                all_subagents = [sa for sa in all_subagents if sa is not planner]
         subagents_ms = (time.perf_counter() - subagents_start) * 1000
         logger.info(
             "[Init] Subagents resolved: %d agents (%.1fms)", len(all_subagents), subagents_ms

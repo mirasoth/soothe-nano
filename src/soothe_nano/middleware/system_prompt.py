@@ -17,9 +17,9 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     from soothe_nano.config import SootheConfig
-    from soothe_nano.intention.models import RoutingClassification
     from soothe_nano.middleware._tool_context import ToolContextRegistry, ToolTriggerRegistry
     from soothe_nano.protocols.memory import MemoryItem
+    from soothe_nano.protocols.routing import RoutingClassification
 
 logger = logging.getLogger(__name__)
 

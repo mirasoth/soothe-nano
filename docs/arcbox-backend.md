@@ -98,8 +98,13 @@ sandbox:
   `tests/unit/toolkits/test_shell_executor.py`（executor 注入 + 异常路径
   不碰宿主 subprocess）、`tests/unit/agent/test_builder_sandbox.py`
   （composite 路由、四模式 × sandbox、放置闸门、execute 隐藏、GP 变体）。
-- 真机 E2E（RFC §12.4/12.5，Apple Silicon M3+ / macOS 15+）未跑，
-  属后续里程碑。
+- 真机 E2E：`tests/integration/test_arcbox_e2e.py`（§12.4 十步 +
+  §12.5 验收，15 测试）。运行方式：
+  `uv run pytest tests/integration/test_arcbox_e2e.py --run-integration`，
+  需要本机 ArcBox daemon；模板用 `ARCBOX_E2E_TEMPLATE` 选择，默认
+  `soothe-nano-e2e`（production guest 镜像：`python:3.12-slim-bookworm`
+  + setsid/procps/coreutils；daemon 默认模板**没有 python3**，镜像前置
+  检查会拒绝）。
 
 ## 8. 已知限制（phase 1）
 

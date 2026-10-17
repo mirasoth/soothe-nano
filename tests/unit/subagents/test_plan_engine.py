@@ -236,6 +236,75 @@ async def test_plan_engine_recon_disabled_skips_tools(monkeypatch: pytest.Monkey
     bind.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_plan_engine_recon_uses_injected_backend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """RFC §7.2-7: backend=... binds recon tools to the injected backend.
+
+    Sandbox mode threads the composite sandbox backend here; the recon
+    surface must see the backend's content instead of a host FilesystemBackend.
+    """
+    from soothe_deepagents.backends.filesystem import FilesystemBackend
+
+    (tmp_path / "gamma.txt").write_text("hello\n", encoding="utf-8")
+
+    emitted: list[dict[str, Any]] = []
+
+    def _capture(payload: dict[str, Any], _logger: Any = None) -> None:
+        emitted.append(dict(payload))
+
+    monkeypatch.setattr(plan_engine, "emit_progress", _capture)
+
+    recon_ai = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "ls",
+                "args": {"path": "."},
+                "id": "call_ls1",
+                "type": "tool_call",
+            }
+        ],
+    )
+    summary_ai = AIMessage(content="Workspace has gamma.txt")
+    bound = MagicMock()
+    bound.ainvoke = AsyncMock(side_effect=[recon_ai, summary_ai])
+    model = MagicMock()
+    model.bind_tools = MagicMock(return_value=bound)
+    _patch_planner(
+        monkeypatch,
+        planner_returns=PlanRefinement(
+            plan_markdown="# Plan\n1. Use gamma.txt\n",
+            finish_planning=True,
+        ),
+    )
+
+    graph = build_plan_engine(
+        model,
+        PlanSubagentConfig(enable_recon=True, max_recon_rounds=4),
+        workspace=str(tmp_path),
+        backend=FilesystemBackend(root_dir=tmp_path),
+    )
+    out = await graph.ainvoke({"messages": [HumanMessage(content="inventory the workspace")]})
+
+    findings = "\n".join(out.get("findings") or [])
+    assert "gamma.txt" in findings
+    assert bound.ainvoke.await_count == 2
+
+
+def test_planner_tools_exclude_write_surface() -> None:
+    """The recon surface stays read-only regardless of backend."""
+    from soothe_deepagents.backends.filesystem import FilesystemBackend
+
+    from soothe_nano.subagents.plan.engine import get_planner_readonly_tools
+
+    tools = get_planner_readonly_tools(backend=FilesystemBackend(root_dir=Path("/tmp")))
+    names = {getattr(t, "name", "") for t in tools}
+    assert names
+    assert not names & {"write_file", "edit_file", "delete", "execute"}
+
+
 def test_planner_prompts_require_solution_report_not_investigation() -> None:
     """Prompt contract: solution report with Changes; forbid investigate-roadmap steps."""
     assert "solution report" in plan_engine._PLANNER_SYSTEM.lower()

@@ -1,4 +1,10 @@
-"""Tool, goal, and subagent resolution for create_nano_agent."""
+"""Protocol, subagent, and tool resolution for create_nano_agent.
+
+Covers protocol resolution (memory, planner, policy), infrastructure
+resolution (durability, checkpointer), and tool/subagent resolution
+(including the lazy subagent graph compilation). The shared checkpointer
+pool lives in `soothe_nano.persistence.shared_checkpointer_pool`.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from soothe_nano.config import SootheConfig, SubagentConfig
 from soothe_nano.config.models import ModelRole
+from soothe_nano.core.exceptions import ConfigurationError
 from soothe_nano.toolkits.file_ops import (
     SURGICAL_FILE_OP_TOOL_NAME_SET,
     build_filesystem_tools,
@@ -26,9 +33,26 @@ if TYPE_CHECKING:
 
     from langchain_core.language_models import BaseChatModel
     from langchain_core.tools import BaseTool
+    from langgraph.types import Checkpointer
     from soothe_deepagents.middleware.subagents import CompiledSubAgent, SubAgent
 
+    from soothe_nano.protocols.durability import DurabilityProtocol
+    from soothe_nano.protocols.memory import MemoryProtocol
+    from soothe_nano.protocols.planner import PlannerProtocol
+    from soothe_nano.protocols.policy import PolicyProtocol
+
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "SUBAGENT_FACTORIES",
+    "resolve_checkpointer",
+    "resolve_durability",
+    "resolve_memory",
+    "resolve_planner",
+    "resolve_policy",
+    "resolve_subagents",
+    "resolve_tools",
+]
 
 # In-process LRU-style cache for resolved tool groups, so groups resolved once
 # (sequentially or via parallel `ThreadPoolExecutor`) are reused on subsequent lookups.
@@ -538,6 +562,7 @@ def resolve_subagents(
     default_model: BaseChatModel | None = None,
     *,
     lazy: bool = False,
+    sandbox_backend: Any | None = None,
 ) -> list[SubAgent | CompiledSubAgent]:
     """Build subagent specs from config.
 
@@ -546,6 +571,9 @@ def resolve_subagents(
         default_model: Pre-configured model instance to use as default.
         lazy: Accepted for API compatibility with `resolve_tools`; spec
             registration is already lazy (graphs compile on first invoke).
+        sandbox_backend: Optional composite sandbox backend (sandbox mode).
+            Threaded into subagent contexts that need it (planner recon
+            tools bind to it — RFC §7.2-7).
 
     Returns:
         List of subagent specs for the runtime.
@@ -620,7 +648,10 @@ def resolve_subagents(
         elif name == "planner":
             extra_kwargs.clear()
             extra_kwargs["config"] = config
-            extra_kwargs["context"] = {"work_dir": resolved_cwd}
+            context: dict[str, Any] = {"work_dir": resolved_cwd}
+            if sandbox_backend is not None:
+                context["sandbox_backend"] = sandbox_backend
+            extra_kwargs["context"] = context
         elif name in ("browser_use", "computer_use"):
             if name == "browser_use":
                 from soothe_nano.subagents.browser_use.config_model import BrowserUseSubagentConfig
@@ -800,3 +831,237 @@ def lazy_compiled_subagent_spec(
         "description": subagent_description(name, factory),
         "runnable": LazySubagentRunnable(factory, kwargs, name),
     }
+
+
+# ---------------------------------------------------------------------------
+# Protocol resolution (memory, planner, policy)
+# ---------------------------------------------------------------------------
+
+
+def _create_loop_phase_model(
+    config: SootheConfig,
+    role: str,
+    *,
+    fallback: BaseChatModel | None,
+    phase: str,
+) -> BaseChatModel | None:
+    """Resolve a loop-phase chat model from router role."""
+    try:
+        return config.create_chat_model(role)
+    except Exception:
+        logger.warning(
+            "Failed to create %s model for role=%s; falling back to planner model",
+            phase,
+            role,
+            exc_info=True,
+        )
+        return fallback
+
+
+def resolve_memory(config: SootheConfig) -> MemoryProtocol | None:
+    """Instantiate the MemoryProtocol implementation using MemU.
+
+    Args:
+        config: Soothe configuration.
+
+    Returns:
+        A MemoryProtocol instance, or None if disabled.
+    """
+    if not config.agent.protocols.memory.enabled:
+        return None
+
+    try:
+        from soothe_nano.backends.memory.memu_adapter import MemUMemory
+
+        logger.info(
+            "Using MemU memory backend (chat: %s, embed: %s)",
+            config.resolve_model(config.agent.protocols.memory.llm_chat_role),
+            config.resolve_model(config.agent.protocols.memory.llm_embed_role),
+        )
+
+        return MemUMemory(config)
+
+    except ImportError:
+        logger.exception("MemU memory backend requires dependencies")
+        raise
+    except Exception:
+        logger.exception("Failed to initialize MemU memory backend")
+        raise
+
+
+def resolve_planner(
+    config: SootheConfig,
+    model: BaseChatModel | None,
+) -> PlannerProtocol | None:
+    """Resolve planner protocol for Coding CoreAgent.
+
+    `LLMPlanner` lives in full `soothe`. Inject via `AgentBuilder.build(planner=...)`.
+    """
+    del config, model
+    return None
+
+
+def resolve_policy(config: SootheConfig) -> PolicyProtocol | None:
+    """Instantiate the PolicyProtocol implementation from config.
+
+    Args:
+        config: Soothe configuration.
+
+    Returns:
+        A PolicyProtocol instance.
+    """
+    from soothe_nano.security import ConfigDrivenPolicy
+
+    return ConfigDrivenPolicy(config=config)
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure resolution (durability, checkpointer)
+# ---------------------------------------------------------------------------
+
+
+def resolve_durability(
+    config: SootheConfig,
+    *,
+    metadata_pool_cls: type | None = None,
+) -> DurabilityProtocol:
+    """Instantiate the DurabilityProtocol implementation from config.
+
+    Supports: postgresql, sqlite backends (binary choice).
+    Uses multi-database PostgreSQL architecture (metadata database).
+
+    Args:
+        config: Soothe configuration.
+        metadata_pool_cls: Optional metadata pool class (host injects its
+            registry-bound subclass). Defaults to nano `SharedMetadataPool`.
+    """
+    backend = config.resolve_durability_backend()  # Resolve inheritance
+    if backend == "postgresql":
+        try:
+            from soothe_nano.backends.durability.postgresql import PostgreSQLDurability
+            from soothe_nano.backends.persistence import create_persist_store
+            from soothe_nano.persistence.shared_metadata_pool import SharedMetadataPool
+
+            pool_cls = metadata_pool_cls or SharedMetadataPool
+            # Use dedicated metadata database.
+            dsn = config.resolve_postgres_dsn_for_database("metadata")
+            shared_pool = pool_cls.get_or_create_pool(config)
+            persist_store = create_persist_store(
+                backend="postgresql",
+                dsn=dsn,
+                namespace="durability",
+                config=config,
+                shared_pool=shared_pool,
+            )
+            logger.debug("Using PostgreSQL durability backend (metadata database)")
+            return PostgreSQLDurability(persist_store=persist_store)
+        except Exception as e:
+            logger.error(
+                "PostgreSQL durability requested but failed: %s. "
+                "Check PostgreSQL configuration and connectivity. "
+                "Ensure soothe is up to date: pip install -U soothe-nano",
+                e,
+            )
+            raise ConfigurationError(
+                f"PostgreSQL durability backend unavailable: {e}\n"
+                f"Verify postgres_base_dsn and postgres_databases configuration.\n"
+                f"Ensure metadata database is created and accessible."
+            )
+
+    if backend == "sqlite":
+        try:
+            from soothe_nano.backends.durability.sqlite import SQLiteDurability
+
+            logger.info("Using SQLite durability backend (databases/metadata.db)")
+            return SQLiteDurability()
+        except Exception as e:
+            logger.error(
+                "SQLite durability requested but failed: %s. "
+                "Check sqlite3 installation and path configuration.",
+                e,
+            )
+            raise ConfigurationError(
+                f"SQLite durability backend unavailable: {e}\nVerify database path configuration."
+            )
+
+    raise ConfigurationError(
+        f"Unknown durability backend: {backend}\nSupported backends: postgresql, sqlite"
+    )
+
+
+def resolve_checkpointer(
+    config: SootheConfig,
+    *,
+    checkpointer_pool_cls: type | None = None,
+) -> tuple[Checkpointer, Any] | Checkpointer:
+    """Resolve a LangGraph checkpointer from config.
+
+    Uses persistence configuration for PostgreSQL or SQLite connection.
+    Uses dedicated checkpoints database for PostgreSQL.
+    No fallback to in-memory storage - persistent storage required.
+
+    Args:
+        config: Soothe configuration.
+        checkpointer_pool_cls: Optional checkpointer pool class (host injects
+            its registry-bound subclass). Defaults to nano
+            `SharedCheckpointerPool`.
+
+    Returns:
+        A tuple of (checkpointer, connection_resource) for PostgreSQL, or just the checkpointer for SQLite.
+        The connection_resource must be closed during cleanup (e.g., via runner.cleanup()).
+    """
+    backend = config.resolve_checkpointer_backend()  # Resolve inheritance
+    if backend == "postgresql":
+        from soothe_nano.persistence.shared_checkpointer_pool import SharedCheckpointerPool
+
+        pool_cls = checkpointer_pool_cls or SharedCheckpointerPool
+        pool = pool_cls.get_or_create_pool(config)
+        if pool is not None:
+            return (None, pool)
+        logger.error("PostgreSQL checkpointer unavailable")
+        raise ConfigurationError(
+            "PostgreSQL checkpointer requested but failed.\n"
+            "Check postgres_base_dsn and postgres_databases configuration.\n"
+            "Ensure checkpoints database is created and accessible.\n"
+            "No fallback - production requires persistent storage."
+        )
+
+    if backend == "sqlite":
+        result = _resolve_sqlite_checkpointer(config)
+        if result:
+            return result
+        logger.error("SQLite checkpointer unavailable")
+        raise ConfigurationError(
+            "SQLite checkpointer requested but failed.\n"
+            "Check sqlite3 installation and path configuration.\n"
+            "No fallback - persistent storage required."
+        )
+
+    raise ConfigurationError(
+        f"Unknown checkpointer backend: {backend}\n"
+        f"Supported: postgresql, sqlite\n"
+        f"No in-memory fallback - persistent storage required."
+    )
+
+
+def _resolve_sqlite_checkpointer(config: SootheConfig) -> tuple[Checkpointer | None, Any] | None:
+    """Resolve SQLite checkpointer database path.
+
+    Defers AsyncSqliteSaver creation to async context (same pattern as PostgreSQL).
+    Callers that construct the saver need `langgraph-checkpoint-sqlite` installed.
+
+    Returns:
+        A tuple of (None, db_path) if successful, None otherwise.
+        The runner will create AsyncSqliteSaver from the path in async context.
+    """
+    try:
+        from soothe_nano.paths import resolve_checkpoints_db_path
+
+        db_path = str(resolve_checkpoints_db_path())
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        logger.warning("Failed to create SQLite checkpointer path: %s", exc)
+        return None
+
+    logger.info("SQLite checkpointer path resolved at %s", db_path)
+    return (None, db_path)
