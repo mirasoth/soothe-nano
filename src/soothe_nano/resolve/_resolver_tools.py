@@ -206,7 +206,7 @@ def resolve_tools(
             metadata probing.
         config: Optional Soothe config for tool configuration.
         exclude_tool_groups: Optional tool group names to skip (e.g. Ask mode
-            omits `execution` and `file_ops`).
+        omits `shell` and `file_ops`).
 
     Returns:
         Flat list of fully-initialised `BaseTool` instances.
@@ -216,7 +216,7 @@ def resolve_tools(
     # Get list of enabled tool group names
     # Note: "deep_research" is a subagent, not a tool group - handled in resolve_subagents()
     _tool_groups = [
-        "execution",
+        "shell",
         "file_ops",
         "datetime",
         "data",
@@ -234,7 +234,7 @@ def resolve_tools(
         if group_cfg and group_cfg.enabled:
             enabled_tools.append(name)
 
-    # Host-execution tools run on the host via subprocess (see toolkits.execution).
+    # Host-execution tools run on the host via subprocess (see toolkits.shell).
 
     total_start = time.perf_counter()
 
@@ -384,11 +384,11 @@ def _resolve_single_tool_group_uncached(
         toolkit = WizsearchToolkit(config=web_search_config)
         return toolkit.get_tools()
 
-    if name == "execution":
-        from soothe_nano.toolkits.execution import build_execution_toolkit
+    if name == "shell":
+        from soothe_nano.toolkits.shell import build_shell_toolkit
 
         resolved_cwd = str(resolve_effective_tool_workspace(config))
-        return build_execution_toolkit(
+        return build_shell_toolkit(
             config=config,
             workspace_root=resolved_cwd,
         ).get_tools()
@@ -408,17 +408,17 @@ def _resolve_single_tool_group_uncached(
         "run_python",
     ):
         # Host-execution tools do not require a sandbox backend.
-        from soothe_nano.toolkits.execution import build_execution_toolkit
+        from soothe_nano.toolkits.shell import build_shell_toolkit
 
         resolved_cwd = str(resolve_effective_tool_workspace(config))
-        all_tools = build_execution_toolkit(
+        all_tools = build_shell_toolkit(
             config=config,
             workspace_root=resolved_cwd,
         ).get_tools()
         tool_map = {tool.name: tool for tool in all_tools}
         if name in tool_map:
             return [tool_map[name]]
-        logger.warning("Tool '%s' not found in ExecutionToolkit", name)
+        logger.warning("Tool '%s' not found in ShellToolkit", name)
         return []
 
     if name == "file_ops":

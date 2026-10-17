@@ -1,6 +1,6 @@
 """Integration tests for execution tools.
 
-Tests tools from soothe_nano.toolkits.execution:
+Tests tools from soothe_nano.toolkits.shell:
 - run_command: Execute shell commands synchronously (integration smoke)
 """
 
@@ -24,7 +24,7 @@ class TestRunCommandShellTool:
     @pytest.fixture
     def cmd_tool(self):
         """Create RunCommandShellTool instance."""
-        from soothe_nano.toolkits.execution import RunCommandShellTool
+        from soothe_nano.toolkits.shell import RunCommandShellTool
 
         return RunCommandShellTool(
             workspace_root=tempfile.mkdtemp(),

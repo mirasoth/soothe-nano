@@ -13,7 +13,7 @@ from soothe_nano.config.constants import (
     MAX_EXECUTE_TIMEOUT,
     clamp_execute_timeout,
 )
-from soothe_nano.toolkits.execution import (
+from soothe_nano.toolkits.shell import (
     RunCommandShellTool,
     _kill_process_tree,
     _run_shell_command_sync,
@@ -31,19 +31,19 @@ def test_clamp_execute_timeout_respects_ceiling() -> None:
 
 
 def test_kill_process_tree_uses_killpg_on_unix(monkeypatch) -> None:
-    monkeypatch.setattr("soothe_nano.toolkits.execution.sys.platform", "linux")
+    monkeypatch.setattr("soothe_nano.toolkits.shell.sys.platform", "linux")
 
     def fake_getpgid(pid: int) -> int:
         # Distinct from the caller's group so killpg is used (IG-622).
         return 1 if pid == 0 else 999
 
-    monkeypatch.setattr("soothe_nano.toolkits.execution.os.getpgid", fake_getpgid)
+    monkeypatch.setattr("soothe_nano.toolkits.shell.os.getpgid", fake_getpgid)
     killed: list[tuple[int, int]] = []
 
     def fake_killpg(pgid: int, sig: int) -> None:
         killed.append((pgid, sig))
 
-    monkeypatch.setattr("soothe_nano.toolkits.execution.os.killpg", fake_killpg)
+    monkeypatch.setattr("soothe_nano.toolkits.shell.os.killpg", fake_killpg)
     _kill_process_tree(42)
     assert killed == [(999, 9)]
 
@@ -52,10 +52,10 @@ def test_run_shell_command_sync_kills_tree_on_timeout(monkeypatch) -> None:
     proc = MagicMock()
     proc.pid = 123
     proc.communicate.side_effect = subprocess.TimeoutExpired(cmd="sleep", timeout=1)
-    monkeypatch.setattr("soothe_nano.toolkits.execution.subprocess.Popen", lambda *a, **k: proc)
+    monkeypatch.setattr("soothe_nano.toolkits.shell.subprocess.Popen", lambda *a, **k: proc)
     killed: list[int] = []
     monkeypatch.setattr(
-        "soothe_nano.toolkits.execution._kill_process_tree",
+        "soothe_nano.toolkits.shell._kill_process_tree",
         lambda pid, **kw: killed.append(pid),
     )
 
@@ -69,7 +69,7 @@ def test_run_shell_command_sync_kills_tree_on_timeout(monkeypatch) -> None:
 def test_run_command_timeout_message_mentions_process_group() -> None:
     tool = RunCommandShellTool(workspace_root="/tmp", timeout=1)
     with patch(
-        "soothe_nano.toolkits.execution._run_shell_command_sync",
+        "soothe_nano.toolkits.shell._run_shell_command_sync",
         side_effect=subprocess.TimeoutExpired(cmd="sleep", timeout=1),
     ):
         result = tool._run("sleep 9")

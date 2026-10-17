@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import signal
 
-from soothe_nano.toolkits.execution import (
+from soothe_nano.toolkits.shell import (
     KillProcessTool,
     _kill_process_tree,
     _protected_kill_refusal,
@@ -56,16 +56,16 @@ def test_protected_kill_hook_unregister() -> None:
 def test_kill_process_tree_avoids_killpg_on_own_group(monkeypatch) -> None:
     kills: list[tuple[int, int]] = []
 
-    monkeypatch.setattr("soothe_nano.toolkits.execution.os.getpgid", lambda _pid: 77)
+    monkeypatch.setattr("soothe_nano.toolkits.shell.os.getpgid", lambda _pid: 77)
     monkeypatch.setattr(
-        "soothe_nano.toolkits.execution.os.kill",
+        "soothe_nano.toolkits.shell.os.kill",
         lambda pid, sig: kills.append((pid, sig)),
     )
 
     def boom(*_a, **_k):
         raise AssertionError("killpg must not run for own process group")
 
-    monkeypatch.setattr("soothe_nano.toolkits.execution.os.killpg", boom)
+    monkeypatch.setattr("soothe_nano.toolkits.shell.os.killpg", boom)
     _kill_process_tree(99, sig=signal.SIGTERM)
     assert kills == [(99, signal.SIGTERM)]
 
@@ -76,9 +76,9 @@ def test_kill_process_tree_uses_killpg_for_foreign_group(monkeypatch) -> None:
     def fake_getpgid(pid: int) -> int:
         return 10 if pid == 0 else 99
 
-    monkeypatch.setattr("soothe_nano.toolkits.execution.os.getpgid", fake_getpgid)
+    monkeypatch.setattr("soothe_nano.toolkits.shell.os.getpgid", fake_getpgid)
     monkeypatch.setattr(
-        "soothe_nano.toolkits.execution.os.killpg",
+        "soothe_nano.toolkits.shell.os.killpg",
         lambda pgid, sig: killpg_calls.append((pgid, sig)),
     )
     _kill_process_tree(42, sig=signal.SIGKILL)

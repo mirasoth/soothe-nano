@@ -6,7 +6,7 @@ import os
 import time
 from unittest.mock import patch
 
-from soothe_nano.toolkits.execution import (
+from soothe_nano.toolkits.shell import (
     RunBackgroundTool,
     TailBackgroundLogTool,
     _cleanup_stale_background_logs,
@@ -57,7 +57,7 @@ class TestBackgroundLogRetention:
         class FakeProc:
             pid = 55555
 
-        with patch("soothe_nano.toolkits.execution.subprocess.Popen", return_value=FakeProc()):
+        with patch("soothe_nano.toolkits.shell.subprocess.Popen", return_value=FakeProc()):
             result = tool._run("sleep 30")
 
         assert result["pid"] == 55555

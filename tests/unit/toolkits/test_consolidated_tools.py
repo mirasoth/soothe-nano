@@ -327,7 +327,7 @@ class TestResolverToolkitNames:
         """Execution toolkit should resolve to 5 tools."""
         from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
 
-        tools = _resolve_single_tool_group_uncached("execution")
+        tools = _resolve_single_tool_group_uncached("shell")
         assert len(tools) == 5
         assert tools[0].name == "run_command"
         tool_names = {t.name for t in tools}

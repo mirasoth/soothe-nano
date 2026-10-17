@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from soothe_nano.toolkits.execution import (
+from soothe_nano.toolkits.shell import (
     _translate_virtual_paths_in_command,
     _virtual_mode_from_security,
 )

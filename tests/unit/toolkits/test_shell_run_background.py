@@ -7,7 +7,7 @@ import signal
 import time
 from unittest.mock import MagicMock, patch
 
-from soothe_nano.toolkits.execution import (
+from soothe_nano.toolkits.shell import (
     RunBackgroundTool,
     _kill_process_tree,
     _resolve_background_log_dir,
@@ -103,7 +103,7 @@ class TestRunBackgroundMocked:
     def test_run_background_popen_failure(self) -> None:
         tool = RunBackgroundTool()
         with patch(
-            "soothe_nano.toolkits.execution.subprocess.Popen",
+            "soothe_nano.toolkits.shell.subprocess.Popen",
             side_effect=OSError("spawn failed"),
         ):
             result = tool._run("sleep 1")
@@ -122,7 +122,7 @@ class TestRunBackgroundMocked:
             captured.update(kwargs)
             return FakeProc()
 
-        with patch("soothe_nano.toolkits.execution.subprocess.Popen", side_effect=fake_popen):
+        with patch("soothe_nano.toolkits.shell.subprocess.Popen", side_effect=fake_popen):
             result = tool._run("sleep 1")
 
         assert result["pid"] == 12345
@@ -143,7 +143,7 @@ class TestRunBackgroundMocked:
             captured["cmd"] = cmd
             return FakeProc()
 
-        with patch("soothe_nano.toolkits.execution.subprocess.Popen", side_effect=fake_popen):
+        with patch("soothe_nano.toolkits.shell.subprocess.Popen", side_effect=fake_popen):
             tool._run("cat /README.md")
 
         ws = str(tmp_path.resolve())
@@ -164,7 +164,7 @@ class TestRunBackgroundMocked:
             captured.update(kwargs)
             return FakeProc()
 
-        with patch("soothe_nano.toolkits.execution.subprocess.Popen", side_effect=fake_popen):
+        with patch("soothe_nano.toolkits.shell.subprocess.Popen", side_effect=fake_popen):
             tool._run("sleep 1", runtime=runtime)
 
         assert captured.get("cwd") == str(client_ws.resolve())
@@ -193,16 +193,16 @@ class TestBackgroundLogDirResolution:
         assert resolved.is_dir()
 
 
-class TestExecutionToolkitConfig:
-    def test_build_execution_toolkit_reads_background_log_dir(self) -> None:
+class TestShellToolkitConfig:
+    def test_build_shell_toolkit_reads_background_log_dir(self) -> None:
         from types import SimpleNamespace
 
-        from soothe_nano.toolkits.execution import build_execution_toolkit
+        from soothe_nano.toolkits.shell import build_shell_toolkit
 
         config = SimpleNamespace(
             security=None,
             tools=SimpleNamespace(
-                execution=SimpleNamespace(
+                shell=SimpleNamespace(
                     background_log_dir="/tmp/bg-logs",
                     background_log_retention_days=3,
                 ),
@@ -213,7 +213,7 @@ class TestExecutionToolkitConfig:
                 ),
             ),
         )
-        toolkit = build_execution_toolkit(config=config, workspace_root="/ws")
+        toolkit = build_shell_toolkit(config=config, workspace_root="/ws")
         bg_tool = next(t for t in toolkit.get_tools() if t.name == "run_background")
         kill_tool = next(t for t in toolkit.get_tools() if t.name == "kill_process")
         assert bg_tool.background_log_dir == "/tmp/bg-logs"

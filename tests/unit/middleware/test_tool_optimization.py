@@ -8,10 +8,10 @@ import pytest
 from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 
-from soothe_nano.middleware.tool_optimization_middleware import ToolOptimizationMiddleware
+from soothe_nano.middleware.tool_optimization import ToolOptimizationMiddleware
 
 
-def test_main_stack_mounts_tool_optimization_middleware() -> None:
+def test_main_stack_mounts_tool_optimization() -> None:
     from soothe_nano.config.settings import SootheConfig
     from soothe_nano.middleware._builder import build_soothe_middleware_stack
 
@@ -307,7 +307,7 @@ async def test_non_search_run_command_allowed() -> None:
 
 
 def test_is_simple_shell_search_command_detector() -> None:
-    from soothe_nano.middleware.tool_optimization_middleware import (
+    from soothe_nano.middleware.tool_optimization import (
         _is_simple_shell_search_command,
     )
 
@@ -323,7 +323,7 @@ def test_is_simple_shell_search_command_detector() -> None:
 
 @pytest.mark.asyncio
 async def test_empty_write_todos_short_circuited() -> None:
-    from soothe_nano.middleware.tool_optimization_middleware import (
+    from soothe_nano.middleware.tool_optimization import (
         get_tool_reuse_metrics_snapshot,
     )
 
@@ -354,7 +354,7 @@ async def test_empty_write_todos_short_circuited() -> None:
 
 @pytest.mark.asyncio
 async def test_read_file_thrash_guidance_after_consecutive_slices() -> None:
-    from soothe_nano.middleware.tool_optimization_middleware import (
+    from soothe_nano.middleware.tool_optimization import (
         get_tool_reuse_metrics_snapshot,
     )
 

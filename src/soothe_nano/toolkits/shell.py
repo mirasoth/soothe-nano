@@ -1,4 +1,4 @@
-"""Execution tools: synchronous and background shell, Python REPL, and process control."""
+"""Shell tools: synchronous and background shell, Python REPL, and process control."""
 
 from __future__ import annotations
 
@@ -144,7 +144,7 @@ def _background_log_dir_from_config(config: Any | None) -> str | None:
     if config is None:
         return None
     try:
-        raw = config.tools.execution.background_log_dir
+        raw = config.tools.shell.background_log_dir
     except AttributeError:
         return None
     return str(raw) if raw else None
@@ -154,7 +154,7 @@ def _background_log_retention_from_config(config: Any | None) -> int:
     if config is None:
         return 7
     try:
-        return max(0, int(config.tools.execution.background_log_retention_days))
+        return max(0, int(config.tools.shell.background_log_retention_days))
     except (AttributeError, TypeError, ValueError):
         return 7
 
@@ -1079,7 +1079,7 @@ class KillProcessTool(BaseTool):
         return self._run(pid, runtime=runtime)
 
 
-class ExecutionToolkit:
+class ShellToolkit:
     """Toolkit for shell and Python execution."""
 
     def __init__(
@@ -1136,32 +1136,32 @@ class ExecutionToolkit:
         ]
 
 
-def build_execution_toolkit(
+def build_shell_toolkit(
     *,
     config: Any | None = None,
     workspace_root: str = "",
     timeout: int = DEFAULT_EXECUTE_TIMEOUT,
     security_config: Any | None = None,
     max_output_length: int | None = None,
-) -> ExecutionToolkit:
-    """Construct :class:`ExecutionToolkit` from resolver or plugin config."""
+) -> ShellToolkit:
+    """Construct :class:`ShellToolkit` from resolver or plugin config."""
     if security_config is None and config is not None:
         security_config = getattr(config, "security", None)
-    return ExecutionToolkit(
+    return ShellToolkit(
         workspace_root=workspace_root,
         timeout=timeout,
         security_config=security_config,
         max_output_length=(
             max_output_length
             if max_output_length is not None
-            else _execution_max_output_from_config(config)
+            else _shell_max_output_from_config(config)
         ),
         background_log_dir=_background_log_dir_from_config(config),
         background_log_retention_days=_background_log_retention_from_config(config),
     )
 
 
-def _execution_max_output_from_config(config: Any | None) -> int:
+def _shell_max_output_from_config(config: Any | None) -> int:
     if config is None:
         return DEFAULT_CODE_EXEC_MAX_OUTPUT_CHARS
     try:
@@ -1171,13 +1171,13 @@ def _execution_max_output_from_config(config: Any | None) -> int:
 
 
 @plugin(
-    name="execution",
+    name="shell",
     version="1.0.0",
     description="Shell and Python execution tools",
     trust_level="built-in",
 )
-class ExecutionPlugin:
-    """Execution tools plugin."""
+class ShellPlugin:
+    """Shell tools plugin."""
 
     def __init__(self) -> None:
         """Initialize the plugin."""
@@ -1192,7 +1192,7 @@ class ExecutionPlugin:
         workspace_root = getattr(context.config, "workspace_root", "")
         timeout = getattr(context.config, "timeout", 60)
 
-        self._tools = build_execution_toolkit(
+        self._tools = build_shell_toolkit(
             config=context.soothe_config,
             workspace_root=workspace_root,
             timeout=timeout,
@@ -1206,8 +1206,8 @@ class ExecutionPlugin:
         )
 
 
-def _execution_plugin_get_tools(self: ExecutionPlugin) -> list[BaseTool]:
-    """Return tools loaded by :meth:`ExecutionPlugin.on_load`.
+def _shell_plugin_get_tools(self: ShellPlugin) -> list[BaseTool]:
+    """Return tools loaded by :meth:`ShellPlugin.on_load`.
 
     Assigned after class creation because ``@plugin`` replaces ``get_tools`` with
     an ``@tool`` method scanner that does not apply to toolkit-backed plugins.
@@ -1215,4 +1215,4 @@ def _execution_plugin_get_tools(self: ExecutionPlugin) -> list[BaseTool]:
     return self._tools
 
 
-ExecutionPlugin.get_tools = _execution_plugin_get_tools  # type: ignore[method-assign]
+ShellPlugin.get_tools = _shell_plugin_get_tools  # type: ignore[method-assign]

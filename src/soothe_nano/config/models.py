@@ -438,11 +438,11 @@ class ToolConfig(BaseModel):
     enabled: bool = True
 
 
-class ExecutionToolsConfig(ToolConfig):
-    """Configuration for host execution tools (run_command, run_background, etc.).
+class ShellToolsConfig(ToolConfig):
+    """Configuration for shell tools (run_command, run_python, run_background, etc.).
 
     Args:
-        enabled: Whether execution tools are bound to the agent.
+        enabled: Whether shell tools are bound to the agent.
         background_log_dir: Optional directory for `run_background` stdout/stderr logs.
             When null, logs go under `<workspace>/.soothe/background` or soothe home.
         background_log_retention_days: Prune `bg-*.log` older than this on spawn (0=off).
@@ -556,7 +556,7 @@ class ToolsConfig(BaseModel):
         deepxiv: DeepXiv academic paper search tools (disabled by default).
     """
 
-    execution: ExecutionToolsConfig = Field(default_factory=ExecutionToolsConfig)
+    shell: ShellToolsConfig = Field(default_factory=ShellToolsConfig)
     file_ops: ToolConfig = Field(default_factory=ToolConfig)
     datetime: ToolConfig = Field(default_factory=ToolConfig)
     data: ToolConfig = Field(default_factory=ToolConfig)

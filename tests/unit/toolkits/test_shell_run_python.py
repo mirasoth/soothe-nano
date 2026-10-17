@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from soothe_nano.toolkits.execution import RunPythonREPLTool
+from soothe_nano.toolkits.shell import RunPythonREPLTool
 
 
 def test_run_python_persistence_on_same_instance() -> None:
@@ -37,7 +37,7 @@ async def test_run_python_arun_uses_executor() -> None:
     async def fake_executor(_pool, fn, code):
         return fn(code)
 
-    with patch("soothe_nano.toolkits.execution.run_in_executor", side_effect=fake_executor):
+    with patch("soothe_nano.toolkits.shell.run_in_executor", side_effect=fake_executor):
         result = await tool._arun(code="print(42)")
     assert "42" in str(result)
 

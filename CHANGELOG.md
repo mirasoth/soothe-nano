@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Consolidated the `soothe_nano.middleware` tool-* modules (9 → 7 files), zero behavior change: `middleware.tool_name_hints` (invalid-tool-name hint helpers) merged into `middleware.tool_error_guard`; `middleware.tool_result_storage_middleware` (`ToolResultStorageMiddleware`) merged into `middleware.tool_result_storage` (helpers + middleware in one module); `middleware.tool_optimization_middleware` renamed to `middleware.tool_optimization` (repo convention: concern-named, no `_middleware` suffix). `middleware.tool_call_args_registry` / `tool_call_args_middleware` are intentionally left at their current paths — the soothe host's `sloop` executor imports `get_recorded_tool_call_args` / `init_tool_call_args_registry` from there.
+- Renamed the `execution` tool group to `shell` to disambiguate it from the deepagents `execute` tool. Renamed across the board: module `toolkits/execution.py` → `toolkits/shell.py`, `ExecutionPlugin`/`ExecutionToolkit`/`ExecutionToolsConfig` → `Shell*`, plugin name `execution` → `shell`, config key `tools.execution` → `tools.shell` (hard rename — no downstream code or live config consumers were found), `ToolMeta.category="execution"` → `"shell"` (five entries, atomically with both security-layer consumers and `category_map`), `_tool_groups`/`ASK_MUTATING_TOOL_GROUPS` membership, and eleven `tests/unit/toolkits/test_execution_*.py` files renamed to `test_shell_*.py`. **Tool names are unchanged** (`run_command`, `run_python`, `run_background`, `tail_background_log`, `kill_process`) — they are model-visible, prompt-tuned, and not the confusion source. Rationale: `run_command` already carries `ToolMeta.aliases=("shell","bash")`, upstream calls the local variant `LocalShellBackend`, and "shell" is placement-neutral for the upcoming sandbox executor-injection work.
+
 ## [1.4.2] - 2026-10-13
 
 ### Removed

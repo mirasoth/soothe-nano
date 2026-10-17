@@ -1,4 +1,4 @@
-"""Unit tests for ExecutionPlugin tool loading."""
+"""Unit tests for ShellPlugin tool loading."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from soothe_nano.toolkits.execution import (
+from soothe_nano.toolkits.shell import (
     KillProcessTool,
     RunBackgroundTool,
     RunCommandShellTool,
@@ -18,9 +18,9 @@ from soothe_nano.toolkits.execution import (
 
 @pytest.mark.asyncio
 async def test_execution_plugin_on_load_wires_config() -> None:
-    from soothe_nano.toolkits.execution import ExecutionPlugin
+    from soothe_nano.toolkits.shell import ShellPlugin
 
-    plugin = ExecutionPlugin()
+    plugin = ShellPlugin()
     context = MagicMock()
     context.config = SimpleNamespace(workspace_root="/ws/proj", timeout=90)
     context.soothe_config = SimpleNamespace(security=SimpleNamespace())

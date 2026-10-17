@@ -182,7 +182,7 @@ def discover_all_plugins(
             "soothe_nano.subagents.academic_research:AcademicResearchPlugin",
         ),
         ("browser_use", "soothe_nano.subagents.browser_use:BrowserUsePlugin"),
-        ("execution", "soothe_nano.toolkits.execution:ExecutionPlugin"),
+        ("shell", "soothe_nano.toolkits.shell:ShellPlugin"),
         ("file_ops", "soothe_nano.toolkits.file_ops:FileOpsPlugin"),
         ("data", "soothe_nano.toolkits.data:DataPlugin"),
         ("datetime", "soothe_nano.toolkits.datetime:DatetimePlugin"),

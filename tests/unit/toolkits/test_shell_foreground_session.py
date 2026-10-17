@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from soothe_nano.toolkits.execution import (
+from soothe_nano.toolkits.shell import (
     _register_foreground_session,
     _run_shell_command_sync,
     _unregister_foreground_session,
@@ -40,9 +40,9 @@ def test_run_shell_command_sync_writes_and_clears_session(tmp_path: Path) -> Non
         return path
 
     with (
-        patch("soothe_nano.toolkits.execution.subprocess.Popen", return_value=fake_proc),
+        patch("soothe_nano.toolkits.shell.subprocess.Popen", return_value=fake_proc),
         patch(
-            "soothe_nano.toolkits.execution._register_foreground_session",
+            "soothe_nano.toolkits.shell._register_foreground_session",
             side_effect=_tracking_register,
         ),
     ):

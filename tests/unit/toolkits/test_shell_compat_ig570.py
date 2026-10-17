@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import patch
 
-from soothe_nano.toolkits.execution import RunBackgroundTool, RunCommandShellTool
+from soothe_nano.toolkits.shell import RunBackgroundTool, RunCommandShellTool
 from soothe_nano.toolkits.shell_compat import macos_shell_compatibility_error
 
 

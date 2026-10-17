@@ -194,7 +194,7 @@ _register(
         display_name="RunCommand",
         arg_keys=("command", "cmd", "script"),
         aliases=("shell", "bash"),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
         has_header_info=True,
@@ -324,7 +324,7 @@ _register(
         name="run_python",
         display_name="RunPython",
         arg_keys=("code",),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
     )
@@ -335,7 +335,7 @@ _register(
         name="run_background",
         display_name="RunBackground",
         arg_keys=("command",),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
     )
@@ -346,7 +346,7 @@ _register(
         name="tail_background_log",
         display_name="TailBackgroundLog",
         arg_keys=("pid", "lines"),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
     )
@@ -357,7 +357,7 @@ _register(
         name="kill_process",
         display_name="KillProcess",
         arg_keys=("pid",),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
     )
@@ -822,7 +822,7 @@ def get_outcome_type(name: str) -> str:
     # Fallback: categories with uniform outcome_type
     if meta:
         category_map = {
-            "execution": "code_exec",
+            "shell": "code_exec",
             "web": "web_search",
             "subagent": "subagent",
             "media": "file_read",

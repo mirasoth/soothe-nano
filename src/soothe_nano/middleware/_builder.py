@@ -144,7 +144,7 @@ def build_soothe_middleware_stack(
     # Must wrap EditCoalescingMiddleware (outer): coalescing intercepts edit tools
     # without calling inner handlers, so kwargs must be captured before that path.
     from .tool_call_args_middleware import ToolCallArgsMiddleware
-    from .tool_optimization_middleware import ToolOptimizationMiddleware
+    from .tool_optimization import ToolOptimizationMiddleware
 
     stack.append(ToolCallArgsMiddleware())
     logger.debug("[Middleware] Tool call args recording enabled")
@@ -179,7 +179,7 @@ def build_soothe_middleware_stack(
     mw_config = agent_middleware_config(config)
     storage_config = mw_config.tool_result_storage
     if storage_config.enabled:
-        from .tool_result_storage_middleware import ToolResultStorageMiddleware
+        from .tool_result_storage import ToolResultStorageMiddleware
 
         stack.append(
             ToolResultStorageMiddleware(

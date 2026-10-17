@@ -41,7 +41,7 @@ FILESYSTEM_TOOLS_ASK: list[FsToolName] = [
 FILESYSTEM_TOOLS_PLAN: list[FsToolName] = list(FILESYSTEM_TOOLS_ASK)
 """Plan-mode FS surface: same read-only allowlist as Ask."""
 
-ASK_MUTATING_TOOL_GROUPS: frozenset[str] = frozenset({"execution", "file_ops"})
+ASK_MUTATING_TOOL_GROUPS: frozenset[str] = frozenset({"shell", "file_ops"})
 """Tool groups omitted when resolving tools for Ask / Plan mode."""
 
 ASK_SUBAGENT_ALLOWLIST: frozenset[str] = frozenset({"planner"})
