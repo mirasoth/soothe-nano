@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from soothe_nano.config import SootheConfig, SubagentConfig
 from soothe_nano.config.models import ModelRole
-from soothe_nano.toolkits.file_ops_catalog import (
+from soothe_nano.toolkits.file_ops import (
     SURGICAL_FILE_OP_TOOL_NAME_SET,
     build_filesystem_tools,
     build_surgical_file_ops_tools,
@@ -88,7 +88,6 @@ def _get_subagent_factories() -> dict[str, Callable[..., SubAgent | CompiledSubA
 
     This avoids importing heavy subagent modules at module load time.
     """
-    from soothe_nano.subagents.academic_research import create_academic_research_subagent
     from soothe_nano.subagents.browser_use import create_browser_use_subagent
     from soothe_nano.subagents.computer_use import create_computer_use_subagent
     from soothe_nano.subagents.deep_research import create_deep_research_subagent
@@ -97,7 +96,6 @@ def _get_subagent_factories() -> dict[str, Callable[..., SubAgent | CompiledSubA
     return {
         "planner": create_plan_subagent,
         "deep_research": create_deep_research_subagent,
-        "academic_research": create_academic_research_subagent,
         "browser_use": create_browser_use_subagent,
         "computer_use": create_computer_use_subagent,
     }
@@ -557,7 +555,7 @@ def resolve_subagents(
             logger.warning("Unknown subagent '%s', skipping.", name)
             continue
 
-        if name in ("deep_research", "academic_research"):
+        if name == "deep_research":
             model_override = _resolve_subagent_chat_model(config, sub_cfg, default_role="fast")
         elif name == "planner":
             model_override = _resolve_subagent_chat_model(config, sub_cfg, default_role="think")
@@ -584,7 +582,7 @@ def resolve_subagents(
             continue
 
         extra_kwargs: dict = dict(sub_cfg.config)
-        if name in ("deep_research", "academic_research"):
+        if name == "deep_research":
             # Research YAML options live in ``config.subagents[name].config`` only.
             # Factories accept ``model``, ``SootheConfig``, and ``context``.
             extra_kwargs.clear()

@@ -177,10 +177,6 @@ def discover_all_plugins(
     _builtin_plugins: list[tuple[str, str]] = [
         ("planner", "soothe_nano.subagents.plan:PlanPlugin"),
         ("deep_research", "soothe_nano.subagents.deep_research:DeepResearchPlugin"),
-        (
-            "academic_research",
-            "soothe_nano.subagents.academic_research:AcademicResearchPlugin",
-        ),
         ("browser_use", "soothe_nano.subagents.browser_use:BrowserUsePlugin"),
         ("shell", "soothe_nano.toolkits.shell:ShellPlugin"),
         ("file_ops", "soothe_nano.toolkits.file_ops:FileOpsPlugin"),

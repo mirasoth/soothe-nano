@@ -41,9 +41,8 @@ BUILTIN_TOOL_TRIGGERS: dict[str, list[str]] = {
     "requests_patch": [],
     "requests_put": [],
     "requests_delete": [],
-    # Subagents (task tool targets — core: plan, deep_research, academic_research; plugins add more)
+    # Subagents (task tool targets — core: plan, deep_research; plugins add more)
     "deep_research": ["DEEP_RESEARCH_RULES", "context"],
-    "academic_research": ["ACADEMIC_RESEARCH_RULES", "context"],
     # Datetime
     "datetime": [],
 }

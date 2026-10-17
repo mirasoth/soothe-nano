@@ -1,6 +1,6 @@
 """Tests for URL validation utility."""
 
-from soothe_nano.utils.url_validation import validate_url
+from soothe_nano.toolkits._internal.wizsearch import validate_url
 
 
 class TestValidateUrl:

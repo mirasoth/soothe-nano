@@ -255,6 +255,42 @@ class TestProtocolCompliance:
 
 
 class TestBridgeLoop:
+    def test_bridge_deadline_does_not_claim_kill(self, monkeypatch) -> None:
+        """Bridge timeouts surface as errors with a still-running caveat (§10.2)."""
+        import asyncio
+
+        from soothe_nano.sandbox.arcbox import (
+            ArcBoxTimeoutError,
+            _SdkArcBoxClient,
+        )
+
+        client = _SdkArcBoxClient("sbx-test")
+
+        class _FakeSandbox:
+            class commands:  # noqa: N801 -- mirrors SDK attribute access
+                @staticmethod
+                def run(*args, **kwargs):
+                    return asyncio.sleep(30)
+
+        monkeypatch.setattr(_SdkArcBoxClient, "_ensure_sandbox", lambda self: _FakeSandbox)
+
+        def _raise_bridge_timeout(coro, timeout=None):
+            coro.close()
+            raise ArcBoxTimeoutError("bridge deadline")
+
+        monkeypatch.setattr("soothe_nano.sandbox.arcbox._call_sync", _raise_bridge_timeout)
+        result = client.run("sleep 99", timeout=5)
+        assert result.timed_out is False
+        assert "may still be running" in (result.error or "")
+
+        backend = ArcBoxBackend(
+            sandbox_id="sbx-test",
+            client=FakeClient(result),
+        )
+        response = backend.execute("sleep 99", timeout=5)
+        assert response.exit_code is None  # NOT the 124 kill convention
+        assert "may still be running" in response.output
+
     def test_call_sync_times_out_and_cancels(self) -> None:
         import asyncio
 
@@ -285,3 +321,79 @@ class TestLazyImports:
 
         for name in ("ArcBoxBackend", "ArcBoxClient", "ArcBoxError"):
             assert getattr(pkg, name) is not None
+
+    def test_arcbox_sdk_missing_gives_install_guidance(self, monkeypatch) -> None:
+        """A missing arcbox SDK surfaces as ArcBoxError pointing at the core dep (§8.3)."""
+        from soothe_nano.sandbox.arcbox import ArcBoxError, _SdkArcBoxClient
+
+        monkeypatch.setitem(sys.modules, "arcbox", None)
+        client = _SdkArcBoxClient("sbx-test")
+        with pytest.raises(ArcBoxError, match="core dependency"):
+            client._ensure_sandbox()
+
+
+class TestSandboxInvariants:
+    """§12.1 / §12.3 invariants that hold without a daemon."""
+
+    def test_default_timeout_within_middleware_cap(self) -> None:
+        """§7.2-8: default_timeout must stay under the middleware execute cap."""
+        import inspect
+
+        from soothe_deepagents.middleware.filesystem import FilesystemMiddleware
+
+        cap = inspect.signature(FilesystemMiddleware.__init__).parameters[
+            "max_execute_timeout"
+        ].default
+        assert ArcBoxBackend(sandbox_id="sbx-x", client=FakeClient(CommandRunResult())).default_timeout <= cap
+
+    def test_constructor_surface_holds_no_model_credentials(self) -> None:
+        """§12.1: the backend never accepts or stores model-provider credentials."""
+        import inspect
+
+        params = set(inspect.signature(ArcBoxBackend.__init__).parameters)
+        assert params <= {
+            "self",
+            "sandbox_id",
+            "client",
+            "workspace_root",
+            "default_timeout",
+            "api_url",
+            "api_key",  # ArcBox daemon transport credential — host-only
+            "socket_path",
+            "connect_timeout",
+            "enable_capture_offload",
+        }
+
+    def test_file_tools_and_shell_share_guest_workspace(self, tmp_path: Path) -> None:
+        """§12.3-4: middleware-derived writes are visible to guest shell, and vice versa."""
+        backend = make_backend(LocalGuestClient(tmp_path), workspace_root=str(tmp_path))
+        assert backend.write(f"{tmp_path}/w.txt", "written-by-fs").error is None
+        assert "written-by-fs" in backend.execute("cat w.txt").output
+
+        assert backend.execute("echo shell-marker > r.txt").exit_code == 0
+        read = backend.read(f"{tmp_path}/r.txt")
+        assert "shell-marker" in read.file_data["content"]
+
+    def test_concurrent_writes_do_not_corrupt(self, tmp_path: Path) -> None:
+        """§10.4 smoke: parallel writes to one path end in a complete, uncorrupted state."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        backend = make_backend(LocalGuestClient(tmp_path), workspace_root=str(tmp_path))
+        path = f"{tmp_path}/race.txt"
+        payloads = [f"writer-{i}\n" * 50 for i in range(8)]
+
+        def write(payload: str) -> None:
+            assert backend.write(path, payload).error is None
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(write, payloads))
+
+        content = backend.read(path).file_data["content"]
+        # One writer's payload wins wholesale: 50 identical lines, no
+        # interleaved fragments. Line-wise comparison — the read transport
+        # strips the trailing newline, so exact-payload matching is brittle.
+        lines = content.splitlines()
+        assert len(lines) == 50
+        assert len(set(lines)) == 1
+        assert lines[0] in {f"writer-{i}" for i in range(8)}
+        assert "\x00" not in content

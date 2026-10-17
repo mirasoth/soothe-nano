@@ -183,6 +183,11 @@ class AgentBuilder:
             all_tools.append(create_search_skills_tool())
             all_tools.append(create_invoke_skill_tool())
 
+        if sandbox_backend is not None:
+            # Fail-closed gate (RFC §7.5.5): tools without a declared
+            # sandbox placement never silently run on the host.
+            all_tools = self._enforce_sandbox_tool_placement(all_tools, config_tools)
+
         tools_ms = (time.perf_counter() - tools_start) * 1000
         logger.info("[Init] Tools resolved: %d tools (%.1fms)", len(all_tools), tools_ms)
 
@@ -196,6 +201,19 @@ class AgentBuilder:
         if subagents:
             all_subagents.extend(subagents)
         all_subagents = filter_subagents_for_mode(all_subagents, mode)
+        if sandbox_backend is not None:
+            # Planner builds its own host-bound FilesystemBackend
+            # (subagents/plan/engine.py) and cannot see the guest workspace;
+            # disable it until backend threading lands (RFC §7.2-7).
+            planner = next(
+                (sa for sa in all_subagents if getattr(sa, "name", None) == "planner"), None
+            )
+            if planner is not None:
+                logger.warning(
+                    "[Init] Sandbox mode: planner subagent disabled — its host-bound "
+                    "read-only tools cannot see the guest workspace."
+                )
+                all_subagents = [sa for sa in all_subagents if sa is not planner]
         subagents_ms = (time.perf_counter() - subagents_start) * 1000
         logger.info(
             "[Init] Subagents resolved: %d agents (%.1fms)", len(all_subagents), subagents_ms
@@ -565,6 +583,15 @@ class AgentBuilder:
         A bare sandbox backend passed by the caller is wrapped so memory and
         framework state survive sandbox teardown; a composite assembled by
         the caller is trusted as-is.
+
+        Framework-state prefixes cover the upstream middleware defaults
+        (verified: ``FilesystemMiddleware`` resolves them to absolute
+        ``/large_tool_results`` and ``/conversation_history`` under an
+        execution-capable backend). The host backend's virtual-root
+        semantics map every routed prefix to ``<host-workspace>/...``,
+        exactly like non-sandbox mode. Guest-space paths such as
+        ``/workspace/.soothe/background/bg-*.log`` intentionally fall
+        through to the sandbox default.
         """
         from soothe_deepagents.backends.composite import CompositeBackend
 
@@ -573,8 +600,69 @@ class AgentBuilder:
         host_backend = self._initialize_backend(policy)
         return CompositeBackend(
             default=sandbox_backend,
-            routes={"/memories": host_backend, "/.soothe": host_backend},
+            routes={
+                "/memories": host_backend,
+                "/.soothe": host_backend,
+                "/large_tool_results": host_backend,
+                "/conversation_history": host_backend,
+            },
         )
+
+    _SANDBOX_HOST_INFRA_TOOL_NAMES = frozenset(
+        {
+            # Catalog/listing tools: pure metadata over the host tool
+            # registry — no filesystem or execution reach.
+            "search_tools",
+            "search_skills",
+            "invoke_skill",
+            "search_mcp_tools",
+            "mcp_resources_list",
+        }
+    )
+    """Host-placement infra tools allowed in sandbox mode by name."""
+
+    def _enforce_sandbox_tool_placement(
+        self,
+        all_tools: list[Any],
+        config_tools: list[Any],
+    ) -> list[Any]:
+        """Fail-closed gate for tools without a declared sandbox placement.
+
+        Tools resolved from the builtin groups are validated by construction
+        (shell is guest-bound; datetime/wizsearch/http/deepxiv are
+        host-placement by design). Everything else — custom ``tools=[...]``,
+        MCP tools, third-party plugin tools — must be declared in
+        ``config.sandbox.placement_overrides``, else raise (default) or drop.
+        """
+        sandbox_cfg = self._config.sandbox
+        allowed = (
+            {self._tool_name(t) for t in config_tools}
+            | set(self._SANDBOX_HOST_INFRA_TOOL_NAMES)
+            | set(sandbox_cfg.placement_overrides)
+        )
+        undeclared = [t for t in all_tools if self._tool_name(t) not in allowed]
+        if not undeclared:
+            return all_tools
+        names = sorted({self._tool_name(t) for t in undeclared})
+        if sandbox_cfg.on_deny == "drop":
+            logger.warning("[Init] Sandbox mode: dropping undeclared tools: %s", ", ".join(names))
+            return [t for t in all_tools if self._tool_name(t) in allowed]
+        msg = (
+            "Sandbox mode refuses tools without a declared placement: "
+            f"{', '.join(names)}. Declare them via config.sandbox.placement_overrides "
+            "or set sandbox.on_deny='drop' to remove them instead."
+        )
+        raise ValueError(msg)
+
+    @staticmethod
+    def _tool_name(tool: Any) -> str:
+        """Best-effort model-visible name for BaseTool / callable / dict specs."""
+        name = getattr(tool, "name", None)
+        if name:
+            return str(name)
+        if isinstance(tool, dict):
+            return str(tool.get("name", ""))
+        return str(getattr(tool, "__name__", "") or "")
 
 
 def create_nano_agent(

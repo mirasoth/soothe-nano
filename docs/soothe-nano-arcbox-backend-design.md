@@ -392,10 +392,21 @@ agent_backend = CompositeBackend(
     routes={                                              # supports_execution 只看
         "/memories": host_backend,                        # CompositeBackend.default
         "/.soothe": host_backend,
-        # 其余前缀（/workspace/**）走 default
-    },
+        "/large_tool_results": host_backend,              # 2026-10-17 补：
+        "/conversation_history": host_backend,            # upstream 中间件在
+        # 其余前缀（/workspace/**）走 default              # execution backend 下的
+    },                                                    # 绝对默认前缀（已实测）
 )
 ```
+
+> **2026-10-17 Spike C 落定**：`create_deep_agent` 主链的
+> `FilesystemMiddleware` 由 upstream `graph.py:1038` 构造，prefix 默认解析为
+> **绝对** `/large_tool_results` / `/conversation_history`（实测确认，非
+> nano `SootheFilesystemMiddleware` 的相对 `.soothe/...` 默认——那只影响
+> planner/file_ops 目录，sandbox 下两者均被禁用）。因此 route 表必须覆盖
+> 这两个前缀，否则框架态落 guest、随 VM 销毁丢失。宿主机后端的虚拟根
+> 语义（`should_use_virtual_path_resolution`）会把四个前缀都映射到
+> `<host-workspace>/...`，与非 sandbox 模式完全同位。
 
 -   `supports_execution(CompositeBackend)` 判定
     `isinstance(backend.default, SandboxBackendProtocol)`（`filesystem.py:1316-1337`）
@@ -513,11 +524,18 @@ skills / `large_tool_results_prefix` 实际落盘路径（当前线索：
 
 | 原工具 | guest 实现 |
 |---|---|
-| `run_command` | `backend.execute_with_offload(command, timeout=...)`（保留退出码与大输出 offload；超时/输出上限/安全守卫逻辑原样保留，仅替换 `subprocess.Popen` 分支） |
+| `run_command` | `backend.execute_with_offload(command, timeout=...)`（保留退出码与大输出 offload；超时/输出上限/安全守卫逻辑原样保留，仅替换 `subprocess.Popen` 分支）。**实现偏差（2026-10-17）**：offload 仅在 backend 显式 opt-in（`enable_capture_offload` 为真）时启用（`shell.py:645-652`），否则走普通 `execute`——`ArcBoxBackend` 默认不开启 capture offload（§9.3 的前提是 opt-in，非默认） |
 | `run_python` | `backend.execute("python3 - <<'EOF' … EOF")`（heredoc 避免引号转义问题） |
-| `run_background` | `execute("nohup … > <log> 2>&1 & echo $!")`（`<log>` 由 guest 侧拼好路径；沿用宿主机实现"先写 pending 再按 PID 重命名"的套路，`execution.py:900-905`），返回 guest PID + log 路径 |
-| `tail_background_log` | `backend.read(<guest log 路径>)` 取尾部 N 行 |
+| `run_background` | `execute("nohup … > <log> 2>&1 & echo $!")`（`<log>` 由 guest 侧拼好路径；沿用宿主机实现"先写 pending 再按 PID 重命名"的套路，`execution.py:900-905`），返回 guest PID + log 路径。**实现偏差（2026-10-17）**：guest 单行内联完成（`mkdir -p` + `setsid`（可用时）+ `nohup … & pid=$!; mv …; echo $pid`，`shell.py:1020-1030`），并经 `< /dev/null` 释放 session stdio |
+| `tail_background_log` | ~~`backend.read(<guest log 路径>)` 取尾部 N 行~~ **实现偏差（2026-10-17）**：改为 guest 侧 `tail -n <count> <log>`（`shell.py:1202-1211`）——`BaseSandbox` 派生的 `backend.read()` 是全文件读（多次 execute 派生原语），既无行数上界也多付 round-trip；guest 自带 `tail` 单次往返且有界（count clamp 1..5000） |
 | `kill_process` | `execute("kill -- -<pid>")`（guest 进程组）+ 沿用 PID 守卫逻辑的 guest 等价物 |
+
+**实现偏差（2026-10-17，retention）**：宿主机路径的
+`_cleanup_stale_background_logs(log_dir, background_log_retention_days)`
+（`shell.py:188-192, 1095`）只在 host `run_background` 分支调用；guest 分支
+不清理 `bg-*.log`——guest 后台日志在 VM 存活期内无保留期裁剪。第一阶段
+接受（VM 生命周期由调用方管理，随 sandbox 销毁整体消失）；若后续出现
+长生命周期 VM + 高频后台任务，需在 guest 侧补等价裁剪。
 
 注意 `execute` 工具本身**保持隐藏**（allowlist 现状不含它）：shell 由重路由
 后的 `run_command` 独占，维持"同一时刻只有一套 shell"的硬约束；若同时
@@ -805,15 +823,12 @@ agent = create_nano_agent(config, backend=backend)
 -   **仓库当前没有 lockfile**（无 `uv.lock` / `poetry.lock` /
     `requirements.txt`）。因此"锁定 arcbox 版本"只能靠
     `pyproject.toml` 的上界约束 + CI 兼容性测试，不能依赖 lockfile。
--   新增 optional extra：
-
-    ``` toml
-    [project.optional-dependencies]
-    arcbox = ["arcbox>=0.1.0,<0.2.0"]
-    ```
-
-    当前只有 `dev` extra，无 runtime extra 先例；新增时需确认 hatchling
-    wheel 打包不受影响。
+-   **决策更新（2026-10-17）**：`arcbox>=0.1.0,<0.2.0` 以**主依赖**形式
+    进入 `pyproject.toml`（非 optional extra）——上文 optional extra
+    提案作废。惰性导入设计保留（`src/soothe_nano/sandbox/__init__.py`
+    不触发 SDK import；`ArcBoxBackend` 实例化时不传 `client` 才连接），
+    `_ensure_sandbox` 的 ImportError 指引相应指向"core dependency /
+    重装或注入自定义 client"。
 -   `arcbox` 导入失败时，`src/soothe_nano/sandbox/__init__.py` 不应抛错，
     仅在实例化 `ArcBoxBackend` 时给出安装指引。
 
@@ -824,7 +839,14 @@ agent = create_nano_agent(config, backend=backend)
 禁止放入：ArcBox `CreateSandbox` 的 `env`、`cmd`、guest workspace 文件、
 Dockerfile / template、VM 镜像或快照、工具参数或返回值。
 
-`ArcBoxBackend` 不接受 `api_key` 参数，也不感知模型供应商。
+**条款修正（2026-10-17）**：原文"`ArcBoxBackend` 不接受 `api_key` 参数"
+不准确。`ArcBoxBackend` 确实接受 `api_url` / `api_key` / `socket_path`
+（及 `ARCBOX_API_URL` / `ARCBOX_API_KEY` 环境变量回退），但它们是
+**ArcBox daemon 凭证**——宿主机到 daemon 控制面的认证，host-only，
+用于 `connect(sandbox_id)`；不是模型供应商凭证，也不进入 guest。
+不变式不变：**模型 API Key 永不进入 backend 构造面、永不序列化进 VM**；
+单测 `test_constructor_surface_holds_no_model_credentials` 以签名参数集
+断言钉死（`api_key` 参数名仅指 daemon 凭证）。
 §6.4 的 `CompositeBackend` 还额外保证宿主机框架态（含可能含敏感内容的
 memory / conversation history offload）不落进 VM。
 
@@ -909,10 +931,29 @@ output offsets / resume，用其恢复读取同一次 execution 的输出。
 > 偏差记录：`run_command` 超时在 guest 侧按 `exit_code=124` 约定回传
 > （§10.1），由 `BackendShellExecutor` 映射回统一的超时文案；
 > `kill_process` guest 分支跳过宿主 protected-kill 钩子（只保护宿主进程）。
+> **2026-10-17 二轮修复（A-F）**：A=composite routes 补
+> `/large_tool_results` + `/conversation_history`（Spike C 落定，见 §6.4）；
+> B=§7.5.5 fail-closed 闸门前置落地（`config.sandbox` 的
+> `placement_overrides` 白名单 + `on_deny: raise|drop`，默认 raise；
+> 完整 placement 模型仍缓）；C=guest 后台进程 `setsid` + `kill -- -PGID`
+> 进程组回收（无 setsid 时回退单 pid）；D=桥接超时不再标 124/不再声称
+> 已杀（`may still be running`，与 SDK 服务端真超时区分）；E=planner
+> subagent 在 sandbox 模式禁用+告警（宿主 `FilesystemBackend` 看不见
+> guest 工作区，待后端贯穿后恢复）；F=四种交互模式 × sandbox 组合
+> 全部有 builder 测试覆盖。
 > **2026-10-17 更新**：`data` / `image` 工具组已从 nano 整体删除
 > （§7.1 表中两行与 §7.5 默认推导表中对应的 shuttle 例子随之作废），
 > sandbox 排除组收缩为仅 `file_ops`；shuttle 的剩余受益者只剩
 > document/自定义工具场景，placement 模型（第 5 项）的优先级相应下调。
+> **2026-10-17 三轮（离线批次）**：第 8、10 项完成——`docs/arcbox-backend.md`
+> 使用文档 + README 链接；`create_nano_agent` 签名复核无需改动。第 7 项
+> 偏差落地：`arcbox` 以主依赖进入 pyproject（§8.3 决策更新）。
+> 测试补全：arcbox 不变量四测（middleware 超时上限覆盖、构造面无模型
+> 凭证、文件工具与 shell 共享 guest 工作区双向、并发写 smoke）、
+> shell 错误路径不碰宿主 `subprocess`、builder 三测（GP per_step/readonly
+> × sandbox 的 permissions-free 变体断言、composite 行为级路由——四前缀
+> 落宿主 tmp / guest 路径落 client / `execute` 恒走 guest、
+> `execute` created-then-hidden 的过滤器级断言）。
 
 ### 11.1 `soothe-nano`
 
@@ -1107,3 +1148,32 @@ output offsets / resume，用其恢复读取同一次 execution 的输出。
 -   Flowjet Session 层管理 Sandbox 生命周期；
 -   LLM API Key 永远留在宿主机；
 -   ArcBox 不可用时失败关闭，不回退到本机执行。
+
+## 16. Phase-2 候选：`file_ops` 与中间件 FS 统一（仅记录，未排期）
+
+**方向**：把 `file_ops` 手术工具组与主循环 `FilesystemMiddleware` 统一为
+「同一 allowlist + 同一份中间件 + 仅 backend 不同」，消除双实例。评审结论：
+事实基础成立（`file_ops` 本就是中间件工厂所造工具的镜像面；`delete`
+的"双注册"实为 `ToolNode.tools_by_name` dict 后写覆盖，确定性遮蔽而非
+重复注册），但**必须作为独立 phase-2 PR**，不能塞进 ArcBox phase 1。
+评审中发现的方案未覆盖的四个坑：
+
+1.  **by-name replace 对 Soothe 子类失效**：upstream
+    `_apply_custom_middleware`（`graph.py:357`）按 `AgentMiddleware.name`
+    替换，`name` 默认取 `self.__class__.__name__`——nano 的
+    `SootheFilesystemMiddleware` 子类名字不匹配，需显式
+    `name = "FilesystemMiddleware"` 覆盖，否则定制版根本不生效。
+2.  **progressive 分层会静默吞 deferred 工具**：`DEFERRED_FROM_CORE`
+    含 `delete` / `file_info` / `apply_diff`（`registry.py:41-50`），
+    `ProgressiveToolMiddleware._ensure_catalog` 只在目录为空时填充、
+    `bound_tools` 纯过滤——统一后这三个工具会从目录管道静默消失，
+    必须显式处理分层口径。
+3.  **subagent 中间件不继承**：upstream 只继承 parent 的 tools
+    （`graph.py:995`）不继承 middleware（`graph.py:992/871`）——统一后
+    subagent 的 FS 行为分层与主 agent 不对称，需三处显式接线。
+4.  **行为回归面**：`file_ops` 目录拦截语义（目录拦截口径、错误文案、
+    与 `NormalizedPathBackend` 相关的既有单测 golden）需逐一映射；
+    统一是删除而非重写，回归验证靠既有测试套。
+
+（另：`file_ops` 统一后 §7.5 placement 模型的必要性进一步下降——
+剩余受益者只剩 document/自定义工具场景。）

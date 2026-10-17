@@ -466,18 +466,6 @@ _register(
     )
 )
 
-_register(
-    ToolMeta(
-        name="academic_research",
-        display_name="Academic Research",
-        arg_keys=("topic", "domain"),
-        category="subagent",
-        outcome_type="subagent",
-        source="soothe",
-        has_header_info=True,
-    )
-)
-
 # ---------------------------------------------------------------------------
 # soothe media tools
 # ---------------------------------------------------------------------------

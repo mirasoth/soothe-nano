@@ -1012,7 +1012,10 @@ class RunBackgroundTool(BaseTool):
         inside one guest shell line: the ``&`` backgrounds only the ``nohup``
         job, ``$!`` captures its PID, and the rename happens after spawn so
         the open fd follows the inode. ``< /dev/null`` releases the session
-        stdio so the exec call returns without waiting on the job.
+        stdio so the exec call returns without waiting on the job. When
+        ``setsid`` (util-linux) is available the job becomes a session
+        leader, so its PID doubles as the PGID and ``kill_process`` reaps
+        the whole process tree via ``kill -- -<pid>``.
         """
         root = executor.workspace_root
         bg_dir = f"{root}/.soothe/background"
@@ -1021,7 +1024,8 @@ class RunBackgroundTool(BaseTool):
         inner = f"printf {shlex.quote(header)}; exec sh -c {shlex.quote(command)}"
         one_liner = (
             f"mkdir -p {shlex.quote(bg_dir)} || exit 1; "
-            f"nohup sh -c {shlex.quote(inner)} > {shlex.quote(pending)} 2>&1 < /dev/null & "
+            f"command -v setsid >/dev/null 2>&1 && SETSID=setsid; "
+            f"$SETSID nohup sh -c {shlex.quote(inner)} > {shlex.quote(pending)} 2>&1 < /dev/null & "
             f'pid=$!; mv {shlex.quote(pending)} "{bg_dir}/bg-$pid.log"; echo $pid'
         )
         try:
@@ -1255,13 +1259,20 @@ class KillProcessTool(BaseTool):
     )
 
     def _run_in_sandbox(self, pid: int, executor: Any) -> str:
-        """Kill a guest PID (TERM then KILL) with the same status wording."""
+        """Kill a guest PID's process group (TERM then KILL), same wording.
+
+        ``run_background`` spawns via ``setsid`` when available, making the
+        PID the session/PGID leader — ``kill -- -<pid>`` then reaps the whole
+        tree, mirroring the host's killpg semantics. Without ``setsid`` the
+        group signal has no target and falls back to killing the PID alone.
+        """
         root = executor.workspace_root
         log_path = f"{root}/.soothe/background/bg-{pid}.log"
         one_liner = (
             f"kill -0 {pid} 2>/dev/null || {{ echo NOT_FOUND; exit 0; }}; "
-            f"kill {pid} 2>/dev/null; "
-            f"kill -0 {pid} 2>/dev/null && kill -9 {pid} 2>/dev/null; "
+            f"kill -- -{pid} 2>/dev/null || kill {pid} 2>/dev/null; "
+            f"kill -0 {pid} 2>/dev/null && {{ kill -9 {pid} 2>/dev/null; "
+            f"kill -9 -- -{pid} 2>/dev/null; }}; "
             f"printf '\\n[soothe] process {pid} terminated\\n' >> {shlex.quote(log_path)} 2>/dev/null; "
             f"kill -0 {pid} 2>/dev/null && echo ALIVE || echo DEAD"
         )

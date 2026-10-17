@@ -161,7 +161,14 @@ class _SdkArcBoxClient:
     def _ensure_sandbox(self) -> Any:
         if self._sandbox is not None:
             return self._sandbox
-        import arcbox  # noqa: PLC0415 -- optional dependency, lazy by design
+        try:
+            import arcbox  # noqa: PLC0415 -- optional dependency, lazy by design
+        except ImportError as exc:
+            raise ArcBoxError(
+                "The arcbox SDK is not available. It ships as a core dependency "
+                "of soothe-nano (arcbox>=0.1.0); reinstall the package or inject "
+                "a custom ArcBoxClient instead."
+            ) from exc
 
         conn_kwargs: dict[str, Any] = {}
         if self._api_url:
@@ -192,9 +199,14 @@ class _SdkArcBoxClient:
                 timeout=(timeout + _BRIDGE_GRACE_SECONDS) if timeout is not None else None,
             )
         except ArcBoxTimeoutError:
+            # Bridge deadline: only the waiter coroutine was cancelled — the
+            # guest command may still be running (RFC §10.2). Never claim it
+            # was killed; surface as error-as-data with an explicit caveat.
             return CommandRunResult(
-                timed_out=True,
-                error=f"Command exceeded the {timeout}s bridge deadline",
+                error=(
+                    f"Command exceeded the {timeout}s bridge deadline; "
+                    "the guest command may still be running"
+                ),
             )
         except Exception as exc:  # noqa: BLE001 -- SDK errors surface as data
             if not _is_arcbox_error(exc):

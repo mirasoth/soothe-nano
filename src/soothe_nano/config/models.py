@@ -314,7 +314,7 @@ class SubagentConfig(BaseModel):
         default=None,
         description=(
             "Explicit ``provider:model`` override for subagents that support it "
-            "(``planner``, ``deep_research``, ``academic_research``). "
+            "(``planner``, ``deep_research``). "
             "Takes precedence over ``model_role``. ``browser_use`` uses ``model_role`` only."
         ),
     )
@@ -560,6 +560,22 @@ class ToolsConfig(BaseModel):
     wizsearch: WebSearchConfig = Field(default_factory=WebSearchConfig)
     http_requests: HttpRequestsToolsConfig = Field(default_factory=HttpRequestsToolsConfig)
     deepxiv: DeepxivToolsConfig = Field(default_factory=lambda: DeepxivToolsConfig(enabled=False))
+
+
+class SandboxConfig(BaseModel):
+    """Sandbox-mode tool placement policy (active only with a sandbox backend).
+
+    Args:
+        on_deny: Action for tools without a known sandbox placement.
+            "raise" (default, fail-closed) aborts the build;
+            "drop" removes them with a warning.
+        placement_overrides: Tool names the operator declares safe for this
+            deployment — host-bound custom / MCP / plugin tools that were
+            reviewed and may run outside the sandbox backend.
+    """
+
+    on_deny: Literal["raise", "drop"] = Field(default="raise")
+    placement_overrides: set[str] = Field(default_factory=set)
 
 
 class SqliteRuntimeConfig(BaseModel):

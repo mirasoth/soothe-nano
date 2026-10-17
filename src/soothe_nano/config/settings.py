@@ -37,6 +37,7 @@ from soothe_nano.config.models import (
     ProgressiveToolsConfig,
     ReportOutputConfig,
     RouterProfile,
+    SandboxConfig,
     SecurityConfig,
     SubagentConfig,
     ToolsConfig,
@@ -269,7 +270,7 @@ class SootheConfig(BaseSettings):
     subagents: dict[str, SubagentConfig] = Field(default_factory=dict)
     """Subagent name to config mapping. Set `enabled: false` to disable.
 
-    Builtin subagents (planner, deep_research, academic_research, browser_use) are added
+    Builtin subagents (planner, deep_research, browser_use) are added
     automatically. browser_use is included in base dependencies and is enabled by default.
     Plugin-discovered subagents are merged during config validation.
     """
@@ -484,7 +485,6 @@ class SootheConfig(BaseSettings):
         builtin_subagents = {
             "planner": SubagentConfig(model_role="think"),
             "deep_research": SubagentConfig(),
-            "academic_research": SubagentConfig(),
             "browser_use": SubagentConfig(enabled=True, model_role="default"),
             "computer_use": SubagentConfig(enabled=True, model_role="default"),
         }
@@ -512,6 +512,10 @@ class SootheConfig(BaseSettings):
 
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     """Tool group configurations. Each tool can be enabled/disabled and configured."""
+
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    """Sandbox-mode tool placement policy; consulted only when a sandbox
+    backend is injected into the agent build."""
 
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
     """MCP server configurations. Server names must be unique."""

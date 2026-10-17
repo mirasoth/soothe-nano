@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
+import pytest
 from soothe_deepagents.backends.protocol import ExecuteResponse
 
 from soothe_nano.sandbox.arcbox import ArcBoxBackend, CommandRunResult
@@ -172,6 +174,20 @@ class TestBackendShellExecutor:
         assert outcome.error is None
         assert outcome.exit_code == 1
 
+    def test_backend_errors_never_touch_host_subprocess(self, monkeypatch) -> None:
+        """§12.1: sandbox tool errors surface as data; host shell stays untouched."""
+        import soothe_nano.toolkits.shell as shell_mod
+
+        def _no_host_shell(*args: Any, **kwargs: Any) -> Any:
+            raise AssertionError("host subprocess must not run in sandbox mode")
+
+        monkeypatch.setattr(shell_mod, "_run_shell_command_sync", _no_host_shell)
+        backend = FakeBackend(ExecuteResponse(output="Error: sandbox died", exit_code=None))
+        toolkit = ShellToolkit(executor=BackendShellExecutor(backend))
+        tool = {t.name: t for t in toolkit.get_tools()}["run_command"]
+        result = tool._run("anything")
+        assert result == "Error: sandbox died"
+
     def test_capture_offload_route(self) -> None:
         backend = FakeBackend(ExecuteResponse(output="ok", exit_code=0))
         backend.enable_capture_offload = True
@@ -288,6 +304,23 @@ class TestRunBackgroundGuestMode:
         tools = {t.name: t for t in toolkit.get_tools()}
         result = tools["tail_background_log"]._run(999999)
         assert result.startswith("Error: log file not found")
+
+    @pytest.mark.skipif(sys.platform == "darwin", reason="needs setsid (util-linux)")
+    def test_kill_reaps_guest_process_tree(self, tmp_path: Path) -> None:
+        """Group kill must reap children, mirroring host killpg semantics."""
+        toolkit = make_guest_toolkit(tmp_path)
+        tools = {t.name: t for t in toolkit.get_tools()}
+        spawned = tools["run_background"]._run("sleep 597; true")
+        pid = spawned["pid"]
+        time.sleep(0.5)  # let the tree form
+        result = tools["kill_process"]._run(pid)
+        assert "terminated" in result
+        leftover = subprocess.run(  # noqa: S603 -- fixed argv
+            ["pgrep", "-f", "sleep 597"],
+            capture_output=True,
+            timeout=10,
+        )
+        assert leftover.returncode != 0, "child survived the group kill"
 
     def test_spawn_failure_returns_error_payload(self, tmp_path: Path) -> None:
         backend = FakeBackend(ExecuteResponse(output="Error: sandbox died", exit_code=None))
