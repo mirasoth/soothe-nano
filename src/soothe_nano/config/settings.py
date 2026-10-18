@@ -821,7 +821,7 @@ class SootheConfig(BaseSettings):
             if self.persistence.default_backend == "postgresql":
                 try:
                     from soothe_nano.persistence.postgres_pool_lifecycle import (
-                        postgres_pool_timing_from_config,
+                        PostgresPoolLifecycle,
                     )
                     from soothe_nano.persistence.postgres_pool_registry import (
                         PostgresPoolRegistry,
@@ -833,7 +833,7 @@ class SootheConfig(BaseSettings):
                         if vectors_pool is not None:
                             kwargs["shared_pool"] = vectors_pool
                             kwargs["pool_size"] = 0
-                    kwargs["pool_timing"] = postgres_pool_timing_from_config(
+                    kwargs["pool_timing"] = PostgresPoolLifecycle.timing_from_config(
                         self,
                         max_size=kwargs["pool_size"] or self.persistence.postgres.vectors_pool_size,
                     )

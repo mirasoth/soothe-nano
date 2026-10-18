@@ -13,14 +13,9 @@ import threading
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from soothe_nano.persistence.postgres_pool_lifecycle import (
-    apply_row_factory,
-    close_async_pool,
-    postgres_pool_timing_from_config,
-    release_idle_pool_connections,
-)
+from soothe_nano.persistence.postgres_pool_lifecycle import PostgresPoolLifecycle
 from soothe_nano.persistence.postgres_pool_registry import PostgresPoolRegistry
-from soothe_nano.persistence.retry_utils import is_duplicate_schema_error
+from soothe_nano.persistence.retry_utils import ConnectionRetry
 
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
@@ -97,19 +92,19 @@ class SharedCheckpointerPool:
                 return None
 
             from soothe_nano.persistence.postgres_provisioning import (
-                ensure_postgres_databases,
+                PostgresProvisioning,
             )
 
-            ensure_postgres_databases(config)
+            PostgresProvisioning.ensure_databases(config)
             dsn = config.resolve_postgres_dsn_for_database("checkpoints")
             max_size = cls._REGISTRY_CLS.resolve_checkpoints_pool_size(config)
-            timing = postgres_pool_timing_from_config(config, max_size=max_size)
+            timing = PostgresPoolLifecycle.timing_from_config(config, max_size=max_size)
             pool_kwargs: dict[str, Any] = {
                 "max_size": max_size,
                 "open": False,
                 **timing,
             }
-            pool = AsyncConnectionPool(dsn, **apply_row_factory(pool_kwargs))
+            pool = AsyncConnectionPool(dsn, **PostgresPoolLifecycle.apply_row_factory(pool_kwargs))
             _shared_checkpointer_pool = pool
             logger.info(
                 "Created singleton shared PostgreSQL checkpointer pool (max_size=%d)",
@@ -171,7 +166,7 @@ class SharedCheckpointerPool:
                     try:
                         await setup()
                     except Exception as exc:
-                        if not is_duplicate_schema_error(exc):
+                        if not ConnectionRetry.is_duplicate_schema_error(exc):
                             raise
                         logger.debug(
                             "Checkpointer schema already exists (concurrent setup): %s: %s",
@@ -197,7 +192,7 @@ class SharedCheckpointerPool:
     @classmethod
     async def release_idle(cls) -> None:
         """Drop idle checkpointer connections (daemon periodic maintenance)."""
-        await release_idle_pool_connections(_shared_checkpointer_pool, label="checkpointer")
+        await PostgresPoolLifecycle.release_idle(_shared_checkpointer_pool, label="checkpointer")
 
     @classmethod
     async def close_shared_instance(cls) -> None:
@@ -229,7 +224,7 @@ class SharedCheckpointerPool:
             _shared_checkpointer_pool = None
             _checkpointer_setup_done = False
 
-        await close_async_pool(pool_to_close, label="checkpointer")
+        await PostgresPoolLifecycle.close(pool_to_close, label="checkpointer")
 
         new_pool = cls.get_or_create_pool(config)
         if new_pool is not None:

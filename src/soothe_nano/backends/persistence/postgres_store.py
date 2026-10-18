@@ -92,9 +92,9 @@ class PostgreSQLPersistStore:
 
     async def _prepare_pool_for_use(self, pool: Any) -> Any:
         """Ensure *pool* is open before returning it to callers."""
-        from soothe_nano.persistence.postgres_pool_lifecycle import ensure_async_pool_open
+        from soothe_nano.persistence.postgres_pool_lifecycle import PostgresPoolLifecycle
 
-        await ensure_async_pool_open(pool)
+        await PostgresPoolLifecycle.ensure_open(pool)
         return pool
 
     async def _reset_pool(self) -> None:
@@ -217,7 +217,9 @@ class PostgreSQLPersistStore:
                 )
                 raise ImportError(msg) from exc
 
-            from soothe_nano.persistence.postgres_pool_lifecycle import apply_row_factory
+            from soothe_nano.persistence.postgres_pool_lifecycle import (
+                PostgresPoolLifecycle,
+            )
 
             pool_kwargs: dict[str, Any] = {
                 "conninfo": self._dsn,
@@ -228,7 +230,7 @@ class PostgreSQLPersistStore:
                 pool_kwargs.update(self._pool_timing)
             else:
                 pool_kwargs["min_size"] = min(1, self._pool_size)
-            pool = AsyncConnectionPool(**apply_row_factory(pool_kwargs))
+            pool = AsyncConnectionPool(**PostgresPoolLifecycle.apply_row_factory(pool_kwargs))
 
             try:
                 await pool.open()
@@ -262,9 +264,9 @@ class PostgreSQLPersistStore:
 
     async def _initialize_schema(self, pool: Any) -> None:
         """Apply the `soothe_metadata` init script to the pool."""
-        from soothe_nano.persistence.db_init import initialize_database
+        from soothe_nano.persistence.db_init import DatabaseInit
 
-        await initialize_database(pool, "soothe_metadata")
+        await DatabaseInit.initialize(pool, "soothe_metadata")
 
     async def save(self, key: str, data: Any) -> None:
         """Persist data under the given key (upsert).
