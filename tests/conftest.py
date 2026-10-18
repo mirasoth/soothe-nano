@@ -89,16 +89,29 @@ def test_config() -> SootheConfig:
 def requires_llm_api(integration_config: SootheConfig):
     """Skip when LLM API credentials are missing or don't match the model.
 
-    Beyond a coarse env-var check, this also attempts to instantiate the
-    configured default chat model and skips the test when the provider
-    rejects the request due to missing credentials. This prevents false
-    positives where, e.g., only a DASHSCOPE key is set but the default
-    model routes to the OpenAI provider (or vice versa).
+    Beyond a coarse env-var check, this resolves the configured default chat
+    model's provider and verifies the credential that provider actually needs
+    is present. This prevents false positives where, e.g., only a DASHSCOPE key
+    is set but the default model routes to the OpenAI provider (or vice versa).
     """
     if not _has_valid_api_key():
         pytest.skip(
             "Test requires LLM API key (set OPENAI_API_KEY, ANTHROPIC_API_KEY, "
             "or DASHSCOPE_API_KEY)"
+        )
+    # Resolve the default model spec and verify the credential its provider
+    # needs is actually present. A provider-key mismatch (e.g. only
+    # DASHSCOPE_API_KEY set but default model is openai:gpt-4o-mini) would
+    # otherwise surface as a hard error mid-test instead of a clean skip.
+    try:
+        specs = integration_config.resolve_model_specs("default")
+    except Exception:
+        specs = []
+    if specs and not _spec_credential_available(integration_config, specs[0]):
+        provider, _, model = specs[0].partition(":")
+        pytest.skip(
+            f"Default model '{provider}:{model}' needs a {provider} credential "
+            f"that is not set in this environment"
         )
     # Verify the resolved default model can actually be created with the
     # current environment; a provider-key mismatch would otherwise surface
@@ -113,6 +126,45 @@ def requires_llm_api(integration_config: SootheConfig):
         integration_config.create_chat_model("default")
     except cred_errors as exc:  # type: ignore[misc]
         pytest.skip(f"Default model cannot be created with current credentials: {exc}")
+
+
+# Maps a provider name (the part before ':' in a model spec) to the env vars
+# whose presence satisfies that provider when no explicit provider config
+# supplies an api_key. Used by requires_llm_api to catch provider/key mismatch.
+_PROVIDER_CREDENTIAL_ENVVARS = {
+    "openai": ("OPENAI_API_KEY", "OPENAI_ADMIN_KEY"),
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "dashscope": ("DASHSCOPE_API_KEY",),
+    "azure": ("AZURE_OPENAI_API_KEY", "AZURE_API_KEY"),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "vertex": ("GOOGLE_APPLICATION_CREDENTIALS",),
+}
+
+
+def _spec_credential_available(config: SootheConfig, spec: str) -> bool:
+    """True when the provider for *spec* has a resolvable api_key or env cred.
+
+    Resolves the spec's provider through the config's provider list; if the
+    provider entry supplies a resolvable api_key, that satisfies the check.
+    Otherwise falls back to the well-known env vars for that provider type.
+    """
+    provider_name, _, _ = spec.partition(":")
+    if not provider_name:
+        return True
+    provider = config.llm_factory.registry.get_provider(provider_name)
+    if provider and provider.api_key:
+        from soothe_nano.config.env import _resolve_provider_env
+
+        resolved = _resolve_provider_env(
+            provider.api_key, provider_name=provider.name, field_name="api_key"
+        )
+        if resolved:
+            return True
+    envvars = _PROVIDER_CREDENTIAL_ENVVARS.get(provider_name)
+    if envvars:
+        return any(os.getenv(v) for v in envvars)
+    # Unknown provider: fall back to the coarse env-var check.
+    return _has_valid_api_key()
 
 
 @pytest.fixture

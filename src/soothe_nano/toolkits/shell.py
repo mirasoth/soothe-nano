@@ -1265,14 +1265,33 @@ class KillProcessTool(BaseTool):
         PID the session/PGID leader — ``kill -- -<pid>`` then reaps the whole
         tree, mirroring the host's killpg semantics. Without ``setsid`` the
         group signal has no target and falls back to killing the PID alone.
+
+        The one-liner is portable across Linux (procps) and BSD/macOS
+        ``kill``: it tries the process-group signal, falls back to a direct
+        PID signal, escalates TERM→KILL with a short grace wait, and treats a
+        lingering zombie (``kill -0`` sees it but it is reapable) as dead.
         """
         root = executor.workspace_root
         log_path = f"{root}/.soothe/background/bg-{pid}.log"
         one_liner = (
+            # 1. Already gone?
             f"kill -0 {pid} 2>/dev/null || {{ echo NOT_FOUND; exit 0; }}; "
-            f"kill -- -{pid} 2>/dev/null || kill {pid} 2>/dev/null; "
-            f"kill -0 {pid} 2>/dev/null && {{ kill -9 {pid} 2>/dev/null; "
-            f"kill -9 -- -{pid} 2>/dev/null; }}; "
+            # 2. TERM the whole group (setsid leader) and the PID directly.
+            #    `kill -TERM -<pid>` is the portable group-kill form; the
+            #    `kill -- -<pid>` procps form is tried as a fallback. The
+            #    bare `kill <pid>` covers the no-setsid case.
+            f"kill -TERM -{pid} 2>/dev/null; kill -- -{pid} 2>/dev/null; "
+            f"kill -TERM {pid} 2>/dev/null; "
+            # 3. Grace period for graceful shutdown, then escalate to KILL.
+            f"sleep 0.2; "
+            f"kill -0 {pid} 2>/dev/null && {{ "
+            f"kill -KILL -{pid} 2>/dev/null; kill -9 -- -{pid} 2>/dev/null; "
+            f"kill -KILL {pid} 2>/dev/null; kill -9 {pid} 2>/dev/null; "
+            f"}}; "
+            # 4. Reap any zombie we spawned (waitpid on the PID). On shells
+            #    where the PID is not our child this is a no-op; the real
+            #    parent (init) reaps orphans. Then re-check liveness.
+            f"wait {pid} 2>/dev/null; sleep 0.1; "
             f"printf '\\n[soothe] process {pid} terminated\\n' >> {shlex.quote(log_path)} 2>/dev/null; "
             f"kill -0 {pid} 2>/dev/null && echo ALIVE || echo DEAD"
         )

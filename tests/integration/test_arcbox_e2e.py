@@ -39,7 +39,15 @@ def arcbox_env() -> Any:
             pytest.skip(f"ArcBox daemon not reachable: {exc}")
 
         template = os.environ.get("ARCBOX_E2E_TEMPLATE", _DEFAULT_TEMPLATE)
-        sandbox = client.create(template, wait_until_ready=True)
+        try:
+            sandbox = client.create(template, wait_until_ready=True)
+        except arcbox.errors.TemplateNotFoundError as exc:
+            pytest.skip(
+                f"ArcBox template '{template}' not built; "
+                f"build it with `abctl sandbox template build {template} ...`: {exc}"
+            )
+        except arcbox.errors.NotFoundError as exc:
+            pytest.skip(f"ArcBox template/sandbox resource not found: {exc}")
         try:
             yield SimpleNamespace(client=client, sandbox=sandbox)
         finally:
