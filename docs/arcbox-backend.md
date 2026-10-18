@@ -283,7 +283,7 @@ backend differs between host and sandbox.
     --from-dockerfile docker/templates/e2e/Dockerfile
   ```
 
-  Production template: `docker/templates/prod/Dockerfile` (non-root `nano` user).
+  Production template: `docker/templates/prod/Dockerfile` (root runtime — ArcBox default).
 - Coverage: image prerequisites, execute / timeout (124) semantics, FS↔shell
   workspace sharing both directions, glob/grep/edit/delete round-trip, capture
   offload with preserved exit code, no sandbox leaks, stopped-sandbox
