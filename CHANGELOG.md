@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-18
+
+Stable release of the 2.0.0 line, graduating [2.0.0-alpha.1] and [2.0.0-alpha.2]. No code changes since 2.0.0-alpha.2 — see those entries for the full ArcBox sandbox backend, tool/wire reorganization, and middleware hardening details.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.4.2...v2.0.0
+
 ## [2.0.0-alpha.2] - 2026-10-18
 
 ### Added
