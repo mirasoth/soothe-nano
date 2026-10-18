@@ -10,9 +10,9 @@ name: Docker Guest Image
 #
 # Trigger: GitHub Release published only. No manual/manual-path builds.
 #
-# On a release, the image is tagged with the semver version (e.g. 1.2.22),
-# the major.minor alias, and `latest` is moved to point at the release
-# build.
+# The image is versioned standalone from the soothe-nano package: bump
+# IMAGE_VERSION below whenever the guest image changes. On a release, the
+# image is tagged with IMAGE_VERSION and `latest` is moved to that build.
 #
 # Image:
 #   registry.cn-hangzhou.aliyuncs.com/lacogito/soothe-nano-vm-prod
@@ -28,6 +28,7 @@ on:
 env:
   REGISTRY: registry.cn-hangzhou.aliyuncs.com
   NAMESPACE: lacogito
+  IMAGE_VERSION: "1.0"
   PYTHON_BASE: registry.cn-hangzhou.aliyuncs.com/lacogito/python:3.12-bookworm
 
 jobs:
@@ -87,8 +88,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/soothe-nano-vm-prod
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ env.IMAGE_VERSION }}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.title=soothe-nano ArcBox prod guest
@@ -120,6 +120,7 @@ jobs:
           echo "| Property | Value |" >> ${GITHUB_STEP_SUMMARY}
           echo "|----------|-------|" >> ${GITHUB_STEP_SUMMARY}
           echo "| Release | ${{ github.event.release.tag_name }} |" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Image version | ${{ env.IMAGE_VERSION }} |" >> ${GITHUB_STEP_SUMMARY}
           echo "| Tags | \`${{ steps.meta.outputs.tags }}\` |" >> ${GITHUB_STEP_SUMMARY}
           echo "| Pushed | ${{ steps.publish.outputs.should_push }} |" >> ${GITHUB_STEP_SUMMARY}
           echo "| Platforms | linux/amd64, linux/arm64 |" >> ${GITHUB_STEP_SUMMARY}
