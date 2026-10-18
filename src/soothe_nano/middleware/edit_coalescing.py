@@ -478,40 +478,54 @@ class EditCoalescingMiddleware(AgentMiddleware):
             string_edits = [e for e in edits if e.tool_name == "edit_file"]
             line_edits = [e for e in edits if e.tool_name != "edit_file"]
 
+            dispatch_error: str | None = None
             try:
-                async with asyncio.timeout(self._config.batch_dispatch_timeout_seconds):
-                    # Dispatch string-replacement batch if any
-                    if string_edits:
-                        if len(string_edits) == 1:
-                            await self._dispatch_single_string_edit(string_edits[0])
-                        else:
+                if string_edits:
+                    if len(string_edits) == 1:
+                        # Pass-through to the handler chain: the inner
+                        # tool-timeout middleware applies here (including
+                        # per-tool overrides), so no outer cap.
+                        await self._dispatch_single_string_edit(string_edits[0])
+                    else:
+                        # Batched writes call the backend directly and bypass
+                        # the inner tool-timeout middleware — this is the only
+                        # guard for that path.
+                        async with asyncio.timeout(self._config.batch_dispatch_timeout_seconds):
                             replacements = staging.get(file_path, [])
                             await self._dispatch_string_replacements(
                                 file_path, string_edits, replacements
                             )
 
-                    # Dispatch line-based batch if any
-                    if line_edits:
+                # Dispatch line-based batch if any
+                if line_edits:
+                    async with asyncio.timeout(self._config.batch_dispatch_timeout_seconds):
                         await self._dispatch_batched_edits(file_path, line_edits)
             except TimeoutError:
+                dispatch_error = (
+                    "timed out after "
+                    f"{self._config.batch_dispatch_timeout_seconds:.0f}s; "
+                    "file state is unknown — re-read before editing."
+                )
                 logger.warning(
                     "Batched edit dispatch timed out for %s after %.0fs",
                     file_path,
                     self._config.batch_dispatch_timeout_seconds,
                 )
+            except Exception as exc:
+                # One file's dispatch failure must not leave that file's — or
+                # any other file's — pending edits hanging forever.
+                dispatch_error = f"failed: {exc}. File state is unknown — re-read before editing."
+                logger.exception("Batched edit dispatch failed for %s", file_path)
             finally:
-                # Batched writes bypass the inner tool-timeout middleware
-                # (direct backend calls), so a hang here must never leave a
-                # caller awaiting its future forever.
+                # Hard guarantee: every pending future in this file batch is
+                # resolved, whatever happened during dispatch.
                 for edit in (*string_edits, *line_edits):
                     if not edit.result_future.done():
                         edit.result_future.set_result(
                             ToolMessage(
                                 content=(
-                                    f"Error: batched edit dispatch to {file_path} timed out "
-                                    "after "
-                                    f"{self._config.batch_dispatch_timeout_seconds:.0f}s; "
-                                    "file state is unknown — re-read before editing."
+                                    f"Error: batched edit dispatch to {file_path} "
+                                    + (dispatch_error or "did not resolve (internal error).")
                                 ),
                                 tool_call_id=edit.tool_call_id,
                                 name=edit.tool_name,

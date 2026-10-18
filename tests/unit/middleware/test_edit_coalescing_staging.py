@@ -823,6 +823,127 @@ class TestBatchEditErrorSignals:
             assert "ALPHA" in f.read()
 
 
+def _stub_pending_edit(
+    call_id: str,
+    file_path: str,
+    result_future: asyncio.Future,
+    handler: Callable[[Any], Awaitable[ToolMessage]],
+) -> MagicMock:
+    """Build a PendingEdit-shaped mock for direct _process_after_window tests."""
+    return MagicMock(
+        tool_call_id=call_id,
+        tool_name="edit_file",
+        file_path=file_path,
+        args={},
+        result_future=result_future,
+        handler=handler,
+        request=_make_edit_file_request(file_path, "old", "new", call_id=call_id),
+    )
+
+
+class TestBatchDispatchGuards:
+    """Timeout and failure isolation for the per-file batched dispatch loop."""
+
+    @pytest.mark.asyncio
+    async def test_singleton_dispatch_not_capped_by_batch_timeout(self) -> None:
+        """A lone edit passes through the handler chain; the batch timeout
+        (which would otherwise override the inner per-tool timeout config)
+        must not apply to it."""
+
+        async def slow_handler(request: Any) -> ToolMessage:
+            await asyncio.sleep(0.15)
+            return ToolMessage(content="ok after slow handler", tool_call_id=call_id)
+
+        middleware = EditCoalescingMiddleware(
+            config=EditCoalescingConfig(
+                detection_window_ms=10,
+                batch_dispatch_timeout_seconds=0.05,
+            ),
+        )
+        call_id = "call-single"
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        middleware._pending_edits[":"] = {
+            "/single.txt": [_stub_pending_edit(call_id, "/single.txt", future, slow_handler)],
+        }
+
+        await middleware._process_after_window(":")
+
+        result = future.result()
+        assert result.content == "ok after slow handler"
+        assert result.status != "error"
+
+    @pytest.mark.asyncio
+    async def test_batch_dispatch_timeout_resolves_futures(self) -> None:
+        """A hung batched write must resolve every pending future with an
+        error result instead of hanging the callers."""
+
+        async def hung_dispatch(file_path, edits, replacements):  # type: ignore[no-untyped-def]
+            await asyncio.sleep(30)
+
+        middleware = EditCoalescingMiddleware(
+            config=EditCoalescingConfig(
+                detection_window_ms=10,
+                batch_dispatch_timeout_seconds=0.05,
+            ),
+        )
+        loop = asyncio.get_running_loop()
+        futures = [loop.create_future() for _ in range(2)]
+        middleware._pending_edits[":"] = {
+            "/slow.txt": [
+                _stub_pending_edit("c1", "/slow.txt", futures[0], _make_async_handler()),
+                _stub_pending_edit("c2", "/slow.txt", futures[1], _make_async_handler()),
+            ],
+        }
+        middleware._dispatch_string_replacements = hung_dispatch  # type: ignore[assignment]
+
+        await middleware._process_after_window(":")
+
+        for future in futures:
+            result = future.result()
+            assert result.status == "error"
+            assert "timed out" in result.content
+
+    @pytest.mark.asyncio
+    async def test_dispatch_failure_isolated_per_file(self) -> None:
+        """A dispatch exception for one file must not hang (or corrupt) the
+        remaining files' pending edits in the same window batch."""
+
+        async def flaky_dispatch(file_path, edits, replacements):  # type: ignore[no-untyped-def]
+            if file_path == "/a.txt":
+                raise RuntimeError("disk exploded")
+            for edit in edits:
+                edit.result_future.set_result(
+                    ToolMessage(content="ok", tool_call_id=edit.tool_call_id)
+                )
+
+        middleware = EditCoalescingMiddleware(
+            config=EditCoalescingConfig(detection_window_ms=10),
+        )
+        loop = asyncio.get_running_loop()
+        futures = [loop.create_future() for _ in range(4)]
+        middleware._pending_edits[":"] = {
+            "/a.txt": [
+                _stub_pending_edit("a1", "/a.txt", futures[0], _make_async_handler()),
+                _stub_pending_edit("a2", "/a.txt", futures[1], _make_async_handler()),
+            ],
+            "/b.txt": [
+                _stub_pending_edit("b1", "/b.txt", futures[2], _make_async_handler()),
+                _stub_pending_edit("b2", "/b.txt", futures[3], _make_async_handler()),
+            ],
+        }
+        middleware._dispatch_string_replacements = flaky_dispatch  # type: ignore[assignment]
+
+        await middleware._process_after_window(":")
+
+        for future in futures[:2]:
+            result = future.result()
+            assert result.status == "error"
+            assert "disk exploded" in result.content
+        for future in futures[2:]:
+            assert future.result().content == "ok"
+
+
 class TestWorkspaceBackendIntegration:
     """Tests for workspace-context backend usage in batched edit paths."""
 

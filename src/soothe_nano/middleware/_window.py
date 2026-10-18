@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, Protocol, TypeVar
 
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
 
 
 class PendingCall(Protocol):
@@ -54,7 +57,17 @@ class ScopeWindowBank(Generic[T]):
         if not solo:
             await asyncio.sleep(self._window_seconds)
         pending = await self.take(scope)
-        await self._on_flush(scope, pending)
+        try:
+            await self._on_flush(scope, pending)
+        except Exception:
+            # The window task is never awaited directly; an exception here
+            # would otherwise silently kill it and hang every future in
+            # `pending`. Fail loud and resolve what we can.
+            logger.exception("Detection-window flush failed for scope %r", scope)
+            for item in pending:
+                future = getattr(item, "result_future", None)
+                if future is not None and not future.done():
+                    future.set_exception(RuntimeError("coalesced batch flush failed; see logs"))
 
     async def take(self, scope: str) -> list[T]:
         """Pop the scope's pending items (window task, if any, is cleared)."""
