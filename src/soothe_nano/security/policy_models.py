@@ -191,11 +191,11 @@ class SecurityPolicy:
             if ws is not None:
                 from pathlib import Path as _Path
 
-                from soothe_nano.workspace.workspace_paths import (
-                    should_use_virtual_path_resolution,
-                )
+                from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
-                is_virtual_under_workspace = should_use_virtual_path_resolution(path, _Path(ws))
+                is_virtual_under_workspace = WorkspacePaths(
+                    _Path(ws)
+                ).should_use_virtual_path_resolution(path)
 
             if not is_virtual_under_workspace:
                 if self.allowed_paths is not None:

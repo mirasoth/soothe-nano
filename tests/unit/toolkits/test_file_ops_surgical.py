@@ -388,11 +388,3 @@ class TestCodeEditErrorHandling:
         )
 
         assert isinstance(result, str)
-
-    def test_insert_readonly_file(self) -> None:
-        """Test inserting into read-only file."""
-        pytest.skip("Requires specific file permission setup")
-
-    def test_delete_from_locked_file(self) -> None:
-        """Test deleting from locked file."""
-        pytest.skip("Requires specific file locking setup")

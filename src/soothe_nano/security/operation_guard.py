@@ -15,10 +15,7 @@ from soothe_nano.protocols.operation_security import (
     OperationSecurityRequest,
 )
 from soothe_nano.utils import expand_path
-from soothe_nano.workspace.workspace_paths import (
-    resolve_backend_os_path,
-    should_use_virtual_path_resolution,
-)
+from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
 _BANNED_COMMAND_PATTERNS: tuple[tuple[str, str], ...] = (
     # Negative lookbehind `(?<!git\s)` keeps ``git rm -r`` (a repo-index
@@ -199,14 +196,13 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         if (
             workspace_root is not None
             and not security.allow_paths_outside_workspace
-            and should_use_virtual_path_resolution(file_path, workspace_root)
+            and WorkspacePaths(workspace_root).should_use_virtual_path_resolution(file_path)
         ):
             try:
-                resolved_path = resolve_backend_os_path(
-                    file_path,
-                    workspace=workspace_root,
+                resolved_path = WorkspacePaths(
+                    workspace_root,
                     virtual_mode=True,
-                )
+                ).resolve_os_path(file_path)
             except (OSError, ValueError):
                 resolved_path = expand_path(file_path)
 

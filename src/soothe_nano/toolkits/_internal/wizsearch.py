@@ -258,8 +258,7 @@ def _save_raw_results(query: str, result: object) -> None:
     from soothe_nano.utils.runtime import current_run_dir
     from soothe_nano.workspace import (
         FrameworkFilesystem,
-        get_virtual_home,
-        get_virtual_mode,
+        WorkspaceRuntime,
     )
 
     run_dir = current_run_dir.get()
@@ -280,10 +279,10 @@ def _save_raw_results(query: str, result: object) -> None:
         }
         content = json.dumps(payload, ensure_ascii=False, indent=2)
 
-        if get_virtual_mode():
+        if WorkspaceRuntime.virtual_mode():
             backend = FrameworkFilesystem.get()
             if backend is not None:
-                virtual_home = get_virtual_home()
+                virtual_home = WorkspaceRuntime.virtual_home()
                 search_rel = run_dir.relative_to(virtual_home) / "search_results"
                 virtual_dir = f"/.soothe/{search_rel.as_posix()}"
                 virtual_file = f"{virtual_dir}/{filename}"

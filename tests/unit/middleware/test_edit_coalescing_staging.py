@@ -970,31 +970,28 @@ class TestWorkspaceBackendIntegration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: object,
     ) -> None:
-        from soothe_nano.workspace.workspace_runtime import (
-            reset_workspace_context,
-            set_workspace_context,
-        )
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
         middleware = EditCoalescingMiddleware()
         sentinel_backend = object()
         captured: dict[str, object] = {}
 
-        def _fake_get_workspace_backend(*, workspace, virtual_mode, max_file_size_mb=10):
+        def _fake_registry_get(*, workspace, virtual_mode, max_file_size_mb=10):
             captured["workspace"] = workspace
             captured["virtual_mode"] = virtual_mode
             captured["max_file_size_mb"] = max_file_size_mb
             return sentinel_backend
 
         monkeypatch.setattr(
-            "soothe_nano.workspace.workspace_filesystem.get_workspace_backend",
-            _fake_get_workspace_backend,
+            "soothe_nano.workspace.workspace_filesystem.WorkspaceBackendRegistry.get",
+            _fake_registry_get,
         )
 
-        token = set_workspace_context(workspace=tmp_path, virtual_mode=True)  # type: ignore[arg-type]
+        token = WorkspaceRuntime.set(workspace=tmp_path, virtual_mode=True)  # type: ignore[arg-type]
         try:
             backend = middleware._get_context_backend()
             assert backend is sentinel_backend
             assert captured["workspace"] == tmp_path
             assert captured["virtual_mode"] is True
         finally:
-            reset_workspace_context(token)
+            WorkspaceRuntime.reset(token)

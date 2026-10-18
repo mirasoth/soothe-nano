@@ -18,11 +18,8 @@ from soothe_nano.config import SootheConfig, SubagentConfig
 from soothe_nano.config.models import ModelRole
 from soothe_nano.core.exceptions import ConfigurationError
 from soothe_nano.toolkits.filesystem_tools import build_filesystem_tools
-from soothe_nano.workspace.workspace_paths import (
-    filesystem_virtual_mode_from_soothe_config,
-    max_file_size_mb_for_filesystem_backend,
-    resolve_effective_tool_workspace,
-)
+from soothe_nano.workspace.workspace_paths import WorkspacePaths
+from soothe_nano.workspace.workspace_policy import WorkspaceResolver
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -89,10 +86,10 @@ def _workspace_backend_factory(
     max_file_size_mb: int,
 ) -> Callable[[str], Any]:
     """Build a workspace-scoped backend factory for surgical file tools."""
-    from soothe_nano.workspace.workspace_filesystem import get_workspace_backend
+    from soothe_nano.workspace.workspace_filesystem import WorkspaceBackendRegistry
 
     def factory(workspace: str) -> Any:
-        return get_workspace_backend(
+        return WorkspaceBackendRegistry.get(
             Path(workspace).expanduser().resolve(),
             virtual_mode=virtual_mode,
             max_file_size_mb=max_file_size_mb,
@@ -103,9 +100,10 @@ def _workspace_backend_factory(
 
 def _build_soothe_file_tools(config: SootheConfig | None) -> list[BaseTool]:
     """Create filesystem tools bound to the effective workspace."""
-    resolved_cwd = str(resolve_effective_tool_workspace(config))
-    virtual_mode = filesystem_virtual_mode_from_soothe_config(config) if config else False
-    max_file_size_mb = max_file_size_mb_for_filesystem_backend(config) if config else 10
+    resolved_cwd = str(WorkspaceResolver.effective_tool_workspace(config))
+    paths = WorkspacePaths.from_config(config) if config else None
+    virtual_mode = paths.virtual_mode if paths is not None else False
+    max_file_size_mb = paths.max_file_size_mb if paths is not None else 10
     backend = _workspace_backend_factory(
         virtual_mode=virtual_mode,
         max_file_size_mb=max_file_size_mb,
@@ -445,7 +443,7 @@ def _resolve_single_tool_group_uncached(
     if name == "shell":
         from soothe_nano.toolkits.shell import build_shell_toolkit
 
-        resolved_cwd = str(resolve_effective_tool_workspace(config))
+        resolved_cwd = str(WorkspaceResolver.effective_tool_workspace(config))
         return build_shell_toolkit(
             config=config,
             workspace_root=resolved_cwd,
@@ -468,7 +466,7 @@ def _resolve_single_tool_group_uncached(
         # Host-execution tools do not require a sandbox backend.
         from soothe_nano.toolkits.shell import build_shell_toolkit
 
-        resolved_cwd = str(resolve_effective_tool_workspace(config))
+        resolved_cwd = str(WorkspaceResolver.effective_tool_workspace(config))
         all_tools = build_shell_toolkit(
             config=config,
             workspace_root=resolved_cwd,
@@ -553,7 +551,7 @@ def resolve_subagents(
 
     # Collect (name, factory, kwargs) tuples for enabled subagents
     pending: list[tuple[str, Callable, dict]] = []
-    resolved_cwd = str(resolve_effective_tool_workspace(config))
+    resolved_cwd = str(WorkspaceResolver.effective_tool_workspace(config))
 
     for name, sub_cfg in config.subagents.items():
         if not sub_cfg.enabled:

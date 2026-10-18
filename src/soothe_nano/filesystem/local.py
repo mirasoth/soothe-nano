@@ -36,7 +36,7 @@ from soothe_deepagents.backends.protocol import (
     WriteResult,
 )
 
-from soothe_nano.workspace.workspace_paths import WORKSPACE_BACKUP_DIR
+from soothe_nano.workspace.workspace_paths import WORKSPACE_BACKUP_DIR, WorkspacePaths
 
 from .exceptions import (
     DirectoryNotEmptyError,
@@ -112,10 +112,6 @@ class LocalFilesystem(UnifiedFilesystem):
         Raises:
             PathTraversalError: If path escapes workspace.
         """
-        from soothe_nano.workspace.workspace_paths import (
-            should_use_virtual_path_resolution,
-        )
-
         self._validate_path(path)
 
         # Handle empty or root paths
@@ -130,7 +126,7 @@ class LocalFilesystem(UnifiedFilesystem):
             if self._is_within_workspace(resolved):
                 return resolved
             if self.virtual_mode:
-                if should_use_virtual_path_resolution(path.strip(), self.workspace):
+                if WorkspacePaths(self.workspace).should_use_virtual_path_resolution(path.strip()):
                     rel_path = path.lstrip("/")
                     virtual = (self.workspace / rel_path).resolve()
                     if not self._is_within_workspace(virtual):

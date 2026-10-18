@@ -303,14 +303,14 @@ class EditCoalescingMiddleware(AgentMiddleware):
 
     def _get_context_backend(self) -> Any | None:
         """Get cached backend for the current workspace context."""
-        from soothe_nano.workspace.workspace_filesystem import get_workspace_backend
-        from soothe_nano.workspace.workspace_runtime import get_workspace_context
+        from soothe_nano.workspace.workspace_filesystem import WorkspaceBackendRegistry
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
-        ctx = get_workspace_context()
+        ctx = WorkspaceRuntime.get()
         if ctx.workspace is None:
             return None
 
-        return get_workspace_backend(
+        return WorkspaceBackendRegistry.get(
             workspace=ctx.workspace,
             virtual_mode=ctx.virtual_mode,
         )

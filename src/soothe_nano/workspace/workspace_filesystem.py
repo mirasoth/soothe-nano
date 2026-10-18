@@ -128,7 +128,13 @@ class NormalizedPathBackend:
         self._max_file_size_mb = max_file_size_mb
 
         from soothe_nano.filesystem.workspace import WorkspaceFilesystem
+        from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
+        self._paths = WorkspacePaths(
+            root_dir,
+            virtual_mode=virtual_mode,
+            max_file_size_mb=max_file_size_mb,
+        )
         self._fs = WorkspaceFilesystem(
             workspace=root_dir,
             virtual_mode=virtual_mode,
@@ -154,11 +160,7 @@ class NormalizedPathBackend:
                 rel = expanded.resolve().relative_to(self._root_dir.resolve())
             except ValueError:
                 if self._virtual_mode:
-                    from soothe_nano.workspace.workspace_paths import (
-                        should_use_virtual_path_resolution,
-                    )
-
-                    if should_use_virtual_path_resolution(path.strip(), self._root_dir):
+                    if self._paths.should_use_virtual_path_resolution(path.strip()):
                         relative = abs_str.lstrip("/")
                         return relative or "."
                     return abs_str
@@ -606,31 +608,28 @@ class WorkspaceAwareBackend(BackendProtocol):
         Called by deepagents `FilesystemMiddleware` from tool runtime so nested
         `task` children resolve the parent project root without host config objects.
         """
-        from soothe_nano.workspace.workspace_runtime import set_workspace_context
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
         ws_path = Path(workspace).expanduser().resolve()
-        set_workspace_context(workspace=ws_path, virtual_mode=self._virtual_mode)
+        WorkspaceRuntime.set(workspace=ws_path, virtual_mode=self._virtual_mode)
 
     def _get_backend(self) -> NormalizedPathBackend:
-        from soothe_nano.workspace.workspace_policy import resolve_workspace_for_tool_execution
-        from soothe_nano.workspace.workspace_runtime import (
-            get_workspace_context,
-            set_workspace_context,
-        )
+        from soothe_nano.workspace.workspace_policy import WorkspaceResolver
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
-        current_workspace = get_workspace_context().workspace
+        current_workspace = WorkspaceRuntime.get().workspace
         if current_workspace is None:
             # Nested task graphs and some tool hops may lack ContextVar binding;
             # resolve from langgraph configurable / state before process default.
-            resolved = resolve_workspace_for_tool_execution(use_langgraph_config=True)
+            resolved = WorkspaceResolver.resolve_tool_execution(use_langgraph_config=True)
             if resolved is not None:
                 current_workspace = Path(resolved).expanduser().resolve()
-                set_workspace_context(
+                WorkspaceRuntime.set(
                     workspace=current_workspace,
                     virtual_mode=self._virtual_mode,
                 )
         if current_workspace:
-            return get_workspace_backend(
+            return WorkspaceBackendRegistry.get(
                 workspace=current_workspace,
                 virtual_mode=self._virtual_mode,
                 max_file_size_mb=self._max_file_size_mb,
@@ -733,28 +732,33 @@ class WorkspaceAwareBackend(BackendProtocol):
         return await self._get_backend().aupload_files(files)
 
 
-_backend_cache: dict[str, NormalizedPathBackend] = {}
+class WorkspaceBackendRegistry:
+    """Cache of `NormalizedPathBackend` per (workspace, virtual_mode, size cap)."""
 
+    _backends: dict[str, NormalizedPathBackend] = {}
 
-def get_workspace_backend(
-    workspace: Path,
-    virtual_mode: bool = False,
-    max_file_size_mb: int = 10,
-) -> NormalizedPathBackend:
-    """Get or create a cached NormalizedPathBackend for a workspace."""
-    cache_key = f"{workspace}:{virtual_mode}:{max_file_size_mb}"
-    if cache_key not in _backend_cache:
-        _backend_cache[cache_key] = NormalizedPathBackend(
-            root_dir=workspace,
-            virtual_mode=virtual_mode,
-            max_file_size_mb=max_file_size_mb,
-        )
-    return _backend_cache[cache_key]
+    @classmethod
+    def get(
+        cls,
+        workspace: Path,
+        *,
+        virtual_mode: bool = False,
+        max_file_size_mb: int = 10,
+    ) -> NormalizedPathBackend:
+        """Get or create a cached NormalizedPathBackend for a workspace."""
+        cache_key = f"{workspace}:{virtual_mode}:{max_file_size_mb}"
+        if cache_key not in cls._backends:
+            cls._backends[cache_key] = NormalizedPathBackend(
+                root_dir=workspace,
+                virtual_mode=virtual_mode,
+                max_file_size_mb=max_file_size_mb,
+            )
+        return cls._backends[cache_key]
 
-
-def clear_workspace_backend_cache() -> None:
-    """Clear the workspace backend cache."""
-    _backend_cache.clear()
+    @classmethod
+    def clear(cls) -> None:
+        """Clear the workspace backend cache."""
+        cls._backends.clear()
 
 
 class FrameworkFilesystem:
@@ -768,20 +772,12 @@ class FrameworkFilesystem:
         config: SootheConfig,
         policy: object | None = None,
     ) -> BackendProtocol:
-        from soothe_nano.workspace.workspace_paths import (
-            config_workspace_root,
-            max_file_size_mb_for_filesystem_backend,
-        )
-        from soothe_nano.workspace.workspace_runtime import resolve_process_workspace_root
+        from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
-        configured_root = config_workspace_root(config)
-        resolved_workspace = (
-            Path(configured_root).expanduser().resolve()
-            if configured_root
-            else resolve_process_workspace_root()
-        )
-        virtual_mode = not config.security.allow_paths_outside_workspace
-        max_file_size_mb = max_file_size_mb_for_filesystem_backend(config)
+        paths = WorkspacePaths.from_config(config)
+        resolved_workspace = paths.root
+        virtual_mode = paths.virtual_mode
+        max_file_size_mb = paths.max_file_size_mb
         cls._instance = WorkspaceAwareBackend(
             default_root_dir=resolved_workspace,
             virtual_mode=virtual_mode,
@@ -802,23 +798,20 @@ class FrameworkFilesystem:
 
     @classmethod
     def set_current_workspace(cls, workspace: Path | str) -> Token:
-        from soothe_nano.workspace.workspace_runtime import (
-            get_workspace_context,
-            set_workspace_context,
-        )
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
         ws_path = Path(workspace) if isinstance(workspace, str) else workspace
-        ctx = get_workspace_context()
-        return set_workspace_context(workspace=ws_path, virtual_mode=ctx.virtual_mode)
+        ctx = WorkspaceRuntime.get()
+        return WorkspaceRuntime.set(workspace=ws_path, virtual_mode=ctx.virtual_mode)
 
     @classmethod
     def get_current_workspace(cls) -> Path | None:
-        from soothe_nano.workspace.workspace_runtime import get_workspace_context
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
-        return get_workspace_context().workspace
+        return WorkspaceRuntime.get().workspace
 
     @classmethod
     def clear_current_workspace(cls, token: Token | None = None) -> None:
-        from soothe_nano.workspace.workspace_runtime import reset_workspace_context
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
-        reset_workspace_context(token)
+        WorkspaceRuntime.reset(token)

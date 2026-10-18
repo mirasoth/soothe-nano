@@ -217,12 +217,19 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
 
     def _resolved_delete_backup_dir(self) -> str:
         """Return backup_dir path suitable for the current backend mode."""
-        from soothe_nano.workspace.workspace_paths import resolve_workspace_backup_dir
+        from pathlib import Path
 
-        return resolve_workspace_backup_dir(
+        from soothe_nano.workspace.workspace_paths import WorkspacePaths
+
+        cwd = getattr(self.backend, "cwd", None)
+        if self._workspace_root is None and cwd is None:
+            # No backend cwd and no configured root: keep the configured dir as-is.
+            path = Path(self._backup_dir)
+            return str(path) if path.is_absolute() else self._backup_dir
+
+        return WorkspacePaths(cwd if cwd is not None else self._workspace_root).resolve_backup_dir(
             self._backup_dir,
             backend=self.backend,
-            workspace_root=self._workspace_root,
         )
 
     def wrap_tool_call(
@@ -267,12 +274,10 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
         Returns:
             BackendProtocol instance for the effective workspace.
         """
-        from soothe_nano.workspace.workspace_api import (
-            resolve_workspace_for_tool_execution,
-        )
-        from soothe_nano.workspace.workspace_filesystem import get_workspace_backend
+        from soothe_nano.workspace.workspace_filesystem import WorkspaceBackendRegistry
+        from soothe_nano.workspace.workspace_policy import WorkspaceResolver
 
-        workspace = resolve_workspace_for_tool_execution(
+        workspace = WorkspaceResolver.resolve_tool_execution(
             runtime=runtime,
             fallback=self._workspace_root,
             use_langgraph_config=True,
@@ -291,15 +296,13 @@ class SootheFilesystemMiddleware(FilesystemMiddleware):
             if isinstance(configurable, dict):
                 soothe_config = configurable.get("soothe_config")
                 if soothe_config is not None:
-                    from soothe_nano.workspace.workspace_paths import (
-                        filesystem_virtual_mode_from_soothe_config,
-                        max_file_size_mb_for_filesystem_backend,
-                    )
+                    from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
-                    virtual_mode = filesystem_virtual_mode_from_soothe_config(soothe_config)
-                    max_mb = max_file_size_mb_for_filesystem_backend(soothe_config)
+                    paths = WorkspacePaths.from_config(soothe_config)
+                    virtual_mode = paths.virtual_mode
+                    max_mb = paths.max_file_size_mb
 
-        return get_workspace_backend(
+        return WorkspaceBackendRegistry.get(
             workspace,
             virtual_mode=virtual_mode,
             max_file_size_mb=max_mb,

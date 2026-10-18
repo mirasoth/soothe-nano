@@ -57,6 +57,19 @@ def _has_valid_api_key() -> bool:
 _CACHED_BASE_CONFIG: SootheConfig | None = None
 
 
+def _repo_root() -> Path:
+    """Repository root: nearest ancestor holding pyproject.toml.
+
+    Resolved by walking up from this file so the path holds both in the
+    monorepo layout (``packages/soothe-nano/tests/``) and standalone.
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    return here.parents[1]
+
+
 def get_base_config() -> SootheConfig:
     """Load integration base config once (develop nano.yml or env override)."""
     global _CACHED_BASE_CONFIG
@@ -68,9 +81,7 @@ def get_base_config() -> SootheConfig:
                 SootheConfig.from_yaml_file(str(p)) if p.is_file() else SootheConfig()
             )
         else:
-            # packages/soothe-nano/tests/conftest.py → monorepo root is parents[3]
-            repo_root = Path(__file__).resolve().parents[3]
-            config_path = repo_root / "config" / "develop" / "nano.yml"
+            config_path = _repo_root() / "config" / "develop" / "nano.yml"
             _CACHED_BASE_CONFIG = (
                 SootheConfig.from_yaml_file(str(config_path))
                 if config_path.is_file()

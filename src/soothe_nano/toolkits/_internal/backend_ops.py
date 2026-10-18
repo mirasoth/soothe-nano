@@ -31,9 +31,9 @@ def _should_use_backend(config: Any) -> bool:
     if config is None:
         return False
 
-    from soothe_nano.workspace import get_virtual_mode
+    from soothe_nano.workspace import WorkspaceRuntime
 
-    return get_virtual_mode()
+    return WorkspaceRuntime.virtual_mode()
 
 
 def _get_backend() -> Any:
@@ -58,9 +58,9 @@ def _to_virtual_home_path(host_path: Path) -> str | None:
     Returns:
         Virtual path string (e.g., "/.soothe/data/...") or None if not under virtual home.
     """
-    from soothe_nano.workspace import get_virtual_home_relative_path
+    from soothe_nano.workspace import WorkspaceRuntime
 
-    return get_virtual_home_relative_path(host_path)
+    return WorkspaceRuntime.virtual_home_relative_path(host_path)
 
 
 def backend_read_file(path: Path, config: Any = None) -> str:

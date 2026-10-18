@@ -95,9 +95,9 @@ _VIRTUAL_PATH_TOKEN_RE = re.compile(
 
 def _resolve_workspace(workspace_root: str, tool_runtime: Any = None) -> str | None:
     """Resolve effective workspace for shell tools."""
-    from soothe_nano.workspace.workspace_api import resolve_workspace_for_tool_execution
+    from soothe_nano.workspace.workspace_policy import WorkspaceResolver
 
-    resolved = resolve_workspace_for_tool_execution(
+    resolved = WorkspaceResolver.resolve_tool_execution(
         runtime=tool_runtime,
         fallback=workspace_root or None,
     )
@@ -122,9 +122,9 @@ def _resolve_background_log_dir(
         target.mkdir(parents=True, exist_ok=True)
         return target
 
-    from soothe_nano.workspace import get_virtual_home
+    from soothe_nano.workspace import WorkspaceRuntime
 
-    target = get_virtual_home() / "background"
+    target = WorkspaceRuntime.virtual_home() / "background"
     target.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -209,9 +209,9 @@ def _resolve_foreground_session_dir(cwd: str | None) -> Path | None:
             return target
         return None
     try:
-        from soothe_nano.workspace import get_virtual_home
+        from soothe_nano.workspace import WorkspaceRuntime
 
-        target = get_virtual_home() / "foreground"
+        target = WorkspaceRuntime.virtual_home() / "foreground"
         target.mkdir(parents=True, exist_ok=True)
         return target
     except OSError:
@@ -322,16 +322,18 @@ def _translate_virtual_paths_in_command(
     if not virtual_mode or not workspace or not command:
         return command
 
-    from soothe_nano.workspace.workspace_paths import should_use_virtual_path_resolution
+    from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
     workspace_path = Path(workspace).expanduser()
     workspace_str = str(workspace_path).rstrip("/")
     if not workspace_str:
         return command
 
+    paths = WorkspacePaths(workspace_path)
+
     def _replace(match: re.Match[str]) -> str:
         token = match.group(0)
-        if not should_use_virtual_path_resolution(token, workspace_path):
+        if not paths.should_use_virtual_path_resolution(token):
             return token
         suffix = token[1:]  # strip leading '/'
         rewritten = workspace_str if not suffix else f"{workspace_str}/{suffix}"

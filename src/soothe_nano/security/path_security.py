@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from soothe_nano.workspace.workspace_paths import join_workspace_normalized_path
+from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
 logger = logging.getLogger(__name__)
 
@@ -280,11 +280,7 @@ class PathValidator:
         expanded = Path(path).expanduser() if self.allow_home_expansion else Path(path)
 
         if expanded.is_absolute():
-            from soothe_nano.workspace.workspace_paths import (
-                should_use_virtual_path_resolution,
-            )
-
-            if should_use_virtual_path_resolution(path, self.workspace):
+            if WorkspacePaths(self.workspace).should_use_virtual_path_resolution(path):
                 virtual_rel = str(expanded).lstrip("/")
                 return os.path.normpath(virtual_rel) if virtual_rel else "."
 
@@ -401,7 +397,7 @@ class PathValidator:
                 result.violation_type or "validation_failed",
                 path,
             )
-        return join_workspace_normalized_path(self.workspace, result.normalized_path)
+        return WorkspacePaths(self.workspace).join_normalized_path(result.normalized_path)
 
     def sanitize(self, path: str) -> str:
         sanitized = path.replace("\x00", "")

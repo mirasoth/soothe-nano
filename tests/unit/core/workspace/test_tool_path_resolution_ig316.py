@@ -6,12 +6,7 @@ from pathlib import Path
 
 from langchain.tools import ToolRuntime
 
-from soothe_nano.workspace.workspace_paths import (
-    filesystem_virtual_mode_from_soothe_config,
-    join_workspace_normalized_path,
-    resolve_backend_os_path,
-    should_use_virtual_path_resolution,
-)
+from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
 
 def _tool_runtime(tool_call_id: str = "tc") -> ToolRuntime:
@@ -29,7 +24,7 @@ def test_resolve_backend_os_path_virtual_mode_maps_absolute(tmp_path: Path) -> N
     """Virtual paths like ``/a.txt`` map under workspace root."""
     ws = tmp_path / "ws"
     ws.mkdir()
-    resolved = resolve_backend_os_path("/nested/file.txt", workspace=ws, virtual_mode=True)
+    resolved = WorkspacePaths(ws, virtual_mode=True).resolve_os_path("/nested/file.txt")
     assert resolved == ws / "nested" / "file.txt"
 
 
@@ -42,7 +37,7 @@ def test_resolve_backend_os_path_virtual_mode_host_absolute_under_workspace(
     target = ws / "README.md"
     target.write_text("hello", encoding="utf-8")
 
-    resolved = resolve_backend_os_path(str(target.resolve()), workspace=ws, virtual_mode=True)
+    resolved = WorkspacePaths(ws, virtual_mode=True).resolve_os_path(str(target.resolve()))
     assert resolved.resolve() == target.resolve()
 
 
@@ -50,10 +45,11 @@ def test_should_use_virtual_path_resolution(tmp_path: Path) -> None:
     """Virtual absolutes use sandbox resolution; host roots do not."""
     ws = tmp_path / "repo"
     ws.mkdir()
-    assert should_use_virtual_path_resolution("/README.md", ws) is True
-    assert should_use_virtual_path_resolution("/", ws) is True
-    assert should_use_virtual_path_resolution("/tmp/outside", ws) is False
-    assert should_use_virtual_path_resolution("README.md", ws) is False
+    paths = WorkspacePaths(ws)
+    assert paths.should_use_virtual_path_resolution("/README.md") is True
+    assert paths.should_use_virtual_path_resolution("/") is True
+    assert paths.should_use_virtual_path_resolution("/tmp/outside") is False
+    assert paths.should_use_virtual_path_resolution("README.md") is False
 
 
 def test_join_workspace_normalized_path_handles_absolute(tmp_path: Path) -> None:
@@ -62,7 +58,7 @@ def test_join_workspace_normalized_path_handles_absolute(tmp_path: Path) -> None
     ws.mkdir()
     host = ws / "README.md"
     host.write_text("hi", encoding="utf-8")
-    resolved = join_workspace_normalized_path(ws, str(host.resolve()))
+    resolved = WorkspacePaths(ws).join_normalized_path(str(host.resolve()))
     assert resolved.resolve() == host.resolve()
 
 
@@ -135,9 +131,9 @@ def test_filesystem_virtual_mode_from_soothe_config() -> None:
 
     cfg = SootheConfig()
     cfg.security.allow_paths_outside_workspace = False
-    assert filesystem_virtual_mode_from_soothe_config(cfg) is True
+    assert WorkspacePaths.from_config(cfg).virtual_mode is True
     cfg.security.allow_paths_outside_workspace = True
-    assert filesystem_virtual_mode_from_soothe_config(cfg) is False
+    assert WorkspacePaths.from_config(cfg).virtual_mode is False
 
 
 def test_resolve_file_ops_file_info_virtual_path_with_soothe_config(tmp_path: Path) -> None:
@@ -211,11 +207,7 @@ def test_resolve_backend_os_path_host_absolute_outside_workspace(tmp_path: Path)
     outside.parent.mkdir()
     outside.write_text("x\n", encoding="utf-8")
 
-    resolved = resolve_backend_os_path(
-        str(outside.resolve()),
-        workspace=ws,
-        virtual_mode=True,
-    )
+    resolved = WorkspacePaths(ws, virtual_mode=True).resolve_os_path(str(outside.resolve()))
     assert resolved.resolve() == outside.resolve()
 
 

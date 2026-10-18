@@ -367,25 +367,3 @@ class TestApplyDiffTool:
         )
 
         assert "Error" in result or "Failed" in result
-
-
-# ---------------------------------------------------------------------------
-# Error Handling Tests
-# ---------------------------------------------------------------------------
-
-
-class TestFileOpsErrorHandling:
-    """Test error handling across file operation tools."""
-
-    def test_permission_errors(self) -> None:
-        """Test handling of file permission errors."""
-        # Would need specific setup to test permission errors
-        pytest.skip("Requires specific file permission setup")
-
-    def test_disk_full_handling(self) -> None:
-        """Test handling of disk full errors."""
-        pytest.skip("Requires specific disk space setup")
-
-    def test_concurrent_file_access(self) -> None:
-        """Test handling of concurrent file operations."""
-        pytest.skip("Requires concurrent execution setup")

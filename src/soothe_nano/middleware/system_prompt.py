@@ -233,11 +233,9 @@ class SystemPromptMiddleware(AgentMiddleware):
         """
         if not state:
             return None
-        from soothe_nano.workspace.workspace_api import (
-            resolve_workspace_for_tool_execution,
-        )
+        from soothe_nano.workspace.workspace_policy import WorkspaceResolver
 
-        resolved = resolve_workspace_for_tool_execution(
+        resolved = WorkspaceResolver.resolve_tool_execution(
             state=state,
             use_langgraph_config=True,
         )
