@@ -240,7 +240,7 @@ async def test_plan_engine_recon_disabled_skips_tools(monkeypatch: pytest.Monkey
 async def test_plan_engine_recon_uses_injected_backend(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """RFC §7.2-7: backend=... binds recon tools to the injected backend.
+    """docs/arcbox-backend.md §6: backend=... binds recon tools to the injected backend.
 
     Sandbox mode threads the composite sandbox backend here; the recon
     surface must see the backend's content instead of a host FilesystemBackend.

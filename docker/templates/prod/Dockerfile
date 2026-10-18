@@ -48,7 +48,7 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root runtime user. The ArcBox backend never injects model API keys into
-# the guest (RFC §9); the user exists only for least-privilege process
+# the guest (docs/arcbox-backend.md §11); the user exists only for least-privilege process
 # isolation inside the VM.
 RUN useradd --create-home --system nano \
     && mkdir -p /workspace \

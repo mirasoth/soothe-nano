@@ -1,4 +1,4 @@
-"""ArcBox E2E tests (RFC §12.4/§12.5) — require a live ArcBox daemon.
+"""ArcBox E2E tests (docs/arcbox-backend.md §12) — require a live ArcBox daemon.
 
 Opt-in: ``uv run pytest tests/integration/test_arcbox_e2e.py --run-integration``.
 The guest template must ship a working ``python3`` (all ``BaseSandbox``-derived

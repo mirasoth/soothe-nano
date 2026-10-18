@@ -185,7 +185,7 @@ class AgentBuilder:
             all_tools.append(create_invoke_skill_tool())
 
         if sandbox_backend is not None:
-            # Placement finalization (RFC §7.5.4): every tool gets a placement;
+            # Placement finalization (docs/arcbox-backend.md §7): every tool gets a placement;
             # deny'd tools never register (fail-closed), shuttle tools are
             # wrapped for guest-path byte transfer.
             self._resolved_backend = resolved_backend
@@ -199,7 +199,7 @@ class AgentBuilder:
             self._config,
             default_model=default_model_instance,
             lazy=True,
-            # RFC §7.2-7: the planner's recon tools bind to the composite
+            # docs/arcbox-backend.md §6: the planner's recon tools bind to the composite
             # sandbox backend so readonly recon sees the guest workspace.
             sandbox_backend=resolved_backend if sandbox_backend is not None else None,
         )
@@ -615,7 +615,7 @@ class AgentBuilder:
     """Host-placement infra tools allowed in sandbox mode by name."""
 
     def _finalize_tool_placements(self, all_tools: list[Any]) -> list[Any]:
-        """Assign a placement to every tool (RFC §7.5.3/7.5.4).
+        """Assign a placement to every tool (docs/arcbox-backend.md §7).
 
         Resolution order per tool: config ``placement_overrides`` > explicit
         declaration (``@tool(placement=...)`` / ``ToolMeta.placement``) >

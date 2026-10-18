@@ -540,7 +540,7 @@ def resolve_subagents(
             registration is already lazy (graphs compile on first invoke).
         sandbox_backend: Optional composite sandbox backend (sandbox mode).
             Threaded into subagent contexts that need it (planner recon
-            tools bind to it — RFC §7.2-7).
+            tools bind to it — docs/arcbox-backend.md §6).
 
     Returns:
         List of subagent specs for the runtime.

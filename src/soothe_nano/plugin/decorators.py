@@ -164,7 +164,7 @@ def tool(
         group: Optional tool group name for organization.
         system_context: Optional XML fragment for system message when tool is active.
         triggers: Optional list of system section names this tool triggers.
-        placement: Sandbox-mode tool placement (RFC §7.5) — one of
+        placement: Sandbox-mode tool placement (docs/arcbox-backend.md §7) — one of
             ``protocol`` / ``guest`` / ``shuttle`` / ``host`` / ``deny``.
             Declared explicitly here, this beats the default derivation table
             (config ``sandbox.placement_overrides`` still wins).

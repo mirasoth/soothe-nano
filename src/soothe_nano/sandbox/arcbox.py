@@ -138,7 +138,7 @@ class _SdkArcBoxClient:
     """``ArcBoxClient`` implementation over the real arcbox SDK (0.1.x).
 
     The sandbox must already exist; this client only connects to it by id.
-    Lifecycle (create/kill) belongs to the caller, per RFC §8.1.
+    Lifecycle (create/kill) belongs to the caller, per docs/arcbox-backend.md §10.
     """
 
     def __init__(
@@ -200,7 +200,7 @@ class _SdkArcBoxClient:
             )
         except ArcBoxTimeoutError:
             # Bridge deadline: only the waiter coroutine was cancelled — the
-            # guest command may still be running (RFC §10.2). Never claim it
+            # guest command may still be running (docs/arcbox-backend.md §8). Never claim it
             # was killed; surface as error-as-data with an explicit caveat.
             return CommandRunResult(
                 error=(
@@ -329,7 +329,7 @@ class ArcBoxBackend(BaseSandbox):
         output = _merge_output(result.stdout, result.stderr)
         exit_code = result.exit_code
         if result.timed_out:
-            # Timeout convention (RFC §10.1): exit_code=124 + note text.
+            # Timeout convention (docs/arcbox-backend.md §8): exit_code=124 + note text.
             note = f"Command exceeded timeout of {effective}s; the process group was killed."
             output = f"{output}\n{note}" if output else note
             exit_code = 124

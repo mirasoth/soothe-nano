@@ -1,4 +1,4 @@
-"""Placement model tests (RFC §7.5): derivation, overrides, shuttle adapter."""
+"""Placement model tests (docs/arcbox-backend.md §7): derivation, overrides, shuttle."""
 
 from __future__ import annotations
 
@@ -66,8 +66,8 @@ class TestResolvePlacement:
         fake_meta("my_plain_reader", category="generic", outcome_type="file_read")
         assert resolve_placement("my_plain_reader") == PLACEMENT_SHUTTLE
 
-    def test_registry_derives_guest_from_execution(self, fake_meta) -> None:
-        fake_meta("my_runner", category="execution", outcome_type="code_exec")
+    def test_registry_derives_guest_from_code_exec(self, fake_meta) -> None:
+        fake_meta("my_runner", category="shell", outcome_type="code_exec")
         assert resolve_placement("my_runner") == PLACEMENT_GUEST
 
 

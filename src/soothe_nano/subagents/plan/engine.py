@@ -186,7 +186,7 @@ def create_plan_subagent(
     sandbox_backend = context.get("sandbox_backend")
     if sandbox_backend is not None:
         # Sandbox mode: recon targets the guest workspace root, not the
-        # host-resolved work_dir (RFC §7.2-7).
+        # host-resolved work_dir (docs/arcbox-backend.md §6).
         guest_default = getattr(sandbox_backend, "default", sandbox_backend)
         guest_root = getattr(guest_default, "workspace_root", None)
         if guest_root:

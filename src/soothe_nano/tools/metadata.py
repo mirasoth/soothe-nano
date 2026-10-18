@@ -30,8 +30,8 @@ class ToolMeta:
         aliases: Alternative names the model might emit for the same tool
             (e.g., ``shell`` and ``bash`` are legacy aliases of ``run_command``).
         category: Semantic category for display grouping
-            (``file_ops``, ``execution``, ``web``, ``media``, ``goals``,
-            ``subagent``, ``generic``).
+            (``file_ops``, ``shell``, ``web``, ``media``, ``subagent``,
+            ``generic``).
         outcome_type: Outcome classification for agent reasoning
             (``file_read``, ``file_write``, ``web_search``, ``code_exec``,
             ``subagent``, ``generic``). If ``None``, derived from category.
@@ -39,7 +39,7 @@ class ToolMeta:
         has_header_info: True when ``format_tool_display()`` already renders
             the key information in the header line, so the args body
             should be suppressed in ``ToolCallMessage``.
-        placement: Sandbox-mode tool placement (RFC §7.5) — one of
+        placement: Sandbox-mode tool placement (docs/arcbox-backend.md §7) — one of
             ``protocol`` / ``guest`` / ``shuttle`` / ``host`` / ``deny``.
             ``None`` derives from the default table by category/outcome_type.
     """
@@ -189,7 +189,7 @@ _register(
 )
 
 # ---------------------------------------------------------------------------
-# soothe execution tools
+# soothe shell tools
 # ---------------------------------------------------------------------------
 
 _register(
@@ -320,7 +320,7 @@ _register(
 )
 
 # ---------------------------------------------------------------------------
-# soothe execution tools (continued)
+# soothe shell tools (continued)
 # ---------------------------------------------------------------------------
 
 _register(
@@ -730,7 +730,6 @@ def get_outcome_type(name: str) -> str:
             "web": "web_search",
             "subagent": "subagent",
             "media": "file_read",
-            "goals": "generic",
             "generic": "generic",
             "file_ops": "file_read",  # Default for ambiguous category
         }

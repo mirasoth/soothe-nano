@@ -360,7 +360,7 @@ class TestSandboxToolPlacementGate:
 
 
 class TestSandboxPlannerThreading:
-    """RFC §7.2-7: planner recon tools bind to the injected sandbox backend."""
+    """docs/arcbox-backend.md §6: planner recon tools bind to the injected sandbox backend."""
 
     def test_sandbox_mode_threads_backend_and_keeps_planner(self) -> None:
         from types import SimpleNamespace
@@ -407,7 +407,7 @@ class TestSandboxPlannerThreading:
 
 
 class TestAllModesTimesSandbox:
-    """RFC §7.2-6: every interaction mode × sandbox combination must build."""
+    """docs/arcbox-backend.md §6: every interaction mode × sandbox combination must build."""
 
     def test_plan_plus_sandbox(self, caplog) -> None:
         from soothe_nano.agent.interaction_mode import (

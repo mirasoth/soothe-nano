@@ -657,7 +657,7 @@ class BackendShellExecutor:
             response = self._backend.execute(wrapped, timeout=effective)
         if response.exit_code is None and response.output.startswith("Error:"):
             return ExecutorOutcome(stdout="", exit_code=None, error=response.output)
-        # Backend timeout convention (RFC §10.1): exit_code=124 + note text.
+        # Backend timeout convention (docs/arcbox-backend.md §8): exit_code=124 + note text.
         timed_out = response.exit_code == 124
         return ExecutorOutcome(
             stdout=response.output, exit_code=response.exit_code, timed_out=timed_out

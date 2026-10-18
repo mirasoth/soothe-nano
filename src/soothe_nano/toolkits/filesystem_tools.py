@@ -2,7 +2,7 @@
 
 Single factory for FS tool instances — the middleware surface is the only
 source of file tools (the former `file_ops` toolkit group was retired,
-RFC §16 phase-2).
+docs/arcbox-backend.md §9).
 """
 
 from __future__ import annotations

@@ -572,7 +572,7 @@ class SandboxConfig(BaseModel):
             values: protocol / guest / shuttle / host / deny. Overrides beat
             explicit tool declarations and the default derivation table.
         max_shuttle_bytes: Upper bound for a single ``shuttle`` transfer
-            (RFC §7.5.6); over-limit transfers error out instead of silently
+            (docs/arcbox-backend.md §7); over-limit transfers error out instead of silently
             shuttling large datasets.
     """
 

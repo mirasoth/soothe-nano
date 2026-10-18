@@ -1,4 +1,4 @@
-"""Tool placement model for sandbox mode (RFC §7.5).
+"""Tool placement model for sandbox mode (docs/arcbox-backend.md §7).
 
 Every tool active under a sandbox backend gets a placement:
 
@@ -117,8 +117,7 @@ def resolve_placement(
         # Fail-closed: unregistered custom / MCP / plugin tools (§7.5.5).
         return PLACEMENT_DENY
     outcome = getattr(meta, "outcome_type", None) or ""
-    category = getattr(meta, "category", "generic")
-    if outcome == "code_exec" or category == "execution":
+    if outcome == "code_exec":
         return PLACEMENT_GUEST
     if outcome in ("file_read", "file_write"):
         return PLACEMENT_SHUTTLE
