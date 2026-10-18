@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-alpha.1] - 2026-10-18
+
 ### Added
 - **ArcBox sandbox backend**: `ArcBoxBackend` runs shell commands and workspace file operations inside an ArcBox Linux microVM while the agent loop and model credentials stay on the host. Injected via `create_nano_agent(..., backend=ArcBoxBackend(sandbox_id=...))`; the caller owns the sandbox lifecycle. Design and usage: `docs/arcbox-backend.md`.
   - `arcbox>=0.1.0` is now a core dependency (lazily imported; a fake client can be injected for daemon-free tests).
@@ -47,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SystemPromptMiddleware` per-hop dedup: recent tool calls extracted once (was 3×) and trigger sections derived once for the memory/protocol/tool-context blocks; the workspace resolution chain is skipped when `modify_request` already resolved the workspace into state. `ToolResultEvictionMiddleware` measures token estimates and collects evictable candidates in a single pass (was two full scans); `ToolResultStorageMiddleware` persists oversized outputs via `asyncio.to_thread` (`amaybe_persist_tool_result`) so large writes never block the event loop.
 - Batched edit dispatch is no longer an unprotected fast path: `EditCoalescingConfig.batch_dispatch_timeout_seconds` (default 60s, matching the tool-timeout middleware default) caps each file's batched write — lone pass-through edits are excluded (their handler chain already runs through the inner tool-timeout middleware with per-tool overrides). Any timed-out or failed batch resolves every pending future with an error ToolMessage instead of hanging the caller, and one file's dispatch failure no longer hangs the remaining files in the same window. `SoothePolicyMiddleware` memoizes workspace `Path.resolve()` per raw configurable string (bounded at 128 entries).
 - Shared detection-window infrastructure: `middleware._window` (`ScopeWindowBank` + `resolve_pending_results`) is now the single implementation of the enqueue/fast-flush/take cycle and the singleton-vs-gather execution + future resolution used by `ReadCoalescingMiddleware` and `ToolOptimizationMiddleware` (edit coalescing keeps its staging-aware flow). `ProgressiveListingMiddleware` reuses the stack-builder's `SkillIndex`/`ProgressiveSkillRegistry` (skills scanned once per staleness window, not once per middleware) and builds its config-derived tool-listing registry once instead of per hop.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.4.2...v2.0.0-alpha.1
 
 ## [1.4.2] - 2026-10-13
 
