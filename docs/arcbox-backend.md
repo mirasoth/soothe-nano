@@ -126,7 +126,9 @@ class ArcBoxBackend(BaseSandbox):
   the hard cap is `_EXECUTE_CAPTURE_MAX_BYTES` (10 MiB), not a constructor knob.
   Never hand-roll character truncation at the backend — it loses exit codes.
 
-Protocol facts (`soothe-deepagents` `BackendProtocol`):
+## 5. Backend protocol facts
+
+Contract facts from `soothe-deepagents`' `BackendProtocol`:
 
 | Item | Fact |
 |---|---|
@@ -136,8 +138,6 @@ Protocol facts (`soothe-deepagents` `BackendProtocol`):
 | `exit_code is None` | status unknown — must not be read as failure or not-found |
 | results | `Read/Write/Edit/Ls/Grep/Glob/Delete*Result`; `read` returns raw content (line numbers are added by the middleware) |
 | async | sync is primitive; `a*` variants default to `asyncio.to_thread` |
-
-## 5. Backend protocol facts
 
 ## 6. Sandbox execution mode (build time)
 
