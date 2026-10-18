@@ -2,34 +2,36 @@
 
 from soothe_nano.workspace.workspace_api import (
     ResolvedWorkspace,
+    ResolvedWorkspaceSource,
     WorkspacePrecedence,
-    resolve_workspace_for_stream,
-    resolve_workspace_for_tool_execution,
 )
 from soothe_nano.workspace.workspace_filesystem import (
     FrameworkFilesystem,
     NormalizedPathBackend,
     WorkspaceAwareBackend,
-    get_workspace_backend,
+    WorkspaceBackendRegistry,
 )
+from soothe_nano.workspace.workspace_paths import (
+    WORKSPACE_BACKUP_DIR,
+    WorkspacePaths,
+)
+from soothe_nano.workspace.workspace_policy import WorkspaceResolver
 from soothe_nano.workspace.workspace_runtime import (
     WorkspaceContext,
-    get_virtual_home,
-    get_virtual_home_relative_path,
-    get_virtual_mode,
+    WorkspaceRuntime,
 )
 
 __all__ = [
     "FrameworkFilesystem",
     "NormalizedPathBackend",
     "ResolvedWorkspace",
+    "ResolvedWorkspaceSource",
+    "WORKSPACE_BACKUP_DIR",
     "WorkspaceAwareBackend",
+    "WorkspaceBackendRegistry",
     "WorkspaceContext",
+    "WorkspacePaths",
     "WorkspacePrecedence",
-    "get_virtual_home",
-    "get_virtual_home_relative_path",
-    "get_virtual_mode",
-    "get_workspace_backend",
-    "resolve_workspace_for_stream",
-    "resolve_workspace_for_tool_execution",
+    "WorkspaceResolver",
+    "WorkspaceRuntime",
 ]

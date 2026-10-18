@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from soothe_nano.workspace.workspace_paths import join_workspace_normalized_path
+from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
 from .path_security import PathValidator, ValidationSeverity
 from .policy_models import (
@@ -292,7 +292,7 @@ class SecurityEnforcer:
                 decision=decision,
             )
         normalized = self.validator.sanitize(path)
-        return join_workspace_normalized_path(self.workspace, normalized)
+        return WorkspacePaths(self.workspace).join_normalized_path(normalized)
 
     def get_audit_log(
         self,

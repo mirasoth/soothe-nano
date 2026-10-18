@@ -1,0 +1,100 @@
+name: Docker Base Images
+
+# Builds and pushes the ArcBox guest template images to GHCR.
+#
+# The two real Dockerfiles under docker/templates/{e2e,prod}/ are built here
+# and published as base images that downstream consumers (abctl, integration
+# layers) pull instead of building locally.
+#
+# Triggers:
+#   - push to main (template/workflow changes)  → dev images (sha, branch, latest)
+#   - GitHub Release published                  → release images (version, latest)
+#   - workflow_dispatch                          → manual rebuild
+#
+# On a release, images are tagged with the semver version (e.g. 1.2.22) and
+# `latest` is moved to point at the release build.
+#
+# Images:
+#   ghcr.io/mirasoth/soothe-nano/e2e   — minimal E2E guest (python3 + POSIX)
+#   ghcr.io/mirasoth/soothe-nano/prod  — production guest (non-root runtime)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker/templates/**"
+      - ".github/workflows/docker-base.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write  # push to GHCR (ghcr.io)
+
+env:
+  REGISTRY: ghcr.io
+  # Owner lowercased — GHCR namespaces must be lowercase.
+  IMAGE_OWNER: mirasoth
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: e2e
+            context: docker/templates/e2e
+            dockerfile: docker/templates/e2e/Dockerfile
+            image: ghcr.io/mirasoth/soothe-nano/e2e
+          - variant: prod
+            context: docker/templates/prod
+            dockerfile: docker/templates/prod/Dockerfile
+            image: ghcr.io/mirasoth/soothe-nano/prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate Dockerfile context exists
+        run: |
+          test -f "${{ matrix.dockerfile }}" || { echo "Missing ${{ matrix.dockerfile }}"; exit 1; }
+          test -d "${{ matrix.context }}" || { echo "Missing context ${{ matrix.context }}"; exit 1; }
+          echo "Context ${{ matrix.context }} OK"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=sha,format=short
+            type=ref,event=branch
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' || github.ref == 'refs/heads/main' }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false

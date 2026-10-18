@@ -39,9 +39,9 @@ def _get_virtual_home() -> Path:
     Returns:
         Path to virtual /.soothe when virtual_mode=True, else host SOOTHE_HOME.
     """
-    from soothe_nano.workspace import get_virtual_home
+    from soothe_nano.workspace import WorkspaceRuntime
 
-    return get_virtual_home()
+    return WorkspaceRuntime.virtual_home()
 
 
 def attach_stream_model_override(
@@ -107,16 +107,16 @@ def _ensure_dir_with_backend(path: Path) -> Path:
     Returns:
         The created/existing directory path.
     """
-    from soothe_nano.workspace import get_virtual_home_relative_path, get_virtual_mode
+    from soothe_nano.workspace import WorkspaceRuntime
 
-    virtual_mode = get_virtual_mode()
+    virtual_mode = WorkspaceRuntime.virtual_mode()
     if virtual_mode:
         # In virtual mode, use backend for directory creation
         from soothe_nano.workspace import FrameworkFilesystem
 
         backend = FrameworkFilesystem.get()
         if backend is not None:
-            virtual_path = get_virtual_home_relative_path(path)
+            virtual_path = WorkspaceRuntime.virtual_home_relative_path(path)
             if virtual_path is not None:
                 try:
                     backend.mkdir(virtual_path, recursive=True)
@@ -146,9 +146,9 @@ def get_workspace_subagent_output_dir(subagent_name: str) -> Path:
 
     Falls back to `SOOTHE_HOME/agents/<name>/` when no workspace is active.
     """
-    from soothe_nano.workspace.workspace_runtime import get_workspace_context
+    from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
-    ctx = get_workspace_context()
+    ctx = WorkspaceRuntime.get()
     if ctx.workspace is not None:
         target = ctx.workspace / ".soothe" / "agents" / subagent_name.lower()
     else:

@@ -6,7 +6,6 @@ from soothe_nano.skills.index import SkillIndexEntry
 from soothe_nano.skills.registry import (
     DEFAULT_CORE_SKILL_NAMES,
     ProgressiveSkillRegistry,
-    is_core_skill,
     merge_skill_activation,
 )
 
@@ -64,7 +63,7 @@ class TestPartitionCoreDeferred:
 
     def test_core_false_demotes_builtin(self) -> None:
         entry = _entry("weather", source="builtin", core=False)
-        assert not is_core_skill(entry, DEFAULT_CORE_SKILL_NAMES)
+        assert not ProgressiveSkillRegistry.is_core(entry, DEFAULT_CORE_SKILL_NAMES)
 
     def test_explicit_core_skills_disables_builtin_autopromote(self) -> None:
         """Extra builtins not named in core_skills stay deferred."""
@@ -82,13 +81,17 @@ class TestPartitionCoreDeferred:
     def test_unnamed_builtin_deferred_under_default_core_names(self) -> None:
         """Host builtins outside DEFAULT_CORE_SKILL_NAMES are deferred."""
         entry = _entry("xlsx", source="builtin")
-        assert not is_core_skill(entry, DEFAULT_CORE_SKILL_NAMES)
-        assert is_core_skill(_entry("weather", source="builtin"), DEFAULT_CORE_SKILL_NAMES)
+        assert not ProgressiveSkillRegistry.is_core(entry, DEFAULT_CORE_SKILL_NAMES)
+        assert ProgressiveSkillRegistry.is_core(
+            _entry("weather", source="builtin"), DEFAULT_CORE_SKILL_NAMES
+        )
 
     def test_skill_creator_and_mcp_builder_are_deferred(self) -> None:
         """Authoring builtins load on demand, not at cold start."""
         for name in ("skill-creator", "mcp-builder"):
-            assert not is_core_skill(_entry(name, source="builtin"), DEFAULT_CORE_SKILL_NAMES)
+            assert not ProgressiveSkillRegistry.is_core(
+                _entry(name, source="builtin"), DEFAULT_CORE_SKILL_NAMES
+            )
 
 
 class TestSearchDeferred:

@@ -147,6 +147,7 @@ def tool(
     group: str | None = None,
     system_context: str | None = None,
     triggers: list[str] | None = None,
+    placement: str | None = None,
 ) -> Callable:
     """Decorator that marks a method as a langchain tool.
 
@@ -163,6 +164,10 @@ def tool(
         group: Optional tool group name for organization.
         system_context: Optional XML fragment for system message when tool is active.
         triggers: Optional list of system section names this tool triggers.
+        placement: Sandbox-mode tool placement (docs/arcbox-backend.md §7) — one of
+            ``protocol`` / ``guest`` / ``shuttle`` / ``host`` / ``deny``.
+            Declared explicitly here, this beats the default derivation table
+            (config ``sandbox.placement_overrides`` still wins).
 
     Returns:
         Decorated method with tool metadata.
@@ -190,6 +195,8 @@ def tool(
         func._tool_system_context = system_context
         func._tool_triggers = triggers or []
         func._tool_metadata = {"name": name, "description": description}
+        if placement is not None:
+            func._tool_placement = placement
 
         @wraps(func)
         async def async_wrapper(self, *args, **kwargs):
@@ -217,6 +224,8 @@ def tool(
         wrapper._tool_system_context = system_context
         wrapper._tool_triggers = triggers or []
         wrapper._tool_metadata = {"name": name, "description": description}
+        if placement is not None:
+            wrapper._tool_placement = placement
 
         return wrapper
 

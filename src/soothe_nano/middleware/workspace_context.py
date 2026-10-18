@@ -7,7 +7,7 @@ Does not depend on injecting ``soothe_config``.
 
 from __future__ import annotations
 
-from contextvars import Token
+from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,12 +17,20 @@ if TYPE_CHECKING:
     from langchain.agents.middleware.types import AgentState
     from langgraph.runtime import Runtime
 
+# Task-local token storage: the middleware instance is shared by concurrent
+# graph threads, so the reset token must live in the per-task context instead
+# of instance state (which interleaved turns would clobber).
+_pending_token: ContextVar[Token[Any] | None] = ContextVar(
+    "workspace_context_pending_token",
+    default=None,
+)
+
 
 def _virtual_mode_without_soothe_config() -> bool:
     """Resolve virtual_mode from the live backend/context — never soothe_config."""
-    from soothe_nano.workspace.workspace_runtime import get_workspace_context
+    from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
-    ctx = get_workspace_context()
+    ctx = WorkspaceRuntime.get()
     # Prefer the filesystem backend's construction-time sandbox mode when available.
     try:
         from soothe_nano.workspace.workspace_filesystem import FrameworkFilesystem
@@ -49,16 +57,13 @@ class WorkspaceContextMiddleware(AgentMiddleware):
             "thread_id": "thread-123",
             "workspace": "/home/user/project-a",
         }
-        # -> set_workspace_context("/home/user/project-a", virtual_mode=...)
+        # -> WorkspaceRuntime.set(workspace="/home/user/project-a", ...)
         # -> tools resolve paths against /home/user/project-a
-        # -> reset_workspace_context(token) after execution
+        # -> WorkspaceRuntime.reset(token) after execution
     """
 
     # Opt into general-purpose subagent inheritance (deepagents generic flag).
     propagate_to_general_purpose = True
-
-    def __init__(self) -> None:
-        self._workspace_token: Token[Any] | None = None
 
     async def abefore_agent(
         self,
@@ -76,10 +81,8 @@ class WorkspaceContextMiddleware(AgentMiddleware):
         """
         from langgraph.config import get_config
 
-        from soothe_nano.workspace.workspace_api import (
-            resolve_workspace_for_tool_execution,
-        )
-        from soothe_nano.workspace.workspace_runtime import set_workspace_context
+        from soothe_nano.workspace.workspace_policy import WorkspaceResolver
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
         config: dict[str, Any] = {}
         try:
@@ -93,7 +96,7 @@ class WorkspaceContextMiddleware(AgentMiddleware):
         config_workspace = configurable.get("workspace") if isinstance(configurable, dict) else None
         state_workspace = state.get("workspace") if isinstance(state, dict) else None
 
-        workspace_path = resolve_workspace_for_tool_execution(
+        workspace_path = WorkspaceResolver.resolve_tool_execution(
             config=config or None,
             state=state,
             use_langgraph_config=True,
@@ -105,10 +108,11 @@ class WorkspaceContextMiddleware(AgentMiddleware):
         if workspace_path is None:
             return None
 
-        self._workspace_token = set_workspace_context(
+        token = WorkspaceRuntime.set(
             workspace=Path(workspace_path),
             virtual_mode=_virtual_mode_without_soothe_config(),
         )
+        _pending_token.set(token)
 
         return {"workspace": str(workspace_path)}
 
@@ -126,8 +130,8 @@ class WorkspaceContextMiddleware(AgentMiddleware):
         Returns:
             None.
         """
-        from soothe_nano.workspace.workspace_runtime import reset_workspace_context
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
-        reset_workspace_context(self._workspace_token)
-        self._workspace_token = None
+        WorkspaceRuntime.reset(_pending_token.get())
+        _pending_token.set(None)
         return None

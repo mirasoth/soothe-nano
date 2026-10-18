@@ -7,9 +7,40 @@ Tests tools from soothe_nano.toolkits.file_ops:
 """
 
 import pytest
+from langchain.tools import ToolRuntime
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
+
+
+# ---------------------------------------------------------------------------
+# ToolRuntime helper — the upstream sync_* functions require an injected
+# ``runtime`` arg that LangChain only provides inside an agent. Calling
+# ``.invoke()`` directly raises TypeError; this helper falls back to calling
+# ``tool.func(runtime=..., **args)`` and normalizes the ToolMessage result to
+# its text content so assertions read as plain strings.
+# ---------------------------------------------------------------------------
+
+
+def _runtime(tool_call_id: str) -> ToolRuntime:
+    return ToolRuntime(
+        state={"messages": [], "files": {}},
+        context=None,
+        tool_call_id=tool_call_id,
+        store=None,
+        stream_writer=lambda _: None,
+        config={},
+    )
+
+
+def _invoke_tool(tool, args: dict[str, object], *, tool_call_id: str) -> str:
+    try:
+        result = tool.invoke(args)
+    except TypeError as exc:
+        if "missing 1 required positional argument: 'runtime'" not in str(exc):
+            raise
+        result = tool.func(runtime=_runtime(tool_call_id), **args)
+    return str(getattr(result, "content", result))
 
 
 # ---------------------------------------------------------------------------
@@ -62,13 +93,15 @@ class TestEditFileLinesTool:
         code_file = tmp_path / "code.py"
         code_file.write_text("def hello():\n    print('world')\n    return True\n")
 
-        edit_tool.invoke(
+        _invoke_tool(
+            edit_tool,
             {
                 "file_path": str(code_file),
                 "start_line": 2,
                 "end_line": 2,
                 "new_content": "    print('Soothe')",
-            }
+            },
+            tool_call_id="edit_1",
         )
 
         updated = code_file.read_text()
@@ -83,13 +116,15 @@ class TestEditFileLinesTool:
         code_file = tmp_path / "multi.py"
         code_file.write_text("x = 1\ny = 2\nz = 3\n")
 
-        edit_tool.invoke(
+        _invoke_tool(
+            edit_tool,
             {
                 "file_path": str(code_file),
                 "start_line": 1,
                 "end_line": 2,
                 "new_content": "a = 10\nb = 20",
-            }
+            },
+            tool_call_id="edit_2",
         )
 
         updated = code_file.read_text()
@@ -102,13 +137,15 @@ class TestEditFileLinesTool:
         small_file = tmp_path / "small.txt"
         small_file.write_text("only one line\n")
 
-        result = edit_tool.invoke(
+        result = _invoke_tool(
+            edit_tool,
             {
                 "file_path": str(small_file),
                 "start_line": 10,
                 "end_line": 15,
                 "new_content": "invalid",
-            }
+            },
+            tool_call_id="edit_3",
         )
 
         # Should return error
@@ -119,13 +156,15 @@ class TestEditFileLinesTool:
         code_file = tmp_path / "indented.py"
         code_file.write_text("def foo():\n    x = 1\n    y = 2\n")
 
-        edit_tool.invoke(
+        _invoke_tool(
+            edit_tool,
             {
                 "file_path": str(code_file),
                 "start_line": 2,
                 "end_line": 2,
                 "new_content": "    x = 10",
-            }
+            },
+            tool_call_id="edit_4",
         )
 
         updated = code_file.read_text()
@@ -136,13 +175,15 @@ class TestEditFileLinesTool:
         code_file = tmp_path / "end.txt"
         code_file.write_text("line1\nline2\nline3\n")
 
-        edit_tool.invoke(
+        _invoke_tool(
+            edit_tool,
             {
                 "file_path": str(code_file),
                 "start_line": 3,
                 "end_line": 3,
                 "new_content": "new_last_line",
-            }
+            },
+            tool_call_id="edit_5",
         )
 
         updated = code_file.read_text()
@@ -162,12 +203,14 @@ class TestInsertLinesTool:
         code_file = tmp_path / "insert.txt"
         code_file.write_text("line1\nline2\n")
 
-        insert_tool.invoke(
+        _invoke_tool(
+            insert_tool,
             {
                 "file_path": str(code_file),
                 "line": 2,  # Insert before line 2 (between line1 and line2)
                 "content": "new_line",
-            }
+            },
+            tool_call_id="ins_1",
         )
 
         updated = code_file.read_text()
@@ -181,12 +224,14 @@ class TestInsertLinesTool:
         code_file = tmp_path / "beginning.txt"
         code_file.write_text("existing\n")
 
-        insert_tool.invoke(
+        _invoke_tool(
+            insert_tool,
             {
                 "file_path": str(code_file),
                 "line": 1,  # Insert at line 1 (beginning)
                 "content": "first",
-            }
+            },
+            tool_call_id="ins_2",
         )
 
         updated = code_file.read_text()
@@ -197,12 +242,14 @@ class TestInsertLinesTool:
         code_file = tmp_path / "multi.txt"
         code_file.write_text("original\n")
 
-        insert_tool.invoke(
+        _invoke_tool(
+            insert_tool,
             {
                 "file_path": str(code_file),
                 "line": 2,  # Insert at end (after line 1)
                 "content": "line1\nline2\nline3",
-            }
+            },
+            tool_call_id="ins_3",
         )
 
         updated = code_file.read_text()
@@ -215,12 +262,14 @@ class TestInsertLinesTool:
         code_file = tmp_path / "preserve.txt"
         code_file.write_text("before\nafter\n")
 
-        insert_tool.invoke(
+        _invoke_tool(
+            insert_tool,
             {
                 "file_path": str(code_file),
                 "line": 2,  # Insert before "after"
                 "content": "inserted",
-            }
+            },
+            tool_call_id="ins_4",
         )
 
         updated = code_file.read_text()
@@ -242,12 +291,14 @@ class TestDeleteLinesTool:
         code_file = tmp_path / "delete.txt"
         code_file.write_text("keep1\ndelete1\ndelete2\nkeep2\n")
 
-        delete_lines_tool.invoke(
+        _invoke_tool(
+            delete_lines_tool,
             {
                 "file_path": str(code_file),
                 "start_line": 2,
                 "end_line": 3,
-            }
+            },
+            tool_call_id="dl_1",
         )
 
         updated = code_file.read_text()
@@ -261,12 +312,14 @@ class TestDeleteLinesTool:
         code_file = tmp_path / "single.txt"
         code_file.write_text("keep1\ndelete\nkeep2\n")
 
-        delete_lines_tool.invoke(
+        _invoke_tool(
+            delete_lines_tool,
             {
                 "file_path": str(code_file),
                 "start_line": 2,
                 "end_line": 2,
-            }
+            },
+            tool_call_id="dl_2",
         )
 
         updated = code_file.read_text()
@@ -279,12 +332,14 @@ class TestDeleteLinesTool:
         code_file = tmp_path / "end.txt"
         code_file.write_text("keep\ndelete1\ndelete2\n")
 
-        delete_lines_tool.invoke(
+        _invoke_tool(
+            delete_lines_tool,
             {
                 "file_path": str(code_file),
                 "start_line": 2,
                 "end_line": 3,
-            }
+            },
+            tool_call_id="dl_3",
         )
 
         updated = code_file.read_text()
@@ -296,12 +351,14 @@ class TestDeleteLinesTool:
         code_file = tmp_path / "small.txt"
         code_file.write_text("one line\n")
 
-        result = delete_lines_tool.invoke(
+        result = _invoke_tool(
+            delete_lines_tool,
             {
                 "file_path": str(code_file),
                 "start_line": 10,
                 "end_line": 15,
-            }
+            },
+            tool_call_id="dl_4",
         )
 
         # Should return error
@@ -319,21 +376,15 @@ class TestCodeEditErrorHandling:
     def test_edit_nonexistent_file(self, middleware) -> None:
         """Test editing non-existent file."""
         edit_tool = next(t for t in middleware.tools if t.name == "edit_lines")
-        result = edit_tool.invoke(
+        result = _invoke_tool(
+            edit_tool,
             {
                 "file_path": "/nonexistent/file.txt",
                 "start_line": 1,
                 "end_line": 1,
                 "new_content": "test",
-            }
+            },
+            tool_call_id="err_1",
         )
 
         assert isinstance(result, str)
-
-    def test_insert_readonly_file(self) -> None:
-        """Test inserting into read-only file."""
-        pytest.skip("Requires specific file permission setup")
-
-    def test_delete_from_locked_file(self) -> None:
-        """Test deleting from locked file."""
-        pytest.skip("Requires specific file locking setup")

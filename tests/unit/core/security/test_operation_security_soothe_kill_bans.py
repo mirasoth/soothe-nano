@@ -9,7 +9,7 @@ from soothe_nano.protocols.operation_security import (
     OperationSecurityRequest,
 )
 from soothe_nano.security.operation_guard import WorkspaceToolOperationSecurity
-from soothe_nano.toolkits.execution import (
+from soothe_nano.toolkits.shell import (
     clear_protected_kill_hooks,
     register_protected_kill_hook,
 )

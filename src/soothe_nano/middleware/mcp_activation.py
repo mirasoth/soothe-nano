@@ -23,7 +23,7 @@ from soothe_nano.mcp.mcp_progressive import (
     snapshot_mcp_activation,
 )
 from soothe_nano.mcp.mcp_utils import MCPToolDescriptor, is_mcp_tool_name, parse_mcp_tool_name
-from soothe_nano.middleware.tool_name_hints import (
+from soothe_nano.middleware.tool_error_guard import (
     extract_tool_message_content,
     is_invalid_tool_error,
 )

@@ -25,7 +25,7 @@ def test_rebuild_discovers_skills(tmp_path: Path) -> None:
     _make_skill(root, "beta")
 
     index = SkillIndex()
-    with patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)):
+    with patch("soothe_nano.skills.index.SkillRoots.roots", return_value=((root, "user"),)):
         entries = index.rebuild_if_stale()
 
     assert len(entries) == 2
@@ -41,7 +41,7 @@ def test_rebuild_only_reparses_changed(tmp_path: Path) -> None:
     _make_skill(root, "changing")
 
     index = SkillIndex()
-    with patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)):
+    with patch("soothe_nano.skills.index.SkillRoots.roots", return_value=((root, "user"),)):
         index.rebuild_if_stale()
 
         # Update changing skill
@@ -64,7 +64,7 @@ def test_rebuild_removes_deleted_skills(tmp_path: Path) -> None:
     removable = _make_skill(root, "remove")
 
     index = SkillIndex()
-    with patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)):
+    with patch("soothe_nano.skills.index.SkillRoots.roots", return_value=((root, "user"),)):
         entries = index.rebuild_if_stale()
         assert len(entries) == 2
 
@@ -83,7 +83,7 @@ def test_resolve_case_insensitive(tmp_path: Path) -> None:
     _make_skill(root, "MySkill")
 
     index = SkillIndex()
-    with patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)):
+    with patch("soothe_nano.skills.index.SkillRoots.roots", return_value=((root, "user"),)):
         index.rebuild_if_stale()
 
     assert index.resolve("myskill") is not None
@@ -97,7 +97,7 @@ def test_wire_entries_excludes_path(tmp_path: Path) -> None:
     _make_skill(root, "wired")
 
     index = SkillIndex()
-    with patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)):
+    with patch("soothe_nano.skills.index.SkillRoots.roots", return_value=((root, "user"),)):
         index.rebuild_if_stale()
 
     wire = index.wire_entries()
@@ -116,7 +116,7 @@ def test_persist_and_load_cache(tmp_path: Path) -> None:
 
     index = SkillIndex()
     with (
-        patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)),
+        patch("soothe_nano.skills.index.SkillRoots.roots", return_value=((root, "user"),)),
         patch("soothe_nano.skills.index._CACHE_FILE", cache_file),
     ):
         index.rebuild_if_stale()
@@ -126,7 +126,7 @@ def test_persist_and_load_cache(tmp_path: Path) -> None:
     # New index should load from cache
     index2 = SkillIndex()
     with (
-        patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)),
+        patch("soothe_nano.skills.index.SkillRoots.roots", return_value=((root, "user"),)),
         patch("soothe_nano.skills.index._CACHE_FILE", cache_file),
     ):
         index2._load_cache()
@@ -145,7 +145,7 @@ def test_multiple_roots(tmp_path: Path) -> None:
 
     index = SkillIndex()
     with patch(
-        "soothe_nano.skills.index.iter_skill_roots", return_value=((root1, "user"), (root2, "user"))
+        "soothe_nano.skills.index.SkillRoots.roots", return_value=((root1, "user"), (root2, "user"))
     ):
         entries = index.rebuild_if_stale()
 
@@ -162,7 +162,7 @@ def test_entries_sorted_by_name(tmp_path: Path) -> None:
     _make_skill(root, "middle")
 
     index = SkillIndex()
-    with patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)):
+    with patch("soothe_nano.skills.index.SkillRoots.roots", return_value=((root, "user"),)):
         entries = index.rebuild_if_stale()
 
     names = [e.name for e in entries]
@@ -181,7 +181,7 @@ def test_dedup_across_roots(tmp_path: Path) -> None:
 
     index = SkillIndex()
     with patch(
-        "soothe_nano.skills.index.iter_skill_roots",
+        "soothe_nano.skills.index.SkillRoots.roots",
         return_value=((soothe_skills, "user"), (agents_skills, "user")),
     ):
         entries = index.rebuild_if_stale()
@@ -191,12 +191,12 @@ def test_dedup_across_roots(tmp_path: Path) -> None:
 
 
 def test_agents_skills_root_included(tmp_path: Path) -> None:
-    """Verify ~/.agents/skills and built_in_skills are in iter_skill_roots."""
+    """Verify ~/.agents/skills and built_in_skills are in SkillRoots.roots()."""
     from soothe_nano.config import SOOTHE_HOME
-    from soothe_nano.skills.builtins import iter_skill_roots
+    from soothe_nano.skills.builtins import SkillRoots
     from soothe_nano.skills.index import _BUILTIN_SKILLS_DIR
 
-    root_paths = [r for r, _ in iter_skill_roots()]
+    root_paths = [r for r, _ in SkillRoots.roots()]
     agents_root = Path.home() / ".agents" / "skills"
     soothe_root = SOOTHE_HOME / "skills"
     assert agents_root in root_paths
@@ -207,10 +207,10 @@ def test_agents_skills_root_included(tmp_path: Path) -> None:
 def test_default_root_precedence_soothe_over_builtin_over_agents(tmp_path: Path) -> None:
     """Default roots should be ordered by effective priority (last-wins)."""
     from soothe_nano.config import SOOTHE_HOME
-    from soothe_nano.skills.builtins import iter_skill_roots
+    from soothe_nano.skills.builtins import SkillRoots
     from soothe_nano.skills.index import _BUILTIN_SKILLS_DIR
 
-    root_paths = [r for r, _ in iter_skill_roots()]
+    root_paths = [r for r, _ in SkillRoots.roots()]
     agents_root = Path.home() / ".agents" / "skills"
     soothe_root = SOOTHE_HOME / "skills"
     assert root_paths.index(agents_root) < root_paths.index(_BUILTIN_SKILLS_DIR)
@@ -229,7 +229,7 @@ def test_source_builtin_vs_user(tmp_path: Path) -> None:
 
     index = SkillIndex()
     with patch(
-        "soothe_nano.skills.index.iter_skill_roots",
+        "soothe_nano.skills.index.SkillRoots.roots",
         return_value=((builtin_root, "builtin"), (user_root, "user")),
     ):
         entries = index.rebuild_if_stale()
@@ -260,7 +260,7 @@ def test_dedup_uses_frontmatter_name_not_directory_name(tmp_path: Path) -> None:
 
     index = SkillIndex()
     with patch(
-        "soothe_nano.skills.index.iter_skill_roots",
+        "soothe_nano.skills.index.SkillRoots.roots",
         return_value=((low_root, "user"), (high_root, "user")),
     ):
         entries = index.rebuild_if_stale()
@@ -294,7 +294,7 @@ def test_parse_skill_dir_swallows_parse_metadata_exception(tmp_path: Path) -> No
     import soothe_deepagents.middleware.skills as sdm
 
     with (
-        patch("soothe_nano.skills.index.iter_skill_roots", return_value=((root, "user"),)),
+        patch("soothe_nano.skills.index.SkillRoots.roots", return_value=((root, "user"),)),
         patch.object(sdm, "parse_skill_metadata", side_effect=_side_effect),
     ):
         entries = index.rebuild_if_stale()

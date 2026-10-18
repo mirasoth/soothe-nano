@@ -130,12 +130,13 @@ class RoleRoutingMiddleware(AgentMiddleware):
         except Exception:
             logger.exception("Role routing failed for role %s; using base model", role)
             return request
-        logger.debug(
-            "Role routing: hop=%d role=%s tools=%d",
-            model_hop_index_since_user(request.messages),
-            role,
-            len(request.tools or []),
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Role routing: hop=%d role=%s tools=%d",
+                model_hop_index_since_user(request.messages),
+                role,
+                len(request.tools or []),
+            )
         return request.override(model=model)
 
     def wrap_model_call(

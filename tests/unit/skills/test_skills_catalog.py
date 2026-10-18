@@ -7,14 +7,7 @@ from pathlib import Path
 from soothe_deepagents.middleware.skills import parse_skill_metadata
 
 from soothe_nano.config import SootheConfig
-from soothe_nano.skills.catalog import (
-    build_skill_invocation_envelope,
-    format_slash_skill_invoke_line,
-    parse_slash_skill_user_line,
-    resolve_skill_directory,
-    try_expand_slash_skill_user_line,
-    wire_entries_for_agent_config,
-)
+from soothe_nano.skills.catalog import SkillCatalog, SlashSkillLine
 
 
 def test_wire_entries_sorted_and_pathless(tmp_path: Path) -> None:
@@ -26,7 +19,7 @@ def test_wire_entries_sorted_and_pathless(tmp_path: Path) -> None:
     )
     cfg = SootheConfig()
     cfg.skills = [str(d)]
-    rows = wire_entries_for_agent_config(cfg)
+    rows = SkillCatalog(cfg).wire_entries()
     assert rows
     names = [r["name"] for r in rows]
     assert names == sorted(names, key=str.lower)
@@ -50,7 +43,7 @@ def test_resolve_skill_directory_last_wins(tmp_path: Path) -> None:
     )
     cfg = SootheConfig()
     cfg.skills = [str(first), str(second)]
-    meta = resolve_skill_directory(cfg, "dupname")
+    meta = SkillCatalog(cfg).resolve_skill("dupname")
     assert meta is not None
     assert meta["description"] == "second"
 
@@ -62,7 +55,9 @@ def test_build_skill_invocation_envelope_includes_name() -> None:
         "path": "/tmp/ignored",
         "source": "test",
     }
-    env = build_skill_invocation_envelope(meta, "---\nname: x\n---\nDo thing.\n", "please")
+    env = SkillCatalog(SootheConfig()).build_invocation_envelope(
+        meta, "---\nname: x\n---\nDo thing.\n", "please"
+    )
     assert "Skill folder: /tmp/ignored" in env.skill_context
     assert "x" in env.prompt
     assert "Do thing" in env.prompt
@@ -71,18 +66,16 @@ def test_build_skill_invocation_envelope_includes_name() -> None:
 
 
 def test_format_slash_skill_invoke_line() -> None:
-    assert (
-        format_slash_skill_invoke_line("weather", "what is rain") == "/skill:weather what is rain"
-    )
-    assert format_slash_skill_invoke_line("remember", "") == "/skill:remember"
-    assert format_slash_skill_invoke_line("remember", "   ") == "/skill:remember"
+    assert SlashSkillLine.format("weather", "what is rain") == "/skill:weather what is rain"
+    assert SlashSkillLine.format("remember", "") == "/skill:remember"
+    assert SlashSkillLine.format("remember", "   ") == "/skill:remember"
 
 
 def test_parse_slash_skill_user_line() -> None:
-    assert parse_slash_skill_user_line("/skill:Weather please") == ("weather", "please")
-    assert parse_slash_skill_user_line("  /SKILL:alpha  ") == ("alpha", "")
-    assert parse_slash_skill_user_line("/skill:beta") == ("beta", "")
-    assert parse_slash_skill_user_line("not a skill") is None
+    assert SlashSkillLine.parse("/skill:Weather please") == ("weather", "please")
+    assert SlashSkillLine.parse("  /SKILL:alpha  ") == ("alpha", "")
+    assert SlashSkillLine.parse("/skill:beta") == ("beta", "")
+    assert SlashSkillLine.parse("not a skill") is None
 
 
 def test_try_expand_slash_skill_user_line(tmp_path: Path) -> None:
@@ -94,7 +87,7 @@ def test_try_expand_slash_skill_user_line(tmp_path: Path) -> None:
     )
     cfg = SootheConfig()
     cfg.skills = [str(d)]
-    env = try_expand_slash_skill_user_line("/skill:expand-me run it", cfg)
+    env = SkillCatalog(cfg).try_expand_slash_line("/skill:expand-me run it")
     assert env is not None
     assert "expand-me" in env.prompt
     assert "Do the thing" in env.prompt
@@ -105,7 +98,7 @@ def test_try_expand_slash_skill_user_line(tmp_path: Path) -> None:
     assert "Do the thing" in env.skill_context
     assert "User instruction" not in env.skill_context
     assert "run it" not in env.skill_context
-    assert try_expand_slash_skill_user_line("/skill:missing-skill x", cfg) is None
+    assert SkillCatalog(cfg).try_expand_slash_line("/skill:missing-skill x") is None
 
 
 def _write_skill(skill_dir: Path, name: str, description: str = "desc") -> Path:
@@ -125,7 +118,7 @@ def test_wire_entries_full_scan_labels_agents_source(tmp_path: Path) -> None:
 
     cfg = SootheConfig()
     cfg.skills = [str(agents_skill)]
-    rows = wire_entries_for_agent_config(cfg, workspace=str(ws))
+    rows = SkillCatalog(cfg, workspace=str(ws)).wire_entries()
     row = next(r for r in rows if r["name"] == "claude-skill")
     assert row["source"] == "agents"
 
@@ -137,7 +130,7 @@ def test_wire_entries_full_scan_labels_project_source(tmp_path: Path) -> None:
     _write_skill(ws / ".soothe" / "skills" / "local-skill", "local-skill")
 
     cfg = SootheConfig()
-    rows = wire_entries_for_agent_config(cfg, workspace=str(ws))
+    rows = SkillCatalog(cfg, workspace=str(ws)).wire_entries()
     row = next(r for r in rows if r["name"] == "local-skill")
     assert row["source"] == "project"
 
@@ -150,21 +143,21 @@ def test_wire_entries_full_scan_agents_vs_project_precedence(tmp_path: Path) -> 
     _write_skill(ws / ".soothe" / "skills" / "shared", "shared", "from-project")
 
     cfg = SootheConfig()
-    rows = wire_entries_for_agent_config(cfg, workspace=str(ws))
+    rows = SkillCatalog(cfg, workspace=str(ws)).wire_entries()
     row = next(r for r in rows if r["name"] == "shared")
     assert row["description"] == "from-project"
     assert row["source"] == "project"
 
 
 def test_resolve_skill_directory_labels_agents_source(tmp_path: Path) -> None:
-    """resolve_skill_directory labels .agents/skills as 'agents'."""
+    """resolve_skill labels .agents/skills as 'agents'."""
     ws = tmp_path / "project"
     ws.mkdir()
     agents_skill = _write_skill(ws / ".agents" / "skills" / "resolver", "resolver")
 
     cfg = SootheConfig()
     cfg.skills = [str(agents_skill)]
-    meta = resolve_skill_directory(cfg, "resolver", workspace=str(ws))
+    meta = SkillCatalog(cfg, workspace=str(ws)).resolve_skill("resolver")
     assert meta is not None
     assert meta["source"] == "agents"
 
@@ -198,7 +191,7 @@ class TestFrontmatterPathsAndWhenToUse:
         )
         cfg = SootheConfig()
         cfg.skills = [str(d)]
-        meta = resolve_skill_directory(cfg, "cond-skill")
+        meta = SkillCatalog(cfg).resolve_skill("cond-skill")
         assert meta is not None
         assert meta.get("paths") == ["*.ts"]
 
@@ -211,6 +204,6 @@ class TestFrontmatterPathsAndWhenToUse:
         )
         cfg = SootheConfig()
         cfg.skills = [str(d)]
-        meta = resolve_skill_directory(cfg, "wtu-skill")
+        meta = SkillCatalog(cfg).resolve_skill("wtu-skill")
         assert meta is not None
         assert meta.get("when_to_use") == "Use me for docs"

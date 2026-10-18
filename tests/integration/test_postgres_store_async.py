@@ -23,6 +23,44 @@ def _dsn_with_connect_timeout(dsn: str, seconds: int = 2) -> str:
     return f"{dsn}{sep}connect_timeout={seconds}"
 
 
+def _is_db_unavailable(exc: BaseException) -> bool:
+    """True when *exc* (or its cause chain) is a connectivity/timeout failure.
+
+    Only transport-level failures justify a skip; a genuine store bug (bad SQL,
+    serialization failure, …) must fail the suite instead of hiding as "no DB".
+    """
+    try:
+        import psycopg
+        from psycopg_pool import PoolClosed, PoolTimeout
+
+        transport: tuple[type[BaseException], ...] = (
+            psycopg.OperationalError,
+            psycopg.InterfaceError,
+            PoolClosed,
+            PoolTimeout,
+        )
+    except Exception:  # pragma: no cover - psycopg is a core dep
+        transport = ()
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (TimeoutError, OSError, ConnectionError)) or isinstance(
+            current, transport
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _skip_unavailable_or_raise(exc: BaseException) -> None:
+    """Skip when the database is unreachable; re-raise anything else."""
+    if not _is_db_unavailable(exc):
+        raise exc
+    pytest.skip(f"PostgreSQL database not available: {exc}")
+
+
 class TestPostgreSQLPersistStoreAsync:
     """Integration tests for PostgreSQLPersistStore async interface."""
 
@@ -51,10 +89,9 @@ class TestPostgreSQLPersistStoreAsync:
             await asyncio.wait_for(store.save("_connection_test", "test"), timeout=5.0)
             await asyncio.wait_for(store.delete("_connection_test"), timeout=5.0)
             yield store
-        except (TimeoutError, Exception) as e:
-            # Skip test if database connection fails or times out
+        except Exception as e:  # noqa: BLE001 -- connectivity vs. real bug decided below
             await store.close()
-            pytest.skip(f"PostgreSQL database not available: {e}")
+            _skip_unavailable_or_raise(e)
         finally:
             try:
                 await store.close()
@@ -194,8 +231,8 @@ class TestPostgreSQLPersistStoreAsync:
             try:
                 await asyncio.wait_for(store_a.save("_test_conn", "test"), timeout=5.0)
                 await store_a.delete("_test_conn")
-            except (TimeoutError, Exception) as e:
-                pytest.skip(f"PostgreSQL database not available: {e}")
+            except Exception as e:  # noqa: BLE001 -- connectivity vs. real bug decided below
+                _skip_unavailable_or_raise(e)
 
             await store_a.save("shared_key", "value_a")
             await store_b.save("shared_key", "value_b")
@@ -244,8 +281,8 @@ class TestPostgreSQLPersistStoreAsync:
             # Test connection with timeout
             try:
                 await asyncio.wait_for(store.save("init_test", "data"), timeout=5.0)
-            except (TimeoutError, Exception) as e:
-                pytest.skip(f"PostgreSQL database not available: {e}")
+            except Exception as e:  # noqa: BLE001 -- connectivity vs. real bug decided below
+                _skip_unavailable_or_raise(e)
 
             # Pool should now be initialized
             assert store._pool is not None

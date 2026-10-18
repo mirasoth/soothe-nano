@@ -17,7 +17,7 @@ from soothe_nano.filesystem.discovery_hints import (
     format_glob_timeout_error,
 )
 from soothe_nano.middleware.filesystem import SootheFilesystemMiddleware
-from soothe_nano.workspace.workspace_filesystem import get_workspace_backend
+from soothe_nano.workspace.workspace_filesystem import WorkspaceBackendRegistry
 
 
 def test_glob_tool_description_includes_discovery_fallback() -> None:
@@ -59,7 +59,7 @@ def test_deepagents_glob_uses_soothe_backend(tmp_path: Path) -> None:
     (tmp_path / "alpha.txt").write_text("x", encoding="utf-8")
 
     def factory(ws: str) -> object:
-        return get_workspace_backend(Path(ws), virtual_mode=True)
+        return WorkspaceBackendRegistry.get(Path(ws), virtual_mode=True)
 
     backend = factory(str(tmp_path))
     middleware = SootheFilesystemMiddleware(

@@ -42,11 +42,11 @@ def create_persist_store(
         pool_timing = None
         if config is not None:
             from soothe_nano.persistence.postgres_pool_lifecycle import (
-                postgres_pool_timing_from_config,
+                PostgresPoolLifecycle,
             )
 
             pool_size = config.persistence.postgres.metadata_pool_size
-            pool_timing = postgres_pool_timing_from_config(config, max_size=pool_size)
+            pool_timing = PostgresPoolLifecycle.timing_from_config(config, max_size=pool_size)
 
         if shared_pool is not None:
             return PostgreSQLPersistStore(

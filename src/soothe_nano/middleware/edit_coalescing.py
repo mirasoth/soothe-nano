@@ -20,6 +20,8 @@ from langchain_core.messages import ToolMessage
 from soothe_deepagents.backends.edit_locks import FileEditLockRegistry
 from soothe_deepagents.backends.protocol import BatchedEditOperation
 
+from soothe_nano.middleware._scope import request_scope_id
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
@@ -34,6 +36,10 @@ DEFAULT_DETECTION_WINDOW_MS: int = 50
 # Default staging buffer limits
 DEFAULT_STAGING_BUFFER_MAX_ENTRIES: int = 64
 DEFAULT_STAGING_BUFFER_EVICTION_POLICY: str = "reject_newest"
+
+# Default cap for one file's batched dispatch (matches the tool-timeout
+# middleware default; batched writes bypass that middleware, see _builder).
+DEFAULT_BATCH_DISPATCH_TIMEOUT_SECONDS: float = 60.0
 
 # Edit tools that are coalesced
 EDIT_TOOL_NAMES: frozenset[str] = frozenset(
@@ -126,11 +132,15 @@ class EditCoalescingConfig:
         staging_buffer_eviction_policy: Policy when the staging buffer
             exceeds max entries. `reject_newest` rejects the incoming
             entry (default); `evict_oldest` drops the oldest entry.
+        batch_dispatch_timeout_seconds: Cap for one file's batched
+            dispatch. Batched writes call the backend directly and bypass
+            the inner tool-timeout middleware, so this is the only guard.
     """
 
     detection_window_ms: int = DEFAULT_DETECTION_WINDOW_MS
     staging_buffer_max_entries: int = DEFAULT_STAGING_BUFFER_MAX_ENTRIES
     staging_buffer_eviction_policy: str = DEFAULT_STAGING_BUFFER_EVICTION_POLICY
+    batch_dispatch_timeout_seconds: float = DEFAULT_BATCH_DISPATCH_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
         """Validate config fields after initialization."""
@@ -142,6 +152,11 @@ class EditCoalescingConfig:
             raise ValueError(
                 f"staging_buffer_max_entries must be positive, "
                 f"got {self.staging_buffer_max_entries}"
+            )
+        if self.batch_dispatch_timeout_seconds <= 0:
+            raise ValueError(
+                "batch_dispatch_timeout_seconds must be positive, "
+                f"got {self.batch_dispatch_timeout_seconds}"
             )
         if self.staging_buffer_eviction_policy not in _VALID_EVICTION_POLICIES:
             raise ValueError(
@@ -265,10 +280,12 @@ class EditCoalescingMiddleware(AgentMiddleware):
         self._config = config or EditCoalescingConfig()
 
         self._detection_window_ms = self._config.detection_window_ms
-        self._pending_edits: dict[str, list[PendingEdit]] = {}
-        # Staging buffer: path -> list of (old_string, new_string, replace_all)
-        self._staging_buffer: dict[str, list[StringReplacement]] = {}
-        self._window_task: asyncio.Task[None] | None = None
+        # Per-scope (thread_id:checkpoint_ns) pending state: concurrent graph
+        # threads share this middleware instance and must not co-mingle edits.
+        self._pending_edits: dict[str, dict[str, list[PendingEdit]]] = {}
+        # Staging buffer: scope -> (path -> list of (old_string, new_string, replace_all))
+        self._staging_buffer: dict[str, dict[str, list[StringReplacement]]] = {}
+        self._window_tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
         self._lock_registry = lock_registry or FileEditLockRegistry()
 
@@ -286,14 +303,14 @@ class EditCoalescingMiddleware(AgentMiddleware):
 
     def _get_context_backend(self) -> Any | None:
         """Get cached backend for the current workspace context."""
-        from soothe_nano.workspace.workspace_filesystem import get_workspace_backend
-        from soothe_nano.workspace.workspace_runtime import get_workspace_context
+        from soothe_nano.workspace.workspace_filesystem import WorkspaceBackendRegistry
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
-        ctx = get_workspace_context()
+        ctx = WorkspaceRuntime.get()
         if ctx.workspace is None:
             return None
 
-        return get_workspace_backend(
+        return WorkspaceBackendRegistry.get(
             workspace=ctx.workspace,
             virtual_mode=ctx.virtual_mode,
         )
@@ -336,6 +353,7 @@ class EditCoalescingMiddleware(AgentMiddleware):
             return await handler(request)
 
         tool_call_id = str(tool_call.get("id", ""))
+        scope = request_scope_id(request)
 
         # edit_file uses the string-replacement staging buffer
         if tool_name == "edit_file":
@@ -358,7 +376,8 @@ class EditCoalescingMiddleware(AgentMiddleware):
 
             async with self._lock:
                 # Check staging buffer capacity / eviction
-                entries = self._staging_buffer.setdefault(file_path, [])
+                scope_staging = self._staging_buffer.setdefault(scope, {})
+                entries = scope_staging.setdefault(file_path, [])
                 if len(entries) >= self._config.staging_buffer_max_entries:
                     policy = self._config.staging_buffer_eviction_policy
                     if policy == "reject_newest":
@@ -392,13 +411,15 @@ class EditCoalescingMiddleware(AgentMiddleware):
                 )
 
                 # Also track in pending_edits so _process_after_window picks it up
-                if file_path not in self._pending_edits:
-                    self._pending_edits[file_path] = []
-                self._pending_edits[file_path].append(pending_edit)
+                scope_pending = self._pending_edits.setdefault(scope, {})
+                scope_pending.setdefault(file_path, []).append(pending_edit)
 
                 # Start detection window if not running
-                if self._window_task is None:
-                    self._window_task = asyncio.create_task(self._process_after_window())
+                task = self._window_tasks.get(scope)
+                if task is None or task.done():
+                    self._window_tasks[scope] = asyncio.create_task(
+                        self._process_after_window(scope)
+                    )
 
             # Wait for result (filled by batch execution)
             return await result_future
@@ -419,27 +440,34 @@ class EditCoalescingMiddleware(AgentMiddleware):
         )
 
         async with self._lock:
-            if file_path not in self._pending_edits:
-                self._pending_edits[file_path] = []
-            self._pending_edits[file_path].append(pending_edit)
+            scope_pending = self._pending_edits.setdefault(scope, {})
+            scope_pending.setdefault(file_path, []).append(pending_edit)
 
             # Start detection window if not running
-            if self._window_task is None:
-                self._window_task = asyncio.create_task(self._process_after_window())
+            task = self._window_tasks.get(scope)
+            if task is None or task.done():
+                self._window_tasks[scope] = asyncio.create_task(self._process_after_window(scope))
 
         # Wait for result (filled by batch execution)
         return await result_future
 
-    async def _process_after_window(self) -> None:
-        """Process pending edits after detection window closes."""
-        await asyncio.sleep(self._detection_window_ms / 1000.0)
+    async def _process_after_window(self, scope: str) -> None:
+        """Process pending edits after detection window closes.
+
+        Fast path: after one event-loop tick, if only a single edit is
+        pending, skip the full detection wait — batching cannot help a
+        singleton.
+        """
+        await asyncio.sleep(0)
+        async with self._lock:
+            solo = sum(len(e) for e in self._pending_edits.get(scope, {}).values()) <= 1
+        if not solo:
+            await asyncio.sleep(self._detection_window_ms / 1000.0)
 
         async with self._lock:
-            pending = self._pending_edits.copy()
-            self._pending_edits.clear()
-            staging = self._staging_buffer.copy()
-            self._staging_buffer.clear()
-            self._window_task = None
+            pending = self._pending_edits.pop(scope, {})
+            staging = self._staging_buffer.pop(scope, {})
+            self._window_tasks.pop(scope, None)
 
         if not pending:
             return
@@ -450,17 +478,60 @@ class EditCoalescingMiddleware(AgentMiddleware):
             string_edits = [e for e in edits if e.tool_name == "edit_file"]
             line_edits = [e for e in edits if e.tool_name != "edit_file"]
 
-            # Dispatch string-replacement batch if any
-            if string_edits:
-                if len(string_edits) == 1:
-                    await self._dispatch_single_string_edit(string_edits[0])
-                else:
-                    replacements = staging.get(file_path, [])
-                    await self._dispatch_string_replacements(file_path, string_edits, replacements)
+            dispatch_error: str | None = None
+            try:
+                if string_edits:
+                    if len(string_edits) == 1:
+                        # Pass-through to the handler chain: the inner
+                        # tool-timeout middleware applies here (including
+                        # per-tool overrides), so no outer cap.
+                        await self._dispatch_single_string_edit(string_edits[0])
+                    else:
+                        # Batched writes call the backend directly and bypass
+                        # the inner tool-timeout middleware — this is the only
+                        # guard for that path.
+                        async with asyncio.timeout(self._config.batch_dispatch_timeout_seconds):
+                            replacements = staging.get(file_path, [])
+                            await self._dispatch_string_replacements(
+                                file_path, string_edits, replacements
+                            )
 
-            # Dispatch line-based batch if any
-            if line_edits:
-                await self._dispatch_batched_edits(file_path, line_edits)
+                # Dispatch line-based batch if any
+                if line_edits:
+                    async with asyncio.timeout(self._config.batch_dispatch_timeout_seconds):
+                        await self._dispatch_batched_edits(file_path, line_edits)
+            except TimeoutError:
+                dispatch_error = (
+                    "timed out after "
+                    f"{self._config.batch_dispatch_timeout_seconds:.0f}s; "
+                    "file state is unknown — re-read before editing."
+                )
+                logger.warning(
+                    "Batched edit dispatch timed out for %s after %.0fs",
+                    file_path,
+                    self._config.batch_dispatch_timeout_seconds,
+                )
+            except Exception as exc:
+                # One file's dispatch failure must not leave that file's — or
+                # any other file's — pending edits hanging forever.
+                dispatch_error = f"failed: {exc}. File state is unknown — re-read before editing."
+                logger.exception("Batched edit dispatch failed for %s", file_path)
+            finally:
+                # Hard guarantee: every pending future in this file batch is
+                # resolved, whatever happened during dispatch.
+                for edit in (*string_edits, *line_edits):
+                    if not edit.result_future.done():
+                        edit.result_future.set_result(
+                            ToolMessage(
+                                content=(
+                                    f"Error: batched edit dispatch to {file_path} "
+                                    + (dispatch_error or "did not resolve (internal error).")
+                                ),
+                                tool_call_id=edit.tool_call_id,
+                                name=edit.tool_name,
+                                status="error",
+                            )
+                        )
 
     async def _dispatch_single_string_edit(self, edit: PendingEdit) -> None:
         """Pass a lone edit_file call through to the direct handler."""

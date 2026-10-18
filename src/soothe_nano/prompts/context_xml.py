@@ -12,8 +12,6 @@ from soothe_nano.utils.text_preview import preview_first
 if TYPE_CHECKING:
     from soothe_nano.config import SootheConfig
 
-RFC104_CONTEXT_XML_VERSION = "1"
-
 
 def _xml_text(value: object) -> str:
     text = "" if value is None else str(value)
@@ -22,40 +20,6 @@ def _xml_text(value: object) -> str:
 
 def _xml_attr(value: object) -> str:
     return _xml_text(value).replace('"', "&quot;")
-
-
-def build_soothe_environment_section(*, model: str) -> str:
-    """Build nested ENVIRONMENT XML block (no SOOTHE_ prefix).
-
-    Optimized for prompt caching - removed version attribute.
-
-    Args:
-        model: Resolved default model id (e.g. from `config.resolve_model` for the default role).
-
-    Returns:
-        Single XML section string.
-    """
-    from soothe_deepagents.backends.grep_search import is_rg_available
-
-    from soothe_nano.config.models import get_knowledge_cutoff
-
-    platform_name = platform_module.system()
-    shell = os.environ.get("SHELL", "unknown")
-    os_version = platform_module.platform()
-    cutoff = get_knowledge_cutoff(model)
-    search_backend = "ripgrep" if is_rg_available() else "python_fallback"
-    inner = "\n".join(
-        [
-            f"<platform>{_xml_text(platform_name)}</platform>",
-            f"<shell>{_xml_text(shell)}</shell>",
-            f"<os_version>{_xml_text(os_version)}</os_version>",
-            f"<model>{_xml_text(model)}</model>",
-            f"<knowledge_cutoff>{_xml_text(cutoff)}</knowledge_cutoff>",
-            f"<search_backend>{_xml_text(search_backend)}</search_backend>",
-        ]
-    )
-    # Removed version attribute for cache optimization.
-    return f"<ENVIRONMENT>\n{inner}\n</ENVIRONMENT>"
 
 
 def _safe_list_dir_names(root: Path, *, max_entries: int) -> str | None:
@@ -85,144 +49,169 @@ def _readme_excerpt(root: Path, *, max_chars: int) -> str | None:
     return None
 
 
-def build_soothe_workspace_section(
-    workspace: Path | None,
-    *,
-    include_layout_preview: bool = False,
-    max_layout_entries: int = 40,
-    include_readme_excerpt: bool = False,
-    readme_max_chars: int = 500,
-) -> str:
-    """Build nested WORKSPACE XML block (no SOOTHE_ prefix).
+class ContextXml:
+    """Nested-XML context section builders (cache-aligned prompt prefix)."""
 
-    Optimized for prompt caching - omits `recent_commits` in this section.
+    @classmethod
+    def build_environment(cls, *, model: str) -> str:
+        """Build nested ENVIRONMENT XML block (no SOOTHE_ prefix).
 
-    Args:
-        workspace: Project root; when None, the process current working directory is used.
-        include_layout_preview: When True, add capped top-level name list.
-        max_layout_entries: Cap for layout preview.
-        include_readme_excerpt: When True, add short README snippet if present.
-        readme_max_chars: Max characters for README excerpt.
+        Optimized for prompt caching - removed version attribute.
 
-    Returns:
-        Single XML section string.
-    """
-    root = workspace or Path.cwd()
-    cwd = str(root.resolve())
-    is_git = (root / ".git").exists()
-    present = "true" if is_git else "false"
+        Args:
+            model: Resolved default model id (e.g. from `config.resolve_model` for the default role).
 
-    lines: list[str] = [
-        f"<root>{_xml_text(cwd)}</root>",
-        f'<vcs present="{present}"/>',
-    ]
+        Returns:
+            Single XML section string.
+        """
+        from soothe_deepagents.backends.grep_search import is_rg_available
 
-    if include_layout_preview and root.is_dir():
-        preview = _safe_list_dir_names(root, max_entries=max_layout_entries)
-        if preview:
-            lines.append(
-                f'<layout_preview max_entries="{max_layout_entries}">{_xml_text(preview)}</layout_preview>'
+        from soothe_nano.config.models import get_knowledge_cutoff
+
+        platform_name = platform_module.system()
+        shell = os.environ.get("SHELL", "unknown")
+        os_version = platform_module.platform()
+        cutoff = get_knowledge_cutoff(model)
+        search_backend = "ripgrep" if is_rg_available() else "python_fallback"
+        inner = "\n".join(
+            [
+                f"<platform>{_xml_text(platform_name)}</platform>",
+                f"<shell>{_xml_text(shell)}</shell>",
+                f"<os_version>{_xml_text(os_version)}</os_version>",
+                f"<model>{_xml_text(model)}</model>",
+                f"<knowledge_cutoff>{_xml_text(cutoff)}</knowledge_cutoff>",
+                f"<search_backend>{_xml_text(search_backend)}</search_backend>",
+            ]
+        )
+        # Removed version attribute for cache optimization.
+        return f"<ENVIRONMENT>\n{inner}\n</ENVIRONMENT>"
+
+    @classmethod
+    def build_workspace(
+        cls,
+        workspace: Path | None,
+        *,
+        include_layout_preview: bool = False,
+        max_layout_entries: int = 40,
+        include_readme_excerpt: bool = False,
+        readme_max_chars: int = 500,
+    ) -> str:
+        """Build nested WORKSPACE XML block (no SOOTHE_ prefix).
+
+        Optimized for prompt caching - omits `recent_commits` in this section.
+
+        Args:
+            workspace: Project root; when None, the process current working directory is used.
+            include_layout_preview: When True, add capped top-level name list.
+            max_layout_entries: Cap for layout preview.
+            include_readme_excerpt: When True, add short README snippet if present.
+            readme_max_chars: Max characters for README excerpt.
+
+        Returns:
+            Single XML section string.
+        """
+        root = workspace or Path.cwd()
+        cwd = str(root.resolve())
+        is_git = (root / ".git").exists()
+        present = "true" if is_git else "false"
+
+        lines: list[str] = [
+            f"<root>{_xml_text(cwd)}</root>",
+            f'<vcs present="{present}"/>',
+        ]
+
+        if include_layout_preview and root.is_dir():
+            preview = _safe_list_dir_names(root, max_entries=max_layout_entries)
+            if preview:
+                lines.append(
+                    f'<layout_preview max_entries="{max_layout_entries}">{_xml_text(preview)}</layout_preview>'
+                )
+
+        if include_readme_excerpt and root.is_dir():
+            excerpt = _readme_excerpt(root, max_chars=readme_max_chars)
+            if excerpt:
+                lines.append(f"<readme_excerpt>{_xml_text(excerpt)}</readme_excerpt>")
+
+        inner = "\n".join(lines)
+        # Removed version attribute for cache optimization.
+        return f"<WORKSPACE>\n{inner}\n</WORKSPACE>"
+
+    @classmethod
+    def build_thread(cls, thread_context: dict[str, Any]) -> str:
+        """Build SOOTHE_THREAD XML block from runner thread dict.
+
+        Optimized for prompt caching - removed version attribute.
+        """
+        thread_id = thread_context.get("thread_id", "unknown")
+        turns = thread_context.get("conversation_turns", 0)
+        plan = thread_context.get("current_plan")
+
+        parts: list[str] = [
+            f"<thread_id>{_xml_text(thread_id)}</thread_id>",
+            f"<conversation_turns>{int(turns)}</conversation_turns>",
+        ]
+        if plan:
+            parts.append(f"<current_plan>{_xml_text(preview_first(str(plan), 100))}</current_plan>")
+        inner = "\n".join(parts)
+        # Removed version attribute for cache optimization.
+        return f"<SOOTHE_THREAD>\n{inner}\n</SOOTHE_THREAD>"
+
+    @classmethod
+    def build_protocols(cls, protocol_summary: dict[str, Any]) -> str:
+        """Build SOOTHE_PROTOCOLS XML block, or empty string when nothing is active.
+
+        Optimized for prompt caching - removed version attribute.
+        """
+        entries: list[str] = []
+        proto_names = ["memory", "planner", "policy"]
+        for proto_name in proto_names:
+            proto_info = protocol_summary.get(proto_name)
+            if not proto_info:
+                continue
+            proto_type = proto_info.get("type", "unknown")
+            stats = proto_info.get("stats", "")
+            stat_attr = f' stats="{_xml_attr(stats)}"' if stats else ""
+            entries.append(
+                f'<protocol id="{_xml_attr(proto_name)}" type="{_xml_attr(proto_type)}"{stat_attr}/>'
             )
+        if not entries:
+            return ""
+        inner = "\n".join(entries)
+        # Removed version attribute for cache optimization.
+        return f"<SOOTHE_PROTOCOLS>\n{inner}\n</SOOTHE_PROTOCOLS>"
 
-    if include_readme_excerpt and root.is_dir():
-        excerpt = _readme_excerpt(root, max_chars=readme_max_chars)
-        if excerpt:
-            lines.append(f"<readme_excerpt>{_xml_text(excerpt)}</readme_excerpt>")
-
-    inner = "\n".join(lines)
-    # Removed version attribute for cache optimization.
-    return f"<WORKSPACE>\n{inner}\n</WORKSPACE>"
-
-
-def build_soothe_thread_section(thread_context: dict[str, Any]) -> str:
-    """Build SOOTHE_THREAD XML block from runner thread dict.
-
-    Optimized for prompt caching - removed version attribute.
-    """
-    thread_id = thread_context.get("thread_id", "unknown")
-    turns = thread_context.get("conversation_turns", 0)
-    plan = thread_context.get("current_plan")
-
-    parts: list[str] = [
-        f"<thread_id>{_xml_text(thread_id)}</thread_id>",
-        f"<conversation_turns>{int(turns)}</conversation_turns>",
-    ]
-    if plan:
-        parts.append(f"<current_plan>{_xml_text(preview_first(str(plan), 100))}</current_plan>")
-    inner = "\n".join(parts)
-    # Removed version attribute for cache optimization.
-    return f"<SOOTHE_THREAD>\n{inner}\n</SOOTHE_THREAD>"
-
-
-def build_soothe_protocols_section(protocol_summary: dict[str, Any]) -> str:
-    """Build SOOTHE_PROTOCOLS XML block, or empty string when nothing is active.
-
-    Optimized for prompt caching - removed version attribute.
-    """
-    entries: list[str] = []
-    proto_names = ["memory", "planner", "policy"]
-    for proto_name in proto_names:
-        proto_info = protocol_summary.get(proto_name)
-        if not proto_info:
-            continue
-        proto_type = proto_info.get("type", "unknown")
-        stats = proto_info.get("stats", "")
-        stat_attr = f' stats="{_xml_attr(stats)}"' if stats else ""
-        entries.append(
-            f'<protocol id="{_xml_attr(proto_name)}" type="{_xml_attr(proto_type)}"{stat_attr}/>'
+    @classmethod
+    def build_complexity_sections(
+        cls,
+        *,
+        config: SootheConfig,
+        complexity: Literal["minimal", "simple", "medium", "complex"],
+        state: dict[str, Any],
+        include_workspace_extras: bool = False,
+    ) -> list[str]:
+        """Ordered XML blocks for system prompt (excludes static base prompt and date line)."""
+        if complexity == "minimal":
+            return []
+        model = config.resolve_model("default")
+        sections: list[str] = [cls.build_environment(model=model)]
+        workspace_raw = state.get("workspace")
+        workspace_path = Path(str(workspace_raw)).expanduser().resolve() if workspace_raw else None
+        sections.append(
+            cls.build_workspace(
+                workspace_path,
+                include_layout_preview=include_workspace_extras,
+                include_readme_excerpt=include_workspace_extras,
+            )
         )
-    if not entries:
-        return ""
-    inner = "\n".join(entries)
-    # Removed version attribute for cache optimization.
-    return f"<SOOTHE_PROTOCOLS>\n{inner}\n</SOOTHE_PROTOCOLS>"
+        if complexity == "complex":
+            thread_context = state.get("thread_context") or {}
+            if thread_context:
+                sections.append(cls.build_thread(thread_context))
+            protocol_summary = state.get("protocol_summary") or {}
+            proto = cls.build_protocols(protocol_summary)
+            if proto:
+                sections.append(proto)
+        return sections
 
 
-def build_shared_environment_workspace_prefix(
-    config: SootheConfig,
-    workspace: str | None,
-    *,
-    include_workspace_extras: bool = False,
-) -> str:
-    """ENVIRONMENT + WORKSPACE prefix for planners and Reason prompts."""
-    model = config.resolve_model("default")
-    env = build_soothe_environment_section(model=model)
-    ws_path = Path(workspace).expanduser().resolve() if workspace else None
-    ws = build_soothe_workspace_section(
-        ws_path,
-        include_layout_preview=include_workspace_extras,
-        include_readme_excerpt=include_workspace_extras,
-    )
-    return f"{env}\n\n{ws}\n"
-
-
-def build_context_sections_for_complexity(
-    *,
-    config: SootheConfig,
-    complexity: Literal["minimal", "simple", "medium", "complex"],
-    state: dict[str, Any],
-    include_workspace_extras: bool = False,
-) -> list[str]:
-    """Ordered XML blocks for system prompt (excludes static base prompt and date line)."""
-    if complexity == "minimal":
-        return []
-    model = config.resolve_model("default")
-    sections: list[str] = [build_soothe_environment_section(model=model)]
-    workspace_raw = state.get("workspace")
-    workspace_path = Path(str(workspace_raw)).expanduser().resolve() if workspace_raw else None
-    sections.append(
-        build_soothe_workspace_section(
-            workspace_path,
-            include_layout_preview=include_workspace_extras,
-            include_readme_excerpt=include_workspace_extras,
-        )
-    )
-    if complexity == "complex":
-        thread_context = state.get("thread_context") or {}
-        if thread_context:
-            sections.append(build_soothe_thread_section(thread_context))
-        protocol_summary = state.get("protocol_summary") or {}
-        proto = build_soothe_protocols_section(protocol_summary)
-        if proto:
-            sections.append(proto)
-    return sections
+__all__ = ["ContextXml"]

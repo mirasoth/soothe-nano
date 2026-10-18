@@ -1,7 +1,7 @@
 """Nano agent with tools example.
 
 This example demonstrates a nano agent WITH tools:
-- Built-in tools from config (execution, file_ops, etc.)
+- Built-in tools from config (shell, web search, etc.)
 - Custom ad-hoc tools defined inline
 - Tool execution and results
 

@@ -61,8 +61,7 @@ def create_deep_research_subagent(
         "description": (
             "deep_research: iterative public web research with URL crawling and adaptive "
             "report generation. Use for external facts, comparisons, how-tos, and industry "
-            "landscape. Do NOT use for local codebase, repository files, or academic "
-            "literature."
+            "landscape. Do NOT use for local codebase or repository files."
         ),
         "runnable": runnable,
     }

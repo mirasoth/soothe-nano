@@ -320,9 +320,9 @@ class TestStagingBufferCoalescing:
         # Give tasks time to register
         await asyncio.sleep(0.05)
 
-        # Both should be in the staging buffer
-        assert "/tmp/test.txt" in middleware._staging_buffer
-        entries = middleware._staging_buffer["/tmp/test.txt"]
+        # Both should be in the staging buffer (mock requests share scope ":")
+        assert "/tmp/test.txt" in middleware._staging_buffer[":"]
+        entries = middleware._staging_buffer[":"]["/tmp/test.txt"]
         assert len(entries) == 2
         assert entries[0].tool_call_id == "call-1"
         assert entries[1].tool_call_id == "call-2"
@@ -505,10 +505,7 @@ class TestStagingBufferFlush:
 
         await middleware.awrap_tool_call(request, _make_async_handler("pass-through"))
 
-        assert (
-            file_path not in middleware._staging_buffer
-            or len(middleware._staging_buffer.get(file_path, [])) == 0
-        )
+        assert all(file_path not in files for files in middleware._staging_buffer.values())
 
     @pytest.mark.asyncio
     async def test_buffer_cleared_on_flush(self) -> None:
@@ -518,33 +515,39 @@ class TestStagingBufferFlush:
         )
 
         # Manually populate staging buffer and pending edits (two edits → batch path)
-        middleware._staging_buffer["/fake.txt"] = [
-            StringReplacement("old", "new", False, "call-1"),
-            StringReplacement("other", "OTHER", False, "call-2"),
-        ]
+        middleware._staging_buffer[":"] = {
+            "/fake.txt": [
+                StringReplacement("old", "new", False, "call-1"),
+                StringReplacement("other", "OTHER", False, "call-2"),
+            ]
+        }
         loop = asyncio.get_running_loop()
         future1: asyncio.Future = loop.create_future()
         future2: asyncio.Future = loop.create_future()
-        middleware._pending_edits["/fake.txt"] = [
-            MagicMock(
-                tool_call_id="call-1",
-                tool_name="edit_file",
-                file_path="/fake.txt",
-                args={"old_string": "old", "new_string": "new"},
-                result_future=future1,
-                handler=_make_async_handler(),
-                request=_make_edit_file_request("/fake.txt", "old", "new", call_id="call-1"),
-            ),
-            MagicMock(
-                tool_call_id="call-2",
-                tool_name="edit_file",
-                file_path="/fake.txt",
-                args={"old_string": "other", "new_string": "OTHER"},
-                result_future=future2,
-                handler=_make_async_handler(),
-                request=_make_edit_file_request("/fake.txt", "other", "OTHER", call_id="call-2"),
-            ),
-        ]
+        middleware._pending_edits[":"] = {
+            "/fake.txt": [
+                MagicMock(
+                    tool_call_id="call-1",
+                    tool_name="edit_file",
+                    file_path="/fake.txt",
+                    args={"old_string": "old", "new_string": "new"},
+                    result_future=future1,
+                    handler=_make_async_handler(),
+                    request=_make_edit_file_request("/fake.txt", "old", "new", call_id="call-1"),
+                ),
+                MagicMock(
+                    tool_call_id="call-2",
+                    tool_name="edit_file",
+                    file_path="/fake.txt",
+                    args={"old_string": "other", "new_string": "OTHER"},
+                    result_future=future2,
+                    handler=_make_async_handler(),
+                    request=_make_edit_file_request(
+                        "/fake.txt", "other", "OTHER", call_id="call-2"
+                    ),
+                ),
+            ]
+        }
 
         # Run the window processor (mock _dispatch_string_replacements to avoid FS)
         call_dispatch = False
@@ -568,7 +571,7 @@ class TestStagingBufferFlush:
 
         middleware._dispatch_string_replacements = mock_dispatch  # type: ignore[assignment]
 
-        await middleware._process_after_window()
+        await middleware._process_after_window(":")
 
         assert call_dispatch is True
         assert len(middleware._staging_buffer) == 0
@@ -640,7 +643,7 @@ class TestStagingBufferEviction:
         assert "buffer full" in result3.content.lower() or "full" in result3.content.lower()
 
         # Buffer should still have only 2 entries
-        entries = middleware._staging_buffer.get("/test.txt", [])
+        entries = middleware._staging_buffer.get(":", {}).get("/test.txt", [])
         assert len(entries) == 2
 
         # Clean up
@@ -677,7 +680,7 @@ class TestStagingBufferEviction:
         task3 = asyncio.create_task(middleware.awrap_tool_call(req3, _make_async_handler()))
         await asyncio.sleep(0.02)
 
-        entries = middleware._staging_buffer.get("/test.txt", [])
+        entries = middleware._staging_buffer.get(":", {}).get("/test.txt", [])
         assert len(entries) == 2
         # The oldest (c1) should be evicted, c2 and c3 should remain
         call_ids = [e.tool_call_id for e in entries]
@@ -716,7 +719,7 @@ class TestStagingBufferEviction:
 
         await asyncio.sleep(0.05)
 
-        entries = middleware._staging_buffer.get("/test.txt", [])
+        entries = middleware._staging_buffer.get(":", {}).get("/test.txt", [])
         assert len(entries) == 3
 
         for t in tasks:
@@ -820,6 +823,127 @@ class TestBatchEditErrorSignals:
             assert "ALPHA" in f.read()
 
 
+def _stub_pending_edit(
+    call_id: str,
+    file_path: str,
+    result_future: asyncio.Future,
+    handler: Callable[[Any], Awaitable[ToolMessage]],
+) -> MagicMock:
+    """Build a PendingEdit-shaped mock for direct _process_after_window tests."""
+    return MagicMock(
+        tool_call_id=call_id,
+        tool_name="edit_file",
+        file_path=file_path,
+        args={},
+        result_future=result_future,
+        handler=handler,
+        request=_make_edit_file_request(file_path, "old", "new", call_id=call_id),
+    )
+
+
+class TestBatchDispatchGuards:
+    """Timeout and failure isolation for the per-file batched dispatch loop."""
+
+    @pytest.mark.asyncio
+    async def test_singleton_dispatch_not_capped_by_batch_timeout(self) -> None:
+        """A lone edit passes through the handler chain; the batch timeout
+        (which would otherwise override the inner per-tool timeout config)
+        must not apply to it."""
+
+        async def slow_handler(request: Any) -> ToolMessage:
+            await asyncio.sleep(0.15)
+            return ToolMessage(content="ok after slow handler", tool_call_id=call_id)
+
+        middleware = EditCoalescingMiddleware(
+            config=EditCoalescingConfig(
+                detection_window_ms=10,
+                batch_dispatch_timeout_seconds=0.05,
+            ),
+        )
+        call_id = "call-single"
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        middleware._pending_edits[":"] = {
+            "/single.txt": [_stub_pending_edit(call_id, "/single.txt", future, slow_handler)],
+        }
+
+        await middleware._process_after_window(":")
+
+        result = future.result()
+        assert result.content == "ok after slow handler"
+        assert result.status != "error"
+
+    @pytest.mark.asyncio
+    async def test_batch_dispatch_timeout_resolves_futures(self) -> None:
+        """A hung batched write must resolve every pending future with an
+        error result instead of hanging the callers."""
+
+        async def hung_dispatch(file_path, edits, replacements):  # type: ignore[no-untyped-def]
+            await asyncio.sleep(30)
+
+        middleware = EditCoalescingMiddleware(
+            config=EditCoalescingConfig(
+                detection_window_ms=10,
+                batch_dispatch_timeout_seconds=0.05,
+            ),
+        )
+        loop = asyncio.get_running_loop()
+        futures = [loop.create_future() for _ in range(2)]
+        middleware._pending_edits[":"] = {
+            "/slow.txt": [
+                _stub_pending_edit("c1", "/slow.txt", futures[0], _make_async_handler()),
+                _stub_pending_edit("c2", "/slow.txt", futures[1], _make_async_handler()),
+            ],
+        }
+        middleware._dispatch_string_replacements = hung_dispatch  # type: ignore[assignment]
+
+        await middleware._process_after_window(":")
+
+        for future in futures:
+            result = future.result()
+            assert result.status == "error"
+            assert "timed out" in result.content
+
+    @pytest.mark.asyncio
+    async def test_dispatch_failure_isolated_per_file(self) -> None:
+        """A dispatch exception for one file must not hang (or corrupt) the
+        remaining files' pending edits in the same window batch."""
+
+        async def flaky_dispatch(file_path, edits, replacements):  # type: ignore[no-untyped-def]
+            if file_path == "/a.txt":
+                raise RuntimeError("disk exploded")
+            for edit in edits:
+                edit.result_future.set_result(
+                    ToolMessage(content="ok", tool_call_id=edit.tool_call_id)
+                )
+
+        middleware = EditCoalescingMiddleware(
+            config=EditCoalescingConfig(detection_window_ms=10),
+        )
+        loop = asyncio.get_running_loop()
+        futures = [loop.create_future() for _ in range(4)]
+        middleware._pending_edits[":"] = {
+            "/a.txt": [
+                _stub_pending_edit("a1", "/a.txt", futures[0], _make_async_handler()),
+                _stub_pending_edit("a2", "/a.txt", futures[1], _make_async_handler()),
+            ],
+            "/b.txt": [
+                _stub_pending_edit("b1", "/b.txt", futures[2], _make_async_handler()),
+                _stub_pending_edit("b2", "/b.txt", futures[3], _make_async_handler()),
+            ],
+        }
+        middleware._dispatch_string_replacements = flaky_dispatch  # type: ignore[assignment]
+
+        await middleware._process_after_window(":")
+
+        for future in futures[:2]:
+            result = future.result()
+            assert result.status == "error"
+            assert "disk exploded" in result.content
+        for future in futures[2:]:
+            assert future.result().content == "ok"
+
+
 class TestWorkspaceBackendIntegration:
     """Tests for workspace-context backend usage in batched edit paths."""
 
@@ -846,31 +970,28 @@ class TestWorkspaceBackendIntegration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: object,
     ) -> None:
-        from soothe_nano.workspace.workspace_runtime import (
-            reset_workspace_context,
-            set_workspace_context,
-        )
+        from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
         middleware = EditCoalescingMiddleware()
         sentinel_backend = object()
         captured: dict[str, object] = {}
 
-        def _fake_get_workspace_backend(*, workspace, virtual_mode, max_file_size_mb=10):
+        def _fake_registry_get(*, workspace, virtual_mode, max_file_size_mb=10):
             captured["workspace"] = workspace
             captured["virtual_mode"] = virtual_mode
             captured["max_file_size_mb"] = max_file_size_mb
             return sentinel_backend
 
         monkeypatch.setattr(
-            "soothe_nano.workspace.workspace_filesystem.get_workspace_backend",
-            _fake_get_workspace_backend,
+            "soothe_nano.workspace.workspace_filesystem.WorkspaceBackendRegistry.get",
+            _fake_registry_get,
         )
 
-        token = set_workspace_context(workspace=tmp_path, virtual_mode=True)  # type: ignore[arg-type]
+        token = WorkspaceRuntime.set(workspace=tmp_path, virtual_mode=True)  # type: ignore[arg-type]
         try:
             backend = middleware._get_context_backend()
             assert backend is sentinel_backend
             assert captured["workspace"] == tmp_path
             assert captured["virtual_mode"] is True
         finally:
-            reset_workspace_context(token)
+            WorkspaceRuntime.reset(token)

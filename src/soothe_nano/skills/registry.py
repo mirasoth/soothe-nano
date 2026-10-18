@@ -8,19 +8,12 @@ from typing import Any, Literal
 
 import pathspec
 
-from soothe_nano.skills.corpus_match import earliest_corpus_match
+from soothe_nano.skills.corpus_match import CorpusMatcher
 from soothe_nano.skills.index import SkillIndexEntry
 
 DiscoverVia = Literal["path", "search", "explicit"]
 
 DEFAULT_CORE_SKILL_NAMES: frozenset[str] = frozenset({"weather", "github", "clawhub"})
-
-
-def resolve_core_skill_names(core_skills: Sequence[str] | None) -> frozenset[str]:
-    """Return configured core skill names or built-in defaults."""
-    if core_skills:
-        return frozenset(n.lower() for n in core_skills)
-    return DEFAULT_CORE_SKILL_NAMES
 
 
 def _normalize_patterns(patterns: Sequence[str]) -> list[str]:
@@ -46,24 +39,31 @@ def _is_unconditional(entry: SkillIndexEntry) -> bool:
     return not normalized
 
 
-def is_core_skill(entry: SkillIndexEntry, core_names: frozenset[str]) -> bool:
-    """Return True when *entry* belongs to the always-listed core tier.
-
-    Precedence: frontmatter ``core: false`` demotes; ``core: true`` promotes;
-    names in ``core_names`` are core. ``core_names`` defaults to
-    :data:`DEFAULT_CORE_SKILL_NAMES` (nano's shipped builtins) when
-    ``progressive_skills.core_skills`` is unset — host-registered builtins are
-    deferred unless named there or marked ``core: true``.
-    """
-    if entry.core is False:
-        return False
-    if entry.core is True:
-        return True
-    return entry.name.lower() in core_names
-
-
 class ProgressiveSkillRegistry:
     """Stateless facade. All state lives in caller-owned *activation_state* dict."""
+
+    @classmethod
+    def resolve_core_names(cls, core_skills: Sequence[str] | None) -> frozenset[str]:
+        """Return configured core skill names or built-in defaults."""
+        if core_skills:
+            return frozenset(n.lower() for n in core_skills)
+        return DEFAULT_CORE_SKILL_NAMES
+
+    @classmethod
+    def is_core(cls, entry: SkillIndexEntry, core_names: frozenset[str]) -> bool:
+        """Return True when *entry* belongs to the always-listed core tier.
+
+        Precedence: frontmatter ``core: false`` demotes; ``core: true`` promotes;
+        names in ``core_names`` are core. ``core_names`` defaults to
+        :data:`DEFAULT_CORE_SKILL_NAMES` (nano's shipped builtins) when
+        ``progressive_skills.core_skills`` is unset — host-registered builtins are
+        deferred unless named there or marked ``core: true``.
+        """
+        if entry.core is False:
+            return False
+        if entry.core is True:
+            return True
+        return entry.name.lower() in core_names
 
     @staticmethod
     def init_activation_state() -> dict[str, Any]:
@@ -98,7 +98,7 @@ class ProgressiveSkillRegistry:
         core: list[SkillIndexEntry] = []
         deferred: list[SkillIndexEntry] = []
         for entry in entries:
-            (core if is_core_skill(entry, core_names) else deferred).append(entry)
+            (core if self.is_core(entry, core_names) else deferred).append(entry)
         return core, deferred
 
     def partition(
@@ -155,7 +155,7 @@ class ProgressiveSkillRegistry:
                 seen.add(entry.name)
                 continue
             for tag in self._tag_tokens(entry):
-                pos = earliest_corpus_match(q, tag, skill_name=entry.name)
+                pos = CorpusMatcher.earliest_match(q, tag, skill_name=entry.name)
                 if pos is not None:
                     scored.append((pos, entry))
                     seen.add(entry.name)
@@ -180,13 +180,13 @@ class ProgressiveSkillRegistry:
         for entry in deferred:
             if entry.name in discovered or entry.name in seen:
                 continue
-            pos = earliest_corpus_match(corpus, entry.name, skill_name=entry.name)
+            pos = CorpusMatcher.earliest_match(corpus, entry.name, skill_name=entry.name)
             if pos is not None:
                 scored.append((pos, entry))
                 seen.add(entry.name)
                 continue
             for tag in self._tag_tokens(entry):
-                pos = earliest_corpus_match(corpus, tag, skill_name=entry.name)
+                pos = CorpusMatcher.earliest_match(corpus, tag, skill_name=entry.name)
                 if pos is not None:
                     scored.append((pos, entry))
                     seen.add(entry.name)

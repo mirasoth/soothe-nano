@@ -17,7 +17,7 @@ from langchain.agents.middleware.types import (
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
-from soothe_nano.middleware.tool_name_hints import (
+from soothe_nano.middleware.tool_error_guard import (
     extract_tool_message_content,
     is_invalid_tool_error,
 )

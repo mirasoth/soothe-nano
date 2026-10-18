@@ -19,7 +19,7 @@ DEFAULT_CORE_TOOL_NAMES: frozenset[str] = frozenset(
         "edit_lines",
         "insert_lines",
         "delete_lines",
-        # Execution
+        # Shell
         "run_command",
         "run_python",
         "run_background",
