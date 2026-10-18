@@ -6,6 +6,14 @@ name: Docker Base Images
 # and published as base images that downstream consumers (abctl, integration
 # layers) pull instead of building locally.
 #
+# Triggers:
+#   - push to main (template/workflow changes)  → dev images (sha, branch, latest)
+#   - GitHub Release published                  → release images (version, latest)
+#   - workflow_dispatch                          → manual rebuild
+#
+# On a release, images are tagged with the semver version (e.g. 1.2.22) and
+# `latest` is moved to point at the release build.
+#
 # Images:
 #   ghcr.io/mirasoth/soothe-nano/e2e   — minimal E2E guest (python3 + POSIX)
 #   ghcr.io/mirasoth/soothe-nano/prod  — production guest (non-root runtime)
@@ -13,10 +21,11 @@ name: Docker Base Images
 on:
   push:
     branches: [main]
-    tags: ["v*"]
     paths:
       - "docker/templates/**"
       - ".github/workflows/docker-base.yml"
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -72,10 +81,10 @@ jobs:
           tags: |
             type=sha,format=short
             type=ref,event=branch
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' || github.ref == 'refs/heads/main' }}
 
       - name: Build and push image
         uses: docker/build-push-action@v6
