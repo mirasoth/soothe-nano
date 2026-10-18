@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-19
+
+### Changed
+- CI / Docker Guest Images workflow: publishes the ArcBox guest image to the lacogito Aliyun Container Registry (`registry.cn-hangzhou.aliyuncs.com/lacogito/soothe-nano-vm-prod`) on GitHub release only, tagged with the semver version, a `major.minor` alias, and `latest`. No manual dispatch builds; the GHCR destination is removed.
+
+### Removed
+- Deleted the E2E guest template (`docker/templates/e2e/`). The E2E suite (`tests/integration/test_arcbox_e2e.py`) now defaults to the production guest template `soothe-nano-prod` (`docker/templates/prod/Dockerfile`) via `ARCBOX_E2E_TEMPLATE`.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.0...v2.0.1
+
 ## [2.0.0] - 2026-10-18
 
 Stable release of the 2.0.0 line, graduating [2.0.0-alpha.1] and [2.0.0-alpha.2]. No code changes since 2.0.0-alpha.2 — see those entries for the full ArcBox sandbox backend, tool/wire reorganization, and middleware hardening details.
