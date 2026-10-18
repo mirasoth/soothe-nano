@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-alpha.2] - 2026-10-18
+
+### Added
+- `SandboxConfig.max_sandboxes` field: live-sandbox (microVM) cap for the host-side sandbox pool. `0` means unlimited (no LRU eviction); a positive int pins the cap; `None` defers sizing to the runtime layer. Default `8`. Informational for nano's own agent build (placement policy doesn't spawn sandboxes); the host runtime reads it as the single source of truth for the cap, allowing operator overrides without a separate config section.
+
+### Fixed
+- Docker prod template: removed the non-root `USER` directive and `useradd`/`chown` logic — ArcBox runtime starts the guest as root regardless, so the directive had no effect. Also dropped the `# syntax=docker/dockerfile:1` directive from both templates (unreachable in network-restricted envs; the built-in frontend is sufficient).
+- CI / docker-base workflows: updated runner configuration.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.0-alpha.1...v2.0.0-alpha.2
+
 ## [2.0.0-alpha.1] - 2026-10-18
 
 ### Added
