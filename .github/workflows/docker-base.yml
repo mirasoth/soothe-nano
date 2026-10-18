@@ -8,7 +8,9 @@ name: Docker Guest Image
 # published as a base image that downstream consumers (abctl, integration
 # layers) pull instead of building locally.
 #
-# Trigger: GitHub Release published only. No manual/manual-path builds.
+# Trigger: GitHub Release published, or manual workflow_dispatch. Manual
+# builds publish the configured IMAGE_VERSION (overridable via input) and
+# move the `latest` tag to that build (toggleable, default on).
 #
 # The image is versioned standalone from the soothe-nano package: bump
 # IMAGE_VERSION below whenever the guest image changes. On a release, the
@@ -24,6 +26,18 @@ name: Docker Guest Image
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      image_version:
+        description: Image version tag to publish. Empty = configured IMAGE_VERSION.
+        required: false
+        default: ""
+        type: string
+      update_latest:
+        description: Move the `latest` tag to this build.
+        required: false
+        default: true
+        type: boolean
 
 env:
   REGISTRY: registry.cn-hangzhou.aliyuncs.com
@@ -46,6 +60,33 @@ jobs:
         run: |
           test -f docker/templates/prod/Dockerfile || { echo "Missing docker/templates/prod/Dockerfile"; exit 1; }
           echo "Context docker/templates/prod OK"
+
+      - name: Resolve image version and tags
+        id: resolve
+        env:
+          INPUT_VERSION: ${{ inputs.image_version }}
+          INPUT_UPDATE_LATEST: ${{ inputs.update_latest }}
+        run: |
+          # Effective version: manual override wins, else configured IMAGE_VERSION.
+          override="$(printf '%s' "${INPUT_VERSION}" | tr -d '[:space:]')"
+          if [ -n "${override}" ]; then
+            version="${override}"
+          else
+            version="${IMAGE_VERSION}"
+          fi
+          echo "effective_version=${version}" >> "${GITHUB_OUTPUT}"
+
+          # `latest` tag: always moved on release; on manual dispatch follow the
+          # update_latest input (defaults to true).
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            update_latest=true
+          else
+            update_latest="${INPUT_UPDATE_LATEST}"
+          fi
+          echo "update_latest=${update_latest}" >> "${GITHUB_OUTPUT}"
+
+          echo "Effective image version: ${version}"
+          echo "Move latest tag: ${update_latest}"
 
       - name: Resolve registry publish eligibility
         id: publish
@@ -88,8 +129,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/soothe-nano-vm-prod
           tags: |
-            type=raw,value=${{ env.IMAGE_VERSION }}
-            type=raw,value=latest
+            type=raw,value=${{ steps.resolve.outputs.effective_version }}
+            type=raw,enable=${{ steps.resolve.outputs.update_latest }},value=latest
           labels: |
             org.opencontainers.image.title=soothe-nano ArcBox prod guest
 
@@ -119,8 +160,9 @@ jobs:
           echo "" >> ${GITHUB_STEP_SUMMARY}
           echo "| Property | Value |" >> ${GITHUB_STEP_SUMMARY}
           echo "|----------|-------|" >> ${GITHUB_STEP_SUMMARY}
-          echo "| Release | ${{ github.event.release.tag_name }} |" >> ${GITHUB_STEP_SUMMARY}
-          echo "| Image version | ${{ env.IMAGE_VERSION }} |" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Release | ${{ github.event.release.tag_name || github.event_name }} |" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Image version | ${{ steps.resolve.outputs.effective_version }} |" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Latest tag | ${{ steps.resolve.outputs.update_latest }} |" >> ${GITHUB_STEP_SUMMARY}
           echo "| Tags | \`${{ steps.meta.outputs.tags }}\` |" >> ${GITHUB_STEP_SUMMARY}
           echo "| Pushed | ${{ steps.publish.outputs.should_push }} |" >> ${GITHUB_STEP_SUMMARY}
           echo "| Platforms | linux/amd64, linux/arm64 |" >> ${GITHUB_STEP_SUMMARY}
