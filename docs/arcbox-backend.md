@@ -273,17 +273,18 @@ backend differs between host and sandbox.
   ```
 
   Requires a local ArcBox daemon; it skips cleanly without one. The template is
-  selected via `ARCBOX_E2E_TEMPLATE`, defaulting to `soothe-nano-e2e`
+  selected via `ARCBOX_E2E_TEMPLATE`, defaulting to `soothe-nano-prod`
   (production guest image: python 3.12 bookworm + setsid/procps/coreutils; the
   daemon default template has **no python3** and is rejected by the image
-  pre-check). Template definition `docker/templates/e2e/Dockerfile`; registration:
+  pre-check). Template definition `docker/templates/prod/Dockerfile` (root
+  runtime — ArcBox default); CI publishes it on release as
+  `registry.cn-hangzhou.aliyuncs.com/lacogito/soothe-nano-vm-prod`. Local
+  registration:
 
   ```bash
-  abctl sandbox template build soothe-nano-e2e \
-    --from-dockerfile docker/templates/e2e/Dockerfile
+  abctl sandbox template build soothe-nano-prod \
+    --from-dockerfile docker/templates/prod/Dockerfile
   ```
-
-  Production template: `docker/templates/prod/Dockerfile` (root runtime — ArcBox default).
 - Coverage: image prerequisites, execute / timeout (124) semantics, FS↔shell
   workspace sharing both directions, glob/grep/edit/delete round-trip, capture
   offload with preserved exit code, no sandbox leaks, stopped-sandbox

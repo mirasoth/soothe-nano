@@ -1,93 +1,125 @@
-name: Docker Base Images
+name: Docker Guest Image
 
-# Builds and pushes the ArcBox guest template images to GHCR.
+# Builds and pushes the ArcBox production guest template image to the
+# lacogito namespace on Aliyun Container Registry (same registry as soothed
+# in ../soothe).
 #
-# The two real Dockerfiles under docker/templates/{e2e,prod}/ are built here
-# and published as base images that downstream consumers (abctl, integration
+# The real Dockerfile under docker/templates/prod/ is built here and
+# published as a base image that downstream consumers (abctl, integration
 # layers) pull instead of building locally.
 #
-# Triggers:
-#   - GitHub Release published → release images (version, latest)
-#   - workflow_dispatch        → manual rebuild (sha, latest)
+# Trigger: GitHub Release published only. No manual/manual-path builds.
 #
-# On a release, images are tagged with the semver version (e.g. 1.2.22) and
-# `latest` is moved to point at the release build.
+# On a release, the image is tagged with the semver version (e.g. 1.2.22),
+# the major.minor alias, and `latest` is moved to point at the release
+# build.
 #
-# Images:
-#   ghcr.io/mirasoth/soothe-nano/e2e   — minimal E2E guest (python3 + POSIX)
-#   ghcr.io/mirasoth/soothe-nano/prod  — production guest (non-root runtime)
+# Image:
+#   registry.cn-hangzhou.aliyuncs.com/lacogito/soothe-nano-vm-prod
+#
+# Secrets:
+#   ALIYUN_REGISTRY_USERNAME / ALIYUN_REGISTRY_PASSWORD — registry push
+#   credentials. Without them the build runs in build-only mode (no push).
 
 on:
   release:
     types: [published]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  packages: write  # push to GHCR (ghcr.io)
 
 env:
-  REGISTRY: ghcr.io
-  # Owner lowercased — GHCR namespaces must be lowercase.
-  IMAGE_OWNER: mirasoth
+  REGISTRY: registry.cn-hangzhou.aliyuncs.com
+  NAMESPACE: lacogito
+  PYTHON_BASE: registry.cn-hangzhou.aliyuncs.com/lacogito/python:3.12-bookworm
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - variant: e2e
-            context: docker/templates/e2e
-            dockerfile: docker/templates/e2e/Dockerfile
-            image: ghcr.io/mirasoth/soothe-nano/e2e
-          - variant: prod
-            context: docker/templates/prod
-            dockerfile: docker/templates/prod/Dockerfile
-            image: ghcr.io/mirasoth/soothe-nano/prod
+    permissions:
+      contents: read
+      actions: write  # For buildx binary + cache-from: type=gha
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v5
 
       - name: Validate Dockerfile context exists
         run: |
-          test -f "${{ matrix.dockerfile }}" || { echo "Missing ${{ matrix.dockerfile }}"; exit 1; }
-          test -d "${{ matrix.context }}" || { echo "Missing context ${{ matrix.context }}"; exit 1; }
-          echo "Context ${{ matrix.context }} OK"
+          test -f docker/templates/prod/Dockerfile || { echo "Missing docker/templates/prod/Dockerfile"; exit 1; }
+          echo "Context docker/templates/prod OK"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Resolve registry publish eligibility
+        id: publish
+        env:
+          REGISTRY_USER: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          REGISTRY_PASS: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+        run: |
+          ready=false
+          if [ -n "${REGISTRY_USER}" ] && [ -n "${REGISTRY_PASS}" ]; then ready=true; fi
+          echo "registry_secrets_ready=${ready}" >> "${GITHUB_OUTPUT}"
+          echo "should_push=${ready}" >> "${GITHUB_OUTPUT}"
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Warn when registry push is skipped
+        if: ${{ steps.publish.outputs.registry_secrets_ready != 'true' }}
+        run: |
+          echo "::warning::Skipping registry push. Configure repository secrets ALIYUN_REGISTRY_USERNAME and ALIYUN_REGISTRY_PASSWORD to publish images."
+
+      # Login before setup-buildx: docker/login-action rewrites DOCKER_CONFIG and would
+      # otherwise drop the buildx builder config (see docker/build-push-action#1253).
+      - name: Login to Aliyun Container Registry
+        if: ${{ steps.publish.outputs.registry_secrets_ready == 'true' }}
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          version: latest
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
-          images: ${{ matrix.image }}
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/soothe-nano-vm-prod
           tags: |
-            type=sha,format=short
-            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=soothe-nano ArcBox prod guest
 
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
+          context: docker/templates/prod
+          file: docker/templates/prod/Dockerfile
+          builder: ${{ steps.buildx.outputs.name }}
+          build-args: |
+            PYTHON_BASE=${{ env.PYTHON_BASE }}
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ steps.publish.outputs.should_push == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           provenance: false
+          sbom: false
+          # Aliyun Container Registry rejects OCI attestation manifests
+          # (application/vnd.oci.empty.v1+json) generated by provenance/sbom.
+          # Read GHA cache when available; do not write (mode=max multi-platform
+          # exports can exceed org cache quota and fail the job after a successful push).
+          cache-from: type=gha
+
+      - name: Output image digest
+        run: |
+          echo "### ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/soothe-nano-vm-prod" >> ${GITHUB_STEP_SUMMARY}
+          echo "" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Property | Value |" >> ${GITHUB_STEP_SUMMARY}
+          echo "|----------|-------|" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Release | ${{ github.event.release.tag_name }} |" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Tags | \`${{ steps.meta.outputs.tags }}\` |" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Pushed | ${{ steps.publish.outputs.should_push }} |" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Platforms | linux/amd64, linux/arm64 |" >> ${GITHUB_STEP_SUMMARY}

@@ -1,11 +1,15 @@
 # soothe-nano ArcBox production guest template.
 #
-# Formal guest image for real ArcBox sandbox sessions. Extends the E2E
-# prerequisites (python3 + POSIX coreutils + setsid + procps) with a workspace
-# layout suitable for long-lived agent sessions. ArcBox runs the guest as root
-# by default; no USER directive is set.
+# The guest image for real ArcBox sandbox sessions and the E2E suite
+# (tests/integration/test_arcbox_e2e.py). Ships python3 + POSIX coreutils +
+# setsid + procps and a workspace layout suitable for long-lived agent
+# sessions. ArcBox runs the guest as root by default; no USER directive is set.
 #
 # Uses the lacogito base image (same registry namespace as ../flowjet).
+#
+# CI publishes this image on release as
+# registry.cn-hangzhou.aliyuncs.com/lacogito/soothe-nano-vm-prod
+# (.github/workflows/docker-base.yml); pull it instead of building locally.
 #
 # Build and register with the local ArcBox daemon:
 #   abctl sandbox template build soothe-nano-prod \
