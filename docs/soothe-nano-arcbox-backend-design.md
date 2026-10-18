@@ -954,9 +954,10 @@ output offsets / resume，用其恢复读取同一次 execution 的输出。
 > 坏 wrapper（`exec /app/.venv/bin/python ""` 吞参 + venv 符号链接循环指回
 > wrapper，guest 内无任何可用解释器，构建 bug 属 flowjet 模板范围）。
 > 处置：构建 production 模板 `soothe-nano-e2e`
-> （`python:3.12-slim-bookworm` + util-linux[setsid]/procps[kill -- -PGID]/
-> coreutils/findutils/grep/sed/ca-certificates，512 MiB，digest
-> `sha256:655e0721…`；模板定义签入 `scripts/arcbox-e2e-template.Dockerfile`），
+> （lacogito/python:3.12-bookworm + util-linux[setsid]/procps[kill -- -PGID]/
+> coreutils/findutils/grep/sed/ca-certificates；模板定义签入
+> `docker/templates/e2e/Dockerfile`，生产模板签入
+> `docker/templates/prod/Dockerfile`——非 root `nano` 用户），
 > E2E 以 `ARCBOX_E2E_TEMPLATE` 选择模板、daemon
 > 不可达时干净 skip（无 daemon CI 仍绿）。
 > 平台观察（flowjet/ArcBox 范围，非本仓）：沙箱创建偶发

@@ -115,11 +115,12 @@ sandbox:
   §12.5 验收，15 测试）。运行方式：
   `uv run pytest tests/integration/test_arcbox_e2e.py --run-integration`，
   需要本机 ArcBox daemon；模板用 `ARCBOX_E2E_TEMPLATE` 选择，默认
-  `soothe-nano-e2e`（production guest 镜像：`python:3.12-slim-bookworm`
+  `soothe-nano-e2e`（production guest 镜像：lacogito/python:3.12-bookworm
   + setsid/procps/coreutils；daemon 默认模板**没有 python3**，镜像前置
-  检查会拒绝）。模板定义：`scripts/arcbox-e2e-template.Dockerfile`，注册：
+  检查会拒绝）。模板定义：`docker/templates/e2e/Dockerfile`，注册：
   `abctl sandbox template build soothe-nano-e2e --from-dockerfile
-  scripts/arcbox-e2e-template.Dockerfile`。
+  docker/templates/e2e/Dockerfile`。生产模板定义：
+  `docker/templates/prod/Dockerfile`（非 root `nano` 用户）。
 
 ## 8. 已知限制（phase 1）
 
