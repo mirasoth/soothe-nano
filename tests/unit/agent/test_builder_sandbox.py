@@ -304,7 +304,9 @@ class TestSandboxToolPlacementGate:
             cfg, sandbox, resolve_kwargs, captured, tools=[self._fake_tool("mcp_fs_read")]
         )
         assert all(getattr(t, "name", "") != "mcp_fs_read" for t in captured["tools"])
-        assert any("dropping tools without a declared placement" in rec.message for rec in caplog.records)
+        assert any(
+            "dropping tools without a declared placement" in rec.message for rec in caplog.records
+        )
 
     def test_host_mode_never_gates(self) -> None:
         cfg = SootheConfig()

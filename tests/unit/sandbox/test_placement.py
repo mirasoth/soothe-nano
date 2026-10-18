@@ -59,8 +59,9 @@ class TestResolvePlacement:
         assert resolve_placement("run_command", tool=Tool()) == PLACEMENT_HOST
 
     def test_registry_placement_beats_category(self, fake_meta) -> None:
-        fake_meta("my_shuttled_reader", category="generic", outcome_type="file_read",
-                  placement="host")
+        fake_meta(
+            "my_shuttled_reader", category="generic", outcome_type="file_read", placement="host"
+        )
         assert resolve_placement("my_shuttled_reader") == PLACEMENT_HOST
         fake_meta("my_plain_reader", category="generic", outcome_type="file_read")
         assert resolve_placement("my_plain_reader") == PLACEMENT_SHUTTLE
@@ -127,14 +128,15 @@ class TestShuttleAdapter:
         class EditArgs(BaseModel):
             path: str
 
-        downloads = {"file content here"}
         uploads: list[tuple[str, bytes]] = []
 
         class FakeBackend:
             def download_files(self, paths: list[str]):
                 from types import SimpleNamespace
 
-                return [SimpleNamespace(path=p, content=b"file content here", error=None) for p in paths]
+                return [
+                    SimpleNamespace(path=p, content=b"file content here", error=None) for p in paths
+                ]
 
             def upload_files(self, pairs: list[tuple[str, bytes]]):
                 from types import SimpleNamespace
@@ -176,7 +178,10 @@ class TestShuttleAdapter:
             def download_files(self, paths: list[str]):
                 from types import SimpleNamespace
 
-                return [SimpleNamespace(path=p, content=b"way too many bytes", error=None) for p in paths]
+                return [
+                    SimpleNamespace(path=p, content=b"way too many bytes", error=None)
+                    for p in paths
+                ]
 
         fake_meta("shuttle_big", outcome_type="file_read", path_arg_keys=("path",))
         tool = self._make_tool("shuttle_big", lambda path: "x", ReadArgs)

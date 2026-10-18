@@ -966,6 +966,20 @@ output offsets / resume，用其恢复读取同一次 execution 的输出。
 > （`get_planner_readonly_tools(backend=...)`）直接绑注入 backend，
 > workspace 取 guest 根（`backend.workspace_root`，非宿主 work_dir）。
 > host 模式零变化（`sandbox_backend=None` 走原 `FilesystemBackend` 路径）。
+> **2026-10-18 placement 完整模型（第 5 项完成，§7.5 落地）**：
+> 新增 `sandbox/placement.py`（五值枚举、`resolve_placement` 推导：
+> config override > `@tool(placement=)` / `ToolMeta.placement` 显式声明 >
+> category/outcome_type 默认表 > 注册表 miss → `deny` fail-closed；
+> `wrap_shuttle_tool` shuttle 适配器：path_arg_keys 下载 → 宿主临时文件
+> → 原实现 → file_write 回传 → 结果临时路径反查 → 清理，
+> `sandbox.max_shuttle_bytes` 默认 32 MiB 超限报错）。
+> builder 收口 `_finalize_tool_placements` 替换旧 name 白名单闸门，
+> 产出 `ToolPlacementReport`（`builder.placement_report`）。
+> config：`placement_overrides` 由 `set[str]`（host 白名单）升级为
+> `dict[str, str]`（name → placement）；`@tool` 装饰器新增 `placement=`。
+> §7.5.8 验收：report 覆盖全部工具 ✓（单测）、registry miss deny 有断言 ✓、
+> shuttle 反查断言 ✓（无宿主临时路径泄漏）、host 类无副作用 = 既有
+> infra 白名单 + 内置组审计 ✓；§7.5.7 Guest Tool Runtime 仍另立 RFC 不做。
 
 ### 11.1 `soothe-nano`
 

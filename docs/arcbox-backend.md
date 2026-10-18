@@ -54,21 +54,34 @@ client**（实现 `run` / `read_bytes` / `write_bytes` 三方法的协议
 | GP subagent | 由 `agent.runtime.general_purpose_subagent` 控制：`off` / `full` / `readonly`（write-deny 降级为只读工具面）/ `per_step`（注册 `general-purpose-readonly` 变体供宿主中间件重定向；sandbox 下两条变体都不带宿主 permissions）。 |
 | 未声明工具闸门 | 无声明放置的自定义 / MCP / 插件工具默认**拒绝构建**（fail-closed），见 §4。 |
 
-## 4. 工具放置闸门（fail-closed）
+## 4. 工具放置模型（placement，RFC §7.5）
 
-sandbox 模式下，builtin 组之外的每个工具（用户 `tools=[...]`、MCP、插件）
-都必须有声明的放置，否则默认抛 `ValueError` 中止构建。宿主侧的自定义工具
-二选一：
+sandbox 模式下**每个**工具都会被赋一个 placement（构建期收口，
+`builder.placement_report` 可查）：
+
+| placement | 含义 |
+|---|---|
+| `protocol` | FS 原语，中间件经 backend 直达 guest |
+| `guest` | 语义迁移为 guest 命令（shell 组，经 `backend.execute()`） |
+| `shuttle` | 字节搬运：guest 路径参数下载到宿主临时目录 → 跑原实现 → 结果回传 → 输出中的临时路径反查回 guest 路径 |
+| `host` | 无工作区耦合，原样运行 |
+| `deny` | 失败关闭：不注册（默认抛错，`on_deny: drop` 则剔除 + warning） |
+
+解析优先级：`sandbox.placement_overrides`（config）> 显式声明
+（`@tool(placement=...)` / `ToolMeta.placement`）> 按
+category/outcome_type 的默认推导表 > 注册表查不到 → `deny`。
 
 ```yaml
 sandbox:
-  on_deny: raise            # 默认；"drop" 则改为剔除 + warning
-  placement_overrides:      # 声明「已审查、允许留在宿主机」的工具名
-    - my_reviewed_host_tool
+  on_deny: raise                       # 默认；"drop" 则剔除 + warning
+  max_shuttle_bytes: 33554432          # 单次 shuttle 体积上限（默认 32 MiB）
+  placement_overrides:                 # 运维级逐工具声明（优先级最高）
+    analyze_image: shuttle
+    my_reviewed_host_tool: host
 ```
 
 纯元数据目录工具（`search_tools` / `search_skills` / `invoke_skill` /
-`search_mcp_tools` / `mcp_resources_list`）内置豁免。
+`search_mcp_tools` / `mcp_resources_list`）默认推导即 `host`。
 
 ## 5. 凭证与安全边界（RFC §9）
 
