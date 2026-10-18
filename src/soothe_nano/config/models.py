@@ -574,11 +574,20 @@ class SandboxConfig(BaseModel):
         max_shuttle_bytes: Upper bound for a single ``shuttle`` transfer
             (docs/arcbox-backend.md §7); over-limit transfers error out instead of silently
             shuttling large datasets.
+        max_sandboxes: Live sandbox (microVM) cap for the host-side sandbox
+            pool. ``0`` means unlimited — no LRU eviction is applied. A
+            positive int pins the cap explicitly. ``None`` defers sizing to
+            the runtime layer that owns the sandbox pool. This field is
+            informational for soothe-nano's own agent build (placement
+            policy doesn't spawn sandboxes); the host runtime reads it as
+            the single source of truth for the cap, allowing operator
+            overrides without a separate config section.
     """
 
     on_deny: Literal["raise", "drop"] = Field(default="raise")
     placement_overrides: dict[str, str] = Field(default_factory=dict)
     max_shuttle_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
+    max_sandboxes: int | None = Field(default=8, ge=0)
 
 
 class SqliteRuntimeConfig(BaseModel):
