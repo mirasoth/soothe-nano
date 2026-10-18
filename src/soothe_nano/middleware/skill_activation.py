@@ -17,14 +17,8 @@ from soothe_nano.skills.index import SkillIndexEntry
 from soothe_nano.skills.registry import (
     ProgressiveSkillRegistry,
     merge_skill_activation,
-    resolve_core_skill_names,
 )
-from soothe_nano.skills.search import (
-    latest_human_text,
-    prefetch_core_skills_from_corpus,
-    prefetch_deferred_skills,
-    search_deferred_skills,
-)
+from soothe_nano.skills.search import SkillSearcher
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +81,7 @@ class SkillActivationMiddleware(AgentMiddleware):
         self._registry = registry
         self._catalog_provider = catalog_provider
         self._config = config
+        self._searcher = SkillSearcher(registry)
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._locks_guard = asyncio.Lock()
 
@@ -171,7 +166,9 @@ class SkillActivationMiddleware(AgentMiddleware):
         workspace = Path(str(workspace_raw))
 
         all_entries = list(self._catalog_provider())
-        core_names = resolve_core_skill_names(self._config.progressive_skills.core_skills)
+        core_names = ProgressiveSkillRegistry.resolve_core_names(
+            self._config.progressive_skills.core_skills
+        )
         _, deferred = self._registry.partition_core_deferred(all_entries, core_names)
         path_skills = self._registry.deferred_with_paths(deferred)
         if not path_skills:
@@ -189,9 +186,9 @@ class SkillActivationMiddleware(AgentMiddleware):
                     continue
                 self._registry.discover(activation_state, [skill_name], via="path")
                 try:
-                    from soothe_nano.skills.workspace_sync import sync_specific_skill_to_workspace
+                    from soothe_nano.skills.workspace_sync import WorkspaceSkillMirror
 
-                    sync_specific_skill_to_workspace(self._config, workspace, skill_name)
+                    WorkspaceSkillMirror(self._config, workspace).sync_specific(skill_name)
                 except Exception:  # noqa: BLE001
                     logger.exception("[Skill] sync failed for %s", skill_name)
 
@@ -213,12 +210,12 @@ class SkillActivationMiddleware(AgentMiddleware):
         if ps.intent_prefetch_top_k <= 0:
             return True
 
-        goal = latest_human_text(state)
+        goal = SkillSearcher.latest_human_text(state)
         if not goal or len(goal) < ps.intent_prefetch_min_query_chars:
             return True
 
         all_entries = list(self._catalog_provider())
-        core_names = resolve_core_skill_names(ps.core_skills)
+        core_names = ProgressiveSkillRegistry.resolve_core_names(ps.core_skills)
         core_entries, deferred = self._registry.partition_core_deferred(all_entries, core_names)
         activated = activation_state.get("activated", set())
         if not isinstance(activated, set):
@@ -228,16 +225,13 @@ class SkillActivationMiddleware(AgentMiddleware):
             invoked = set(invoked)
         skip_names = activated | invoked
 
-        catalog_by_name = {entry.name: entry for entry in all_entries}
-
         core_matches: list[SkillIndexEntry] = []
         if ps.core_intent_auto_invoke_enabled and ps.intent_prefetch_top_k > 0:
-            core_matches = prefetch_core_skills_from_corpus(
+            core_matches = self._searcher.prefetch_core_from_corpus(
                 goal,
                 core_entries,
                 discovered=skip_names,
                 limit=ps.intent_prefetch_top_k,
-                registry=self._registry,
             )
             if core_matches:
                 workspace_raw = state.get("workspace")
@@ -251,14 +245,11 @@ class SkillActivationMiddleware(AgentMiddleware):
                     logger.debug("[Skill] core intent auto-invoked %s", loaded)
 
         if not core_matches:
-            matches = await prefetch_deferred_skills(
+            matches = await self._searcher.prefetch_from_goal(
                 goal,
                 deferred,
                 discovered=skip_names,
                 limit=ps.intent_prefetch_top_k,
-                registry=self._registry,
-                config=self._config,
-                catalog_by_name=catalog_by_name,
             )
             if matches:
                 self._registry.discover(
@@ -301,20 +292,17 @@ class SkillActivationMiddleware(AgentMiddleware):
         preload: bool = False,
     ) -> str | None:
         """Read SKILL.md and mark a skill invoked. Returns resolved name or None."""
-        from soothe_nano.skills.catalog import (
-            build_skill_context_text,
-            read_skill_markdown,
-            resolve_skill_directory,
-        )
+        from soothe_nano.skills.catalog import SkillCatalog
 
-        meta = resolve_skill_directory(self._config, name, workspace)
+        catalog = SkillCatalog(self._config, workspace)
+        meta = catalog.resolve_skill(name)
         if meta is None:
             return None
-        markdown = read_skill_markdown(meta)
+        markdown = catalog.read_markdown(meta)
         if not markdown:
             return None
         resolved_name = str(meta.get("name") or name)
-        body = build_skill_context_text(meta, markdown)
+        body = catalog.build_context_text(meta, markdown)
         self._registry.discover(activation_state, [resolved_name], via="explicit")
         if preload:
             self._registry.mark_preloaded(activation_state, resolved_name, body)
@@ -361,20 +349,19 @@ class SkillActivationMiddleware(AgentMiddleware):
         activation_state = self._activation(state if isinstance(state, dict) else {})
 
         all_entries = list(self._catalog_provider())
-        core_names = resolve_core_skill_names(self._config.progressive_skills.core_skills)
+        core_names = ProgressiveSkillRegistry.resolve_core_names(
+            self._config.progressive_skills.core_skills
+        )
         _, deferred = self._registry.partition_core_deferred(all_entries, core_names)
         discovered = activation_state.get("activated", set())
         if not isinstance(discovered, set):
             discovered = set(discovered)
 
-        matches = await search_deferred_skills(
+        matches = await self._searcher.search(
             query,
             deferred,
             discovered=discovered,
             limit=limit,
-            registry=self._registry,
-            config=self._config,
-            catalog_by_name={entry.name: entry for entry in all_entries},
         )
         if not matches:
             content = f"No deferred skills matched query={query!r}."

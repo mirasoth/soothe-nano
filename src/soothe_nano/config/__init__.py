@@ -44,23 +44,13 @@ from soothe_nano.config.models import (
     parse_model_specs,
 )
 from soothe_nano.config.settings import SootheConfig
-from soothe_nano.prompts.system_templates import (
-    _DEFAULT_SYSTEM_PROMPT,
-    _MEDIUM_SYSTEM_PROMPT,
-    _SIMPLE_SYSTEM_PROMPT,
-    _TOOL_ORCHESTRATION_GUIDE,
-)
 
 NanoConfig = SootheConfig
 
 __all__ = [
     "DEFAULT_EXECUTE_TIMEOUT",
     "SOOTHE_HOME",
-    "_DEFAULT_SYSTEM_PROMPT",
     "_ENV_VAR_RE",
-    "_MEDIUM_SYSTEM_PROMPT",
-    "_SIMPLE_SYSTEM_PROMPT",
-    "_TOOL_ORCHESTRATION_GUIDE",
     "AgentConfig",
     "ClassifierConfig",
     "CoreAgentMiddlewareConfig",

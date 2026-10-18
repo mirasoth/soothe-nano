@@ -83,10 +83,11 @@ class ProgressiveListingMiddleware(AgentMiddleware):
             from soothe_nano.skills.registry import ProgressiveSkillRegistry
 
             self._skill_registry = ProgressiveSkillRegistry()
-        from soothe_nano.skills.registry import resolve_core_skill_names
 
         entries = self._skill_index.rebuild_if_stale()
-        core_names = resolve_core_skill_names(self._config.progressive_skills.core_skills)
+        core_names = self._skill_registry.resolve_core_names(
+            self._config.progressive_skills.core_skills
+        )
         core_entries, _deferred = self._skill_registry.partition_core_deferred(entries, core_names)
         activated_entries = [entry for entry in entries if entry.name in activated]
         by_name = {entry.name: entry for entry in core_entries}
@@ -106,9 +107,9 @@ class ProgressiveListingMiddleware(AgentMiddleware):
             min_per_entry = int(self._config.progressive_skills.min_listing_chars_per_entry)
 
             if listing_entries:
-                from soothe_nano.skills.budget import format_skills_within_budget
+                from soothe_nano.skills.budget import SkillListingBudget
 
-                text, _telemetry = format_skills_within_budget(
+                text, _telemetry = SkillListingBudget.format(
                     listing_entries,
                     budget_chars=budget_chars,
                     per_entry_cap_chars=per_entry_cap,

@@ -26,15 +26,15 @@ skill-name/
 
 ## Discovery
 
-Builtin skills are automatically discovered via ``iter_skill_roots()`` /
-``get_built_in_skills_paths()``. Host packages (e.g. fj) can register extra
+Builtin skills are automatically discovered via ``SkillRoots.roots()`` /
+``SkillRoots.builtin_paths()``. Host packages (e.g. fj) can register extra
 roots:
 
 ```python
 from pathlib import Path
-from soothe_nano.skills import register_builtin_skill_root
+from soothe_nano.skills import SkillRoots
 
-register_builtin_skill_root(Path(__file__).parent / "builtin_skills")
+SkillRoots.register(Path(__file__).parent / "builtin_skills")
 ```
 
 Or via config:

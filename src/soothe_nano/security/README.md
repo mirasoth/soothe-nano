@@ -5,7 +5,7 @@ through a small public API.
 
 ## Layout
 
-- `security_api.py`
+- `__init__.py`
   - Canonical public API exports
 - `path_security.py`
   - Path validation + normalization (`PathValidator`, `ValidationResult`)

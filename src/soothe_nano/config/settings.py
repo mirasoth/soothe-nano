@@ -49,8 +49,6 @@ from soothe_nano.config.models import (
     parse_model_specs,
 )
 
-# Lazy import to avoid circular dependency - _DEFAULT_SYSTEM_PROMPT imported in methods that use it
-
 if TYPE_CHECKING:
     from langchain_core.embeddings import Embeddings
     from langchain_core.language_models import BaseChatModel
@@ -443,10 +441,10 @@ class SootheConfig(BaseSettings):
         if not self.builtin_skill_roots:
             return self
 
-        from soothe_nano.skills.builtins import register_builtin_skill_root
+        from soothe_nano.skills.builtins import SkillRoots
 
         for root in self.builtin_skill_roots:
-            register_builtin_skill_root(root, source="builtin")
+            SkillRoots.register(root, source="builtin")
         return self
 
     @model_validator(mode="after")
@@ -540,7 +538,7 @@ class SootheConfig(BaseSettings):
     builtin_skill_roots: list[str] = Field(default_factory=list)
     """Extra package skill roots (dirs of `<name>/SKILL.md` folders).
 
-    Registered as builtin via :func:`soothe_nano.skills.register_builtin_skill_root`
+    Registered as builtin via :meth:`soothe_nano.skills.builtins.SkillRoots.register`
     at config load. Host packages may also call that API directly.
     """
 
@@ -1079,21 +1077,19 @@ class SootheConfig(BaseSettings):
         Returns:
             The system prompt string.
         """
-        from soothe_nano.prompts.identity import prepend_assistant_identity
-        from soothe_nano.prompts.system_templates import (
-            format_complex_agent_system_prompt_core,
-        )
+        from soothe_nano.prompts.identity import PromptIdentity
+        from soothe_nano.prompts.system_templates import SystemTemplates
         from soothe_nano.utils.prompt_clock import local_date_str, local_timezone_label
 
         current_date = local_date_str()
         tz_label = local_timezone_label()
 
-        base_prompt = format_complex_agent_system_prompt_core(
+        base_prompt = SystemTemplates.format_complex_core(
             self.agent.system_prompt,
             self.agent.name,
         )
         body = f"{base_prompt}\n\nToday's date is {current_date} ({tz_label})."
-        return prepend_assistant_identity(body, self.agent.name)
+        return PromptIdentity.prepend_identity(body, self.agent.name)
 
     def propagate_env(self) -> None:
         """Set provider-specific env vars for downstream libraries.

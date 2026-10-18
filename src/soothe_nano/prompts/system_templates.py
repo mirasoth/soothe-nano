@@ -132,7 +132,18 @@ After a `task` report returns, treat it as evidence: do not re-grep the same \
 symbols/paths; only spot-check disputed hits.\
 """
 
-_TOOL_ORCHESTRATION_GUIDE = f"""\
+_RESPONSE_LANGUAGE_DISPLAY: dict[str, str] = {
+    "en": "English",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+}
+
+
+class SystemTemplates:
+    """System prompt templates and volatile-tail builders."""
+
+    TOOL_ORCHESTRATION_GUIDE = f"""\
 
 Tool selection rules (follow strictly):
 
@@ -170,103 +181,96 @@ Key rules:
 - When you need a deferred tool (wizsearch, HTTP, etc.), check <AVAILABLE_TOOLS> or run search_tools first.\
 """
 
-SKILL_CONTEXT_ACTIVE_GUIDE = (
-    "<SKILL_CONTEXT_GUIDE>\n"
-    "One or more skills are pre-loaded in <SKILL_CONTEXT> below. Follow their "
-    "instructions on this hop before any other discovery path.\n"
-    "Use run_command or run_python exactly as the skill documents. Do NOT call "
-    "search_tools, search_skills, task, deep_research, or browser_use for work the "
-    "loaded skill already covers.\n"
-    "For simple lookups, one compact command is usually enough — avoid a second "
-    "full JSON fetch unless the user asked for detailed data.\n"
-    "</SKILL_CONTEXT_GUIDE>"
-)
-
-# Cache-stable fallback when response language is unknown (fail-safe).
-RESPONSE_LANGUAGE_HINT_FALLBACK = (
-    "<RESPONSE_LANGUAGE_HINT>\n"
-    "Prefer the same natural language as the user's goal for explanations, "
-    "summaries, and conclusions; keep code, file paths, identifiers, and "
-    "quoted literals unchanged.\n"
-    "</RESPONSE_LANGUAGE_HINT>"
-)
-
-_RESPONSE_LANGUAGE_DISPLAY: dict[str, str] = {
-    "en": "English",
-    "zh": "Chinese",
-    "ja": "Japanese",
-    "ko": "Korean",
-}
-
-
-def build_response_language_hint(language: object | None) -> str:
-    """Build explicit or fallback `RESPONSE_LANGUAGE_HINT` for system prompts."""
-    if language is None:
-        return RESPONSE_LANGUAGE_HINT_FALLBACK
-    text = str(language).strip().lower()
-    if not text or text == "other":
-        return RESPONSE_LANGUAGE_HINT_FALLBACK
-    display = _RESPONSE_LANGUAGE_DISPLAY.get(text, text)
-    return (
-        f"<RESPONSE_LANGUAGE_HINT>\n"
-        f"Write all user-facing prose in {display} ({text}). "
-        f"Keep code, file paths, identifiers, and quoted literals unchanged.\n"
-        f"</RESPONSE_LANGUAGE_HINT>"
+    SKILL_CONTEXT_ACTIVE_GUIDE = (
+        "<SKILL_CONTEXT_GUIDE>\n"
+        "One or more skills are pre-loaded in <SKILL_CONTEXT> below. Follow their "
+        "instructions on this hop before any other discovery path.\n"
+        "Use run_command or run_python exactly as the skill documents. Do NOT call "
+        "search_tools, search_skills, task, deep_research, or browser_use for work the "
+        "loaded skill already covers.\n"
+        "For simple lookups, one compact command is usually enough — avoid a second "
+        "full JSON fetch unless the user asked for detailed data.\n"
+        "</SKILL_CONTEXT_GUIDE>"
     )
 
+    # Cache-stable fallback when response language is unknown (fail-safe).
+    RESPONSE_LANGUAGE_HINT_FALLBACK = (
+        "<RESPONSE_LANGUAGE_HINT>\n"
+        "Prefer the same natural language as the user's goal for explanations, "
+        "summaries, and conclusions; keep code, file paths, identifiers, and "
+        "quoted literals unchanged.\n"
+        "</RESPONSE_LANGUAGE_HINT>"
+    )
 
-# Execute-step workspace path semantics (cache-stable tail).
-EXECUTE_WORKSPACE_RULES_FRAGMENT = (
-    "<WORKSPACE_RULES>\n"
-    "Project root is under <WORKSPACE><root>. Filesystem tools: workspace-relative "
-    "or host-absolute paths under that root. Shell tools (run_command, run_python): "
-    "cwd = workspace root; leading '/' in shell = host root — use '.' or relative paths.\n\n"
-    "For architecture/codebase/structure goals: inspect this directory immediately.\n"
-    "Do NOT ask the user for a local path, GitHub URL, or file upload unless the goal "
-    "names a different project outside this directory.\n"
-    "Do NOT tell the user you need them to share the project first — it is already here.\n"
-    "</WORKSPACE_RULES>"
-)
+    # Execute-step workspace path semantics (cache-stable tail).
+    EXECUTE_WORKSPACE_RULES_FRAGMENT = (
+        "<WORKSPACE_RULES>\n"
+        "Project root is under <WORKSPACE><root>. Filesystem tools: workspace-relative "
+        "or host-absolute paths under that root. Shell tools (run_command, run_python): "
+        "cwd = workspace root; leading '/' in shell = host root — use '.' or relative paths.\n\n"
+        "For architecture/codebase/structure goals: inspect this directory immediately.\n"
+        "Do NOT ask the user for a local path, GitHub URL, or file upload unless the goal "
+        "names a different project outside this directory.\n"
+        "Do NOT tell the user you need them to share the project first — it is already here.\n"
+        "</WORKSPACE_RULES>"
+    )
+
+    DEFAULT_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT_BODY_FRAGMENT + TOOL_ORCHESTRATION_GUIDE
+
+    MEDIUM_SYSTEM_PROMPT = MEDIUM_SYSTEM_PROMPT_FRAGMENT
+
+    SIMPLE_SYSTEM_PROMPT = SIMPLE_SYSTEM_PROMPT_FRAGMENT
+
+    @staticmethod
+    def build_response_language_hint(language: object | None) -> str:
+        """Build explicit or fallback `RESPONSE_LANGUAGE_HINT` for system prompts."""
+        if language is None:
+            return SystemTemplates.RESPONSE_LANGUAGE_HINT_FALLBACK
+        text = str(language).strip().lower()
+        if not text or text == "other":
+            return SystemTemplates.RESPONSE_LANGUAGE_HINT_FALLBACK
+        display = _RESPONSE_LANGUAGE_DISPLAY.get(text, text)
+        return (
+            f"<RESPONSE_LANGUAGE_HINT>\n"
+            f"Write all user-facing prose in {display} ({text}). "
+            f"Keep code, file paths, identifiers, and quoted literals unchanged.\n"
+            f"</RESPONSE_LANGUAGE_HINT>"
+        )
+
+    @staticmethod
+    def timestamp_iso() -> str:
+        """Return current local-timezone ISO-8601 timestamp for system prompts."""
+        from soothe_nano.utils.prompt_clock import local_timestamp_iso
+
+        return local_timestamp_iso()
+
+    @staticmethod
+    def timestamp_xml_footer() -> str:
+        """Append volatile clock to system prompts (bottom-right XML tag).
+
+        User/ledger messages must not carry timestamps — they break prompt-cache
+        prefixes when replayed from the ledger.
+        """
+        return f"<TIMESTAMP>\n{SystemTemplates.timestamp_iso()}\n</TIMESTAMP>"
+
+    @staticmethod
+    def default_body() -> str:
+        """Return the configurable identity/behavior body (tool guide appended at runtime when builtin)."""
+        return DEFAULT_SYSTEM_PROMPT_BODY_FRAGMENT
+
+    @staticmethod
+    def uses_builtin(system_prompt: str | None) -> bool:
+        """True when YAML/config should resolve to the built-in default (body + tool guide)."""
+        if not system_prompt:
+            return True
+        return system_prompt.strip() == DEFAULT_SYSTEM_PROMPT_BODY_FRAGMENT.strip()
+
+    @staticmethod
+    def format_complex_core(system_prompt: str | None, assistant_name: str) -> str:
+        """Format the complex-tier behavioral core (includes tool guide for builtin default)."""
+        if SystemTemplates.uses_builtin(system_prompt):
+            return SystemTemplates.DEFAULT_SYSTEM_PROMPT.format(assistant_name=assistant_name)
+        return system_prompt.format(assistant_name=assistant_name)
 
 
-def current_timestamp_iso() -> str:
-    """Return current local-timezone ISO-8601 timestamp for system prompts."""
-    from soothe_nano.utils.prompt_clock import local_timestamp_iso
-
-    return local_timestamp_iso()
-
-
-def build_timestamp_xml_footer() -> str:
-    """Append volatile clock to system prompts (bottom-right XML tag).
-
-    User/ledger messages must not carry timestamps — they break prompt-cache
-    prefixes when replayed from the ledger.
-    """
-    return f"<TIMESTAMP>\n{current_timestamp_iso()}\n</TIMESTAMP>"
-
-
-_DEFAULT_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT_BODY_FRAGMENT + _TOOL_ORCHESTRATION_GUIDE
-
-
-def default_agent_system_prompt_body() -> str:
-    """Return the configurable identity/behavior body (tool guide appended at runtime when builtin)."""
-    return DEFAULT_SYSTEM_PROMPT_BODY_FRAGMENT
-
-
-def uses_builtin_agent_system_prompt(system_prompt: str | None) -> bool:
-    """True when YAML/config should resolve to the built-in default (body + tool guide)."""
-    if not system_prompt:
-        return True
-    return system_prompt.strip() == DEFAULT_SYSTEM_PROMPT_BODY_FRAGMENT.strip()
-
-
-def format_complex_agent_system_prompt_core(system_prompt: str | None, assistant_name: str) -> str:
-    """Format the complex-tier behavioral core (includes tool guide for builtin default)."""
-    if uses_builtin_agent_system_prompt(system_prompt):
-        return _DEFAULT_SYSTEM_PROMPT.format(assistant_name=assistant_name)
-    return system_prompt.format(assistant_name=assistant_name)
-
-
-_SIMPLE_SYSTEM_PROMPT = SIMPLE_SYSTEM_PROMPT_FRAGMENT
-
-_MEDIUM_SYSTEM_PROMPT = MEDIUM_SYSTEM_PROMPT_FRAGMENT
+__all__ = ["SystemTemplates"]

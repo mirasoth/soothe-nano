@@ -1787,9 +1787,9 @@ class AgentRuntimeConfig(BaseModel):
 
 def _default_agent_system_prompt_body() -> str:
     """Lazy import to avoid pulling prompt fragments at config import time."""
-    from soothe_nano.prompts.system_templates import default_agent_system_prompt_body
+    from soothe_nano.prompts.system_templates import SystemTemplates
 
-    return default_agent_system_prompt_body()
+    return SystemTemplates.default_body()
 
 
 class CoreAgentMiddlewareConfig(BaseModel):

@@ -155,10 +155,10 @@ class SystemPromptMiddleware(AgentMiddleware):
         Returns:
             XML section with platform, shell, model, knowledge cutoff.
         """
-        from soothe_nano.prompts.context_xml import build_soothe_environment_section
+        from soothe_nano.prompts.context_xml import ContextXml
 
         model = self._config.resolve_model("default")
-        return build_soothe_environment_section(model=model)
+        return ContextXml.build_environment(model=model)
 
     def _extract_recent_tool_calls(
         self,
@@ -253,19 +253,17 @@ class SystemPromptMiddleware(AgentMiddleware):
 
         Order: ENVIRONMENT → WORKSPACE_RULES → WORKSPACE → AGENT_INSTRUCTIONS.
         """
-        from soothe_nano.prompts.project_instructions import load_agent_instructions
-        from soothe_nano.prompts.system_templates import (
-            EXECUTE_WORKSPACE_RULES_FRAGMENT,
-        )
+        from soothe_nano.prompts.project_instructions import ProjectInstructions
+        from soothe_nano.prompts.system_templates import SystemTemplates
 
-        tail: list[str] = [env_section, EXECUTE_WORKSPACE_RULES_FRAGMENT]
+        tail: list[str] = [env_section, SystemTemplates.EXECUTE_WORKSPACE_RULES_FRAGMENT]
 
         ws_section = self._build_workspace_section(workspace)
         if ws_section:
             tail.append(ws_section)
 
         headline_cap = int(self._config.agent.agent_instructions_max_chars)
-        agent_instructions = load_agent_instructions(
+        agent_instructions = ProjectInstructions.load(
             workspace,
             headline_max_chars=headline_cap,
         )
@@ -307,24 +305,24 @@ class SystemPromptMiddleware(AgentMiddleware):
 
     def _get_base_prompt_core(self, complexity: str) -> str:
         """Behavioral system prompt for complexity (no volatile date line; cache order)."""
-        from soothe_nano.prompts import (
-            _MEDIUM_SYSTEM_PROMPT,
-            _SIMPLE_SYSTEM_PROMPT,
-        )
-        from soothe_nano.prompts.system_templates import (
-            format_complex_agent_system_prompt_core,
-        )
+        from soothe_nano.prompts.system_templates import SystemTemplates
 
         # Handle both enum and string values
         complexity_str = str(complexity) if hasattr(complexity, "value") else complexity
 
         if complexity_str == "minimal":
-            return _SIMPLE_SYSTEM_PROMPT.format(assistant_name=self._config.agent.name)
+            return SystemTemplates.SIMPLE_SYSTEM_PROMPT.format(
+                assistant_name=self._config.agent.name
+            )
         if complexity_str == "simple":
-            return _SIMPLE_SYSTEM_PROMPT.format(assistant_name=self._config.agent.name)
+            return SystemTemplates.SIMPLE_SYSTEM_PROMPT.format(
+                assistant_name=self._config.agent.name
+            )
         if complexity_str == "medium":
-            return _MEDIUM_SYSTEM_PROMPT.format(assistant_name=self._config.agent.name)
-        return format_complex_agent_system_prompt_core(
+            return SystemTemplates.MEDIUM_SYSTEM_PROMPT.format(
+                assistant_name=self._config.agent.name
+            )
+        return SystemTemplates.format_complex_core(
             self._config.agent.system_prompt,
             self._config.agent.name,
         )
@@ -364,16 +362,16 @@ class SystemPromptMiddleware(AgentMiddleware):
             Volatility-ordered system prompt string.
         """
         from soothe_nano.prompts.context_xml import (
-            build_context_sections_for_complexity,
+            ContextXml,
         )
 
         base_core = self._get_base_prompt_core(complexity)
 
         # Build ENVIRONMENT once; placed mid-prelude (after the workspace
         # rules and project instructions, before the WORKSPACE metadata).
-        # `build_context_sections_for_complexity` returns an empty list for
+        # `ContextXml.build_complexity_sections` returns an empty list for
         # the minimal tier, so fall back to the direct ENVIRONMENT builder.
-        env_sections = build_context_sections_for_complexity(
+        env_sections = ContextXml.build_complexity_sections(
             config=self._config,
             complexity=complexity,  # type: ignore[arg-type]
             state=state or {},
@@ -403,13 +401,13 @@ class SystemPromptMiddleware(AgentMiddleware):
         # Gated blocks (context/memory/directive/contract) and semi-static
         # sections follow. Workspace tail (when bound):
         #   ENVIRONMENT → WORKSPACE_RULES → WORKSPACE → AGENT_INSTRUCTIONS
-        from soothe_nano.prompts.identity import prepend_assistant_identity
-        from soothe_nano.prompts.system_templates import build_response_language_hint
+        from soothe_nano.prompts.identity import PromptIdentity
+        from soothe_nano.prompts.system_templates import SystemTemplates
 
         response_language = (state or {}).get("response_language")
         static_sections: list[str] = [
-            prepend_assistant_identity(base_core, self._config.agent.name),
-            build_response_language_hint(response_language),
+            PromptIdentity.prepend_identity(base_core, self._config.agent.name),
+            SystemTemplates.build_response_language_hint(response_language),
         ]
 
         tools_block = state.get("_available_tools_block") if state else None
@@ -485,11 +483,9 @@ class SystemPromptMiddleware(AgentMiddleware):
         if avail_block:
             static_sections.append(avail_block)
         if skill_ctx_blocks:
-            from soothe_nano.prompts.system_templates import (
-                SKILL_CONTEXT_ACTIVE_GUIDE,
-            )
+            from soothe_nano.prompts.system_templates import SystemTemplates
 
-            semi_static_sections.append(SKILL_CONTEXT_ACTIVE_GUIDE)
+            semi_static_sections.append(SystemTemplates.SKILL_CONTEXT_ACTIVE_GUIDE)
         semi_static_sections.extend(skill_ctx_blocks)
 
         # MCP deferred tool listing
@@ -498,7 +494,7 @@ class SystemPromptMiddleware(AgentMiddleware):
             static_sections.append(mcp_block)
 
         # ── Assemble: static + semi-static + workspace tail ─────────────
-        from soothe_nano.prompts.system_templates import build_timestamp_xml_footer
+        from soothe_nano.prompts.system_templates import SystemTemplates
 
         parts = ["\n\n".join(static_sections)]
         if semi_static_sections:
@@ -513,7 +509,7 @@ class SystemPromptMiddleware(AgentMiddleware):
         else:
             parts.append(env_section)
 
-        parts.append(build_timestamp_xml_footer())
+        parts.append(SystemTemplates.timestamp_xml_footer())
 
         return "\n\n".join(parts)
 
@@ -558,26 +554,26 @@ class SystemPromptMiddleware(AgentMiddleware):
             return None
         from pathlib import Path
 
-        from soothe_nano.prompts.context_xml import build_soothe_workspace_section
+        from soothe_nano.prompts.context_xml import ContextXml
 
         workspace_path = Path(str(workspace)) if not isinstance(workspace, Path) else workspace
-        return build_soothe_workspace_section(workspace_path)
+        return ContextXml.build_workspace(workspace_path)
 
     def _build_thread_section(self, thread_context: dict) -> str | None:
         """Build <THREAD> section via shared context_xml builder."""
         if not thread_context:
             return None
-        from soothe_nano.prompts.context_xml import build_soothe_thread_section
+        from soothe_nano.prompts.context_xml import ContextXml
 
-        return build_soothe_thread_section(thread_context)
+        return ContextXml.build_thread(thread_context)
 
     def _build_protocols_section(self, protocol_summary: dict) -> str | None:
         """Build <PROTOCOLS> section via shared context_xml builder."""
         if not protocol_summary:
             return None
-        from soothe_nano.prompts.context_xml import build_soothe_protocols_section
+        from soothe_nano.prompts.context_xml import ContextXml
 
-        result = build_soothe_protocols_section(protocol_summary)
+        result = ContextXml.build_protocols(protocol_summary)
         return result or None
 
     @staticmethod

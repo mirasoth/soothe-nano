@@ -314,10 +314,11 @@ class TestDomainScopedPrompts:
         assert "run_command` with `rg`" not in _SUBAGENT_GUIDE
 
     def test_orchestration_guide_has_all_domains(self) -> None:
-        from soothe_nano.prompts import _TOOL_ORCHESTRATION_GUIDE
+        from soothe_nano.prompts import SystemTemplates
 
+        guide = SystemTemplates.TOOL_ORCHESTRATION_GUIDE
         # Check for tool categories mentioned in the guide
-        guide_lower = _TOOL_ORCHESTRATION_GUIDE.lower()
+        guide_lower = guide.lower()
         assert "read_file" in guide_lower or "file" in guide_lower
         assert "run_command" in guide_lower or "shell" in guide_lower
         assert "data" in guide_lower
@@ -326,13 +327,14 @@ class TestDomainScopedPrompts:
         assert "native tools first" in guide_lower or "grep tool" in guide_lower
 
     def test_no_old_tool_names_in_guide(self) -> None:
-        from soothe_nano.prompts import _TOOL_ORCHESTRATION_GUIDE
+        from soothe_nano.prompts import SystemTemplates
 
+        guide = SystemTemplates.TOOL_ORCHESTRATION_GUIDE
         # Old names should not appear (they've been consolidated)
         # Note: wizsearch is a valid name, so we check for the old web_search pattern
         # file_edit is also valid (backward compat), so we check for truly deprecated ones
-        assert "run_cli" not in _TOOL_ORCHESTRATION_GUIDE
-        assert "python_executor" not in _TOOL_ORCHESTRATION_GUIDE
-        assert "inquiry" not in _TOOL_ORCHESTRATION_GUIDE
-        assert "search_files" not in _TOOL_ORCHESTRATION_GUIDE
-        assert "list_files" not in _TOOL_ORCHESTRATION_GUIDE
+        assert "run_cli" not in guide
+        assert "python_executor" not in guide
+        assert "inquiry" not in guide
+        assert "search_files" not in guide
+        assert "list_files" not in guide
