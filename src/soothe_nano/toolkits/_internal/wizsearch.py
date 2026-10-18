@@ -21,12 +21,43 @@ from urllib.parse import urlparse
 
 from soothe_nano.config.models import DEFAULT_WIZSEARCH_ENGINES
 from soothe_nano.utils.text_preview import log_preview, preview_first
-from soothe_nano.utils.url_validation import validate_url
 
 logger = logging.getLogger("soothe_nano.toolkits._internal.wizsearch")
 
 _LOG_QUERY_CHARS = 120
 _LOG_URL_CHARS = 160
+
+
+def validate_url(url: str) -> tuple[str, str | None]:
+    """Validate and sanitize URL.
+
+    Returns:
+        Tuple of (sanitized_url, error_message)
+        If error_message is not None, the URL is invalid.
+    """
+    # Remove leading/trailing whitespace
+    url = url.strip()
+
+    # Check for spaces (common error: 'https://ir.we ride.ai/')
+    if " " in url:
+        # Try to fix by encoding spaces
+        url = url.replace(" ", "%20")
+
+    # Basic validation
+    try:
+        parsed = urlparse(url)
+        if not parsed.scheme:
+            return url, f"URL missing scheme (http:// or https://): {url}"
+        if not parsed.netloc:
+            return url, f"URL missing domain: {url}"
+        # Other invalid characters
+        if re.search(r'[<>"\']', url):
+            return url, f"URL contains invalid characters: {url}"
+    except Exception as e:
+        return url, f"Invalid URL format: {e}"
+    else:
+        return url, None
+
 
 T = TypeVar("T")
 
@@ -227,8 +258,7 @@ def _save_raw_results(query: str, result: object) -> None:
     from soothe_nano.utils.runtime import current_run_dir
     from soothe_nano.workspace import (
         FrameworkFilesystem,
-        get_virtual_home,
-        get_virtual_mode,
+        WorkspaceRuntime,
     )
 
     run_dir = current_run_dir.get()
@@ -249,10 +279,10 @@ def _save_raw_results(query: str, result: object) -> None:
         }
         content = json.dumps(payload, ensure_ascii=False, indent=2)
 
-        if get_virtual_mode():
+        if WorkspaceRuntime.virtual_mode():
             backend = FrameworkFilesystem.get()
             if backend is not None:
-                virtual_home = get_virtual_home()
+                virtual_home = WorkspaceRuntime.virtual_home()
                 search_rel = run_dir.relative_to(virtual_home) / "search_results"
                 virtual_dir = f"/.soothe/{search_rel.as_posix()}"
                 virtual_file = f"{virtual_dir}/{filename}"

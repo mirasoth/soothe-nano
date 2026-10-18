@@ -37,6 +37,7 @@ from soothe_nano.config.models import (
     ProgressiveToolsConfig,
     ReportOutputConfig,
     RouterProfile,
+    SandboxConfig,
     SecurityConfig,
     SubagentConfig,
     ToolsConfig,
@@ -47,8 +48,6 @@ from soothe_nano.config.models import (
     WorkspaceMountConfig,
     parse_model_specs,
 )
-
-# Lazy import to avoid circular dependency - _DEFAULT_SYSTEM_PROMPT imported in methods that use it
 
 if TYPE_CHECKING:
     from langchain_core.embeddings import Embeddings
@@ -269,7 +268,7 @@ class SootheConfig(BaseSettings):
     subagents: dict[str, SubagentConfig] = Field(default_factory=dict)
     """Subagent name to config mapping. Set `enabled: false` to disable.
 
-    Builtin subagents (planner, deep_research, academic_research, browser_use) are added
+    Builtin subagents (planner, deep_research, browser_use) are added
     automatically. browser_use is included in base dependencies and is enabled by default.
     Plugin-discovered subagents are merged during config validation.
     """
@@ -442,10 +441,10 @@ class SootheConfig(BaseSettings):
         if not self.builtin_skill_roots:
             return self
 
-        from soothe_nano.skills.builtins import register_builtin_skill_root
+        from soothe_nano.skills.builtins import SkillRoots
 
         for root in self.builtin_skill_roots:
-            register_builtin_skill_root(root, source="builtin")
+            SkillRoots.register(root, source="builtin")
         return self
 
     @model_validator(mode="after")
@@ -484,7 +483,6 @@ class SootheConfig(BaseSettings):
         builtin_subagents = {
             "planner": SubagentConfig(model_role="think"),
             "deep_research": SubagentConfig(),
-            "academic_research": SubagentConfig(),
             "browser_use": SubagentConfig(enabled=True, model_role="default"),
             "computer_use": SubagentConfig(enabled=True, model_role="default"),
         }
@@ -513,6 +511,10 @@ class SootheConfig(BaseSettings):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     """Tool group configurations. Each tool can be enabled/disabled and configured."""
 
+    sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    """Sandbox-mode tool placement policy; consulted only when a sandbox
+    backend is injected into the agent build."""
+
     mcp_servers: list[MCPServerConfig] = Field(default_factory=list)
     """MCP server configurations. Server names must be unique."""
 
@@ -536,7 +538,7 @@ class SootheConfig(BaseSettings):
     builtin_skill_roots: list[str] = Field(default_factory=list)
     """Extra package skill roots (dirs of `<name>/SKILL.md` folders).
 
-    Registered as builtin via :func:`soothe_nano.skills.register_builtin_skill_root`
+    Registered as builtin via :meth:`soothe_nano.skills.builtins.SkillRoots.register`
     at config load. Host packages may also call that API directly.
     """
 
@@ -819,7 +821,7 @@ class SootheConfig(BaseSettings):
             if self.persistence.default_backend == "postgresql":
                 try:
                     from soothe_nano.persistence.postgres_pool_lifecycle import (
-                        postgres_pool_timing_from_config,
+                        PostgresPoolLifecycle,
                     )
                     from soothe_nano.persistence.postgres_pool_registry import (
                         PostgresPoolRegistry,
@@ -831,7 +833,7 @@ class SootheConfig(BaseSettings):
                         if vectors_pool is not None:
                             kwargs["shared_pool"] = vectors_pool
                             kwargs["pool_size"] = 0
-                    kwargs["pool_timing"] = postgres_pool_timing_from_config(
+                    kwargs["pool_timing"] = PostgresPoolLifecycle.timing_from_config(
                         self,
                         max_size=kwargs["pool_size"] or self.persistence.postgres.vectors_pool_size,
                     )
@@ -1075,21 +1077,19 @@ class SootheConfig(BaseSettings):
         Returns:
             The system prompt string.
         """
-        from soothe_nano.prompts.identity import prepend_assistant_identity
-        from soothe_nano.prompts.system_templates import (
-            format_complex_agent_system_prompt_core,
-        )
+        from soothe_nano.prompts.identity import PromptIdentity
+        from soothe_nano.prompts.system_templates import SystemTemplates
         from soothe_nano.utils.prompt_clock import local_date_str, local_timezone_label
 
         current_date = local_date_str()
         tz_label = local_timezone_label()
 
-        base_prompt = format_complex_agent_system_prompt_core(
+        base_prompt = SystemTemplates.format_complex_core(
             self.agent.system_prompt,
             self.agent.name,
         )
         body = f"{base_prompt}\n\nToday's date is {current_date} ({tz_label})."
-        return prepend_assistant_identity(body, self.agent.name)
+        return PromptIdentity.prepend_identity(body, self.agent.name)
 
     def propagate_env(self) -> None:
         """Set provider-specific env vars for downstream libraries.

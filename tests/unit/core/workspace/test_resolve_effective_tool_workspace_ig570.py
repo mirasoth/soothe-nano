@@ -10,10 +10,7 @@ import pytest
 
 from soothe_nano.middleware.filesystem import SootheFilesystemMiddleware
 from soothe_nano.workspace.workspace_filesystem import FrameworkFilesystem
-from soothe_nano.workspace.workspace_paths import (
-    resolve_effective_tool_workspace,
-    workspace_path_for_tool_resolution,
-)
+from soothe_nano.workspace.workspace_policy import WorkspaceResolver
 
 
 @pytest.fixture
@@ -28,7 +25,7 @@ def test_resolve_effective_tool_workspace_prefers_contextvar(
     workspace_token: Token[Path | None],
 ) -> None:
     """ContextVar stream workspace wins over daemon fallback."""
-    resolved = resolve_effective_tool_workspace(None)
+    resolved = WorkspaceResolver.effective_tool_workspace(None)
     assert resolved == Path("/ctx/stream-workspace").resolve()
 
 
@@ -38,7 +35,7 @@ def test_resolve_effective_tool_workspace_prefers_runtime_config() -> None:
     runtime.config = {"configurable": {"workspace": "/client/from_runtime"}}
     runtime.state = {}
 
-    resolved = resolve_effective_tool_workspace(None, runtime=runtime)
+    resolved = WorkspaceResolver.effective_tool_workspace(None, runtime=runtime)
     assert resolved == Path("/client/from_runtime")
 
 
@@ -48,7 +45,7 @@ def test_workspace_path_for_tool_resolution_matches_effective(tmp_path: Path) ->
     ws.mkdir()
     token = FrameworkFilesystem.set_current_workspace(ws)
     try:
-        assert workspace_path_for_tool_resolution(None) == ws.resolve()
+        assert WorkspaceResolver.effective_tool_workspace(None) == ws.resolve()
     finally:
         FrameworkFilesystem.clear_current_workspace(token)
 

@@ -279,7 +279,7 @@ When creating a new skill from scratch, always run the `init_skill.py` script. T
 | Target | `--path` value | Soothe discovery |
 |--------|----------------|------------------|
 | **Project (preferred)** | `<workspace>/.soothe/skills` | When the run has that workspace |
-| **User-wide** | `~/.soothe/skills` | All runs (`get_built_in_skills_paths`) |
+| **User-wide** | `~/.soothe/skills` | All runs (`SkillRoots.builtin_paths`) |
 | **Custom** | Any directory listed in `SootheConfig.skills` | Per config |
 
 Resolve `<workspace>` before initializing:

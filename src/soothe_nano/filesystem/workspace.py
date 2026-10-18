@@ -25,7 +25,7 @@ from soothe_deepagents.backends.protocol import (
     WriteResult,
 )
 
-from soothe_nano.workspace.workspace_runtime import resolve_process_workspace_root
+from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
 from .local import LocalFilesystem
 from .unified import UnifiedFilesystem
@@ -730,7 +730,7 @@ class WorkspaceFilesystem(UnifiedFilesystem):
         Returns:
             WorkspaceFilesystem instance configured for the process workspace.
         """
-        workspace = resolve_process_workspace_root()
+        workspace = WorkspaceRuntime.process_workspace_root()
         return cls(
             workspace=workspace,
             virtual_mode=virtual_mode,

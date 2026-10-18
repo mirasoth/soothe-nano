@@ -8,6 +8,12 @@ community plugins can depend on without requiring the full host runtime.
 
 from soothe_nano.protocols.concurrency import ConcurrencyPolicy
 from soothe_nano.protocols.core_agent import CoreAgentCapabilities, CoreAgentProtocol
+from soothe_nano.protocols.daemon_config import (
+    CliConfigProtocol,
+    DaemonConfigProtocol,
+    DaemonTransportConfigProtocol,
+    WebSocketConfigProtocol,
+)
 from soothe_nano.protocols.durability import (
     DurabilityProtocol,
     ThreadFilter,
@@ -50,6 +56,7 @@ from soothe_nano.protocols.policy import (
     PolicyProfile,
     PolicyProtocol,
 )
+from soothe_nano.protocols.routing import RoutingClassification, TaskComplexity
 from soothe_nano.protocols.vector_store import VectorRecord, VectorStoreProtocol
 
 __all__ = [
@@ -89,11 +96,19 @@ __all__ = [
     # Memory
     "MemoryItem",
     "MemoryProtocol",
+    # Routing
+    "RoutingClassification",
+    "TaskComplexity",
     # Durability
     "DurabilityProtocol",
     "ThreadFilter",
     "ThreadInfo",
     "ThreadMetadata",
+    # Daemon/CLI config
+    "CliConfigProtocol",
+    "DaemonConfigProtocol",
+    "DaemonTransportConfigProtocol",
+    "WebSocketConfigProtocol",
     # Operation security
     "OperationKind",
     "OperationSecurityContext",

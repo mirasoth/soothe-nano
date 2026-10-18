@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from soothe_nano.skills.builtins import iter_skill_roots
+from soothe_nano.skills.builtins import SkillRoots
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ class SkillIndex:
         override ``~/.agents/skills``.
         """
         by_name: dict[str, tuple[Path, float, str]] = {}
-        for root, source in iter_skill_roots():
+        for root, source in SkillRoots.roots():
             if not root.is_dir():
                 continue
             try:
@@ -234,19 +234,3 @@ class SkillIndex:
             )
         except OSError:
             logger.debug("Failed to persist skill index cache", exc_info=True)
-
-
-def _make_wire_entry(entry: SkillIndexEntry) -> dict[str, Any]:
-    """Convert an index entry to the wire format expected by existing RPC consumers."""
-    d: dict[str, Any] = {
-        "name": entry.name,
-        "description": entry.description,
-        "source": entry.source,
-    }
-    if entry.tags:
-        d["tags"] = entry.tags
-    if entry.paths is not None:
-        d["paths"] = list(entry.paths)
-    if entry.when_to_use is not None:
-        d["when_to_use"] = entry.when_to_use
-    return d

@@ -1,12 +1,11 @@
-"""Shared filesystem path constants and light config protocols.
+"""Shared filesystem path constants.
 
-Canonical home for ``SOOTHE_HOME`` / ``SOOTHE_DATA_DIR`` and duck-typed config
-protocols used by daemon, core, and clients.
+Canonical home for ``SOOTHE_HOME`` / ``SOOTHE_DATA_DIR``, used by daemon,
+core, and clients.
 """
 
 import os
 from pathlib import Path
-from typing import Protocol
 
 # === Constants (from config_constants.py) ===
 
@@ -87,38 +86,6 @@ DEFAULT_EXECUTE_TIMEOUT: int = 60
 """Default timeout for execute tool operations in seconds."""
 
 
-# === Types (from config_types.py) ===
-
-
-class WebSocketConfigProtocol(Protocol):
-    """Protocol for WebSocket transport configuration."""
-
-    host: str
-    port: int
-
-
-class DaemonTransportConfigProtocol(Protocol):
-    """Protocol for daemon transport configuration."""
-
-    websocket: WebSocketConfigProtocol
-
-
-class DaemonConfigProtocol(Protocol):
-    """Protocol for daemon configuration."""
-
-    transports: DaemonTransportConfigProtocol
-
-
-class CliConfigProtocol(Protocol):
-    """Protocol for CLI configuration (minimal interface).
-
-    This allows CLI to load just the websocket settings without
-    requiring the full SootheConfig from the daemon package.
-    """
-
-    daemon: DaemonConfigProtocol
-
-
 __all__ = [
     # Constants
     "SOOTHE_DATA_DIR",
@@ -135,8 +102,4 @@ __all__ = [
     "resolve_persist_db_path",
     "resolve_sqlite_db_path",
     "resolve_vectors_db_path",
-    # Types
-    "DaemonConfigProtocol",
-    "DaemonTransportConfigProtocol",
-    "WebSocketConfigProtocol",
 ]

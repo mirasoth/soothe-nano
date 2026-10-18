@@ -57,8 +57,6 @@ __all__ = [
     "DependencyError",
     "InitializationError",
     "ConfigurationError",
-    # Types
-    "VerbosityLevel",
     # Verbosity
     "VerbosityTier",
 ]
@@ -113,5 +111,4 @@ from soothe_nano.core.registry import (
     EventRegistry,
     register_event,
 )
-from soothe_nano.core.types import VerbosityLevel
 from soothe_nano.core.verbosity import VerbosityTier

@@ -30,8 +30,8 @@ class ToolMeta:
         aliases: Alternative names the model might emit for the same tool
             (e.g., ``shell`` and ``bash`` are legacy aliases of ``run_command``).
         category: Semantic category for display grouping
-            (``file_ops``, ``execution``, ``web``, ``media``, ``goals``,
-            ``subagent``, ``generic``).
+            (``file_ops``, ``shell``, ``web``, ``media``, ``subagent``,
+            ``generic``).
         outcome_type: Outcome classification for agent reasoning
             (``file_read``, ``file_write``, ``web_search``, ``code_exec``,
             ``subagent``, ``generic``). If ``None``, derived from category.
@@ -39,6 +39,9 @@ class ToolMeta:
         has_header_info: True when ``format_tool_display()`` already renders
             the key information in the header line, so the args body
             should be suppressed in ``ToolCallMessage``.
+        placement: Sandbox-mode tool placement (docs/arcbox-backend.md §7) — one of
+            ``protocol`` / ``guest`` / ``shuttle`` / ``host`` / ``deny``.
+            ``None`` derives from the default table by category/outcome_type.
     """
 
     name: str
@@ -50,6 +53,7 @@ class ToolMeta:
     outcome_type: str | None = None
     source: str = "soothe"
     has_header_info: bool = False
+    placement: str | None = None
 
     def get_display_name(self) -> str:
         """Return the user-facing display name, with fallback."""
@@ -185,7 +189,7 @@ _register(
 )
 
 # ---------------------------------------------------------------------------
-# soothe execution tools
+# soothe shell tools
 # ---------------------------------------------------------------------------
 
 _register(
@@ -194,7 +198,7 @@ _register(
         display_name="RunCommand",
         arg_keys=("command", "cmd", "script"),
         aliases=("shell", "bash"),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
         has_header_info=True,
@@ -316,7 +320,7 @@ _register(
 )
 
 # ---------------------------------------------------------------------------
-# soothe execution tools (continued)
+# soothe shell tools (continued)
 # ---------------------------------------------------------------------------
 
 _register(
@@ -324,7 +328,7 @@ _register(
         name="run_python",
         display_name="RunPython",
         arg_keys=("code",),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
     )
@@ -335,7 +339,7 @@ _register(
         name="run_background",
         display_name="RunBackground",
         arg_keys=("command",),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
     )
@@ -346,7 +350,7 @@ _register(
         name="tail_background_log",
         display_name="TailBackgroundLog",
         arg_keys=("pid", "lines"),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
     )
@@ -357,7 +361,7 @@ _register(
         name="kill_process",
         display_name="KillProcess",
         arg_keys=("pid",),
-        category="execution",
+        category="shell",
         outcome_type="code_exec",
         source="soothe",
     )
@@ -466,33 +470,9 @@ _register(
     )
 )
 
-_register(
-    ToolMeta(
-        name="academic_research",
-        display_name="Academic Research",
-        arg_keys=("topic", "domain"),
-        category="subagent",
-        outcome_type="subagent",
-        source="soothe",
-        has_header_info=True,
-    )
-)
-
 # ---------------------------------------------------------------------------
 # soothe media tools
 # ---------------------------------------------------------------------------
-
-_register(
-    ToolMeta(
-        name="analyze_image",
-        display_name="AnalyzeImage",
-        arg_keys=("image_path",),
-        path_arg_keys=("image_path",),
-        category="media",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
 
 _register(
     ToolMeta(
@@ -549,82 +529,6 @@ _register(
         arg_keys=("audio_path",),
         path_arg_keys=("audio_path",),
         category="media",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-# ---------------------------------------------------------------------------
-# soothe data tools
-# ---------------------------------------------------------------------------
-
-_register(
-    ToolMeta(
-        name="inspect_data",
-        display_name="InspectData",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="summarize_data",
-        display_name="SummarizeData",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="check_data_quality",
-        display_name="CheckDataQuality",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="extract_text",
-        display_name="ExtractText",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="get_data_info",
-        display_name="GetDataInfo",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="ask_about_file",
-        display_name="AskAboutFile",
-        arg_keys=("file_path",),
-        path_arg_keys=("file_path",),
-        category="file_ops",
         outcome_type="file_read",
         source="soothe",
     )
@@ -822,11 +726,10 @@ def get_outcome_type(name: str) -> str:
     # Fallback: categories with uniform outcome_type
     if meta:
         category_map = {
-            "execution": "code_exec",
+            "shell": "code_exec",
             "web": "web_search",
             "subagent": "subagent",
             "media": "file_read",
-            "goals": "generic",
             "generic": "generic",
             "file_ops": "file_read",  # Default for ambiguous category
         }

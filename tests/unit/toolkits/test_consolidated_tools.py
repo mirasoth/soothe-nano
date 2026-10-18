@@ -6,7 +6,6 @@ from pathlib import Path
 
 from langchain.tools import ToolRuntime
 
-from soothe_nano.toolkits.data import DataToolkit, InspectDataTool
 from soothe_nano.toolkits.wizsearch import WizsearchCrawlTool, WizsearchSearchTool
 
 # ---------------------------------------------------------------------------
@@ -206,87 +205,6 @@ class TestFileOpsToolkit:
 
 
 # ---------------------------------------------------------------------------
-# Data Tools (replaces DataTool)
-# ---------------------------------------------------------------------------
-
-
-class TestDataTools:
-    """Tests for the data tools."""
-
-    def test_create_returns_six_tools(self) -> None:
-        toolkit = DataToolkit()
-        tools = toolkit.get_tools()
-        assert len(tools) == 6
-        assert isinstance(tools[0], InspectDataTool)
-
-    def test_inspect_data_tool_name(self) -> None:
-        tool = InspectDataTool()
-        assert tool.name == "inspect_data"
-
-    def test_inspect_csv(self, tmp_path: Path) -> None:
-        csv_file = tmp_path / "test.csv"
-        csv_file.write_text("name,age\nAlice,30\nBob,25\n")
-        tool = InspectDataTool()
-        result = tool._run(file_path=str(csv_file))
-        assert "name" in result
-        assert "age" in result
-
-    def test_document_extract(self, tmp_path: Path) -> None:
-        from soothe_nano.toolkits.data import ExtractTextTool
-
-        txt_file = tmp_path / "doc.txt"
-        txt_file.write_text("Hello document world")
-        tool = ExtractTextTool()
-        result = tool._run(file_path=str(txt_file))
-        assert "Hello document world" in result
-
-    def test_document_extract_docx(self, tmp_path: Path) -> None:
-        import zipfile
-
-        from soothe_nano.toolkits.data import ExtractTextTool
-
-        docx_file = tmp_path / "doc.docx"
-        document_xml = (
-            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            "<w:body><w:p><w:r><w:t>Hello DOCX world</w:t></w:r></w:p></w:body>"
-            "</w:document>"
-        )
-        content_types = (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-            '<Default Extension="rels" '
-            'ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-            '<Default Extension="xml" ContentType="application/xml"/>'
-            '<Override PartName="/word/document.xml" '
-            'ContentType="application/vnd.openxmlformats-officedocument'
-            '.wordprocessingml.document.main+xml"/>'
-            "</Types>"
-        )
-        rels = (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-            '<Relationship Id="rId1" '
-            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
-            'Target="word/document.xml"/>'
-            "</Relationships>"
-        )
-        with zipfile.ZipFile(docx_file, "w") as zf:
-            zf.writestr("[Content_Types].xml", content_types)
-            zf.writestr("_rels/.rels", rels)
-            zf.writestr("word/document.xml", document_xml)
-
-        tool = ExtractTextTool()
-        result = tool._run(file_path=str(docx_file))
-        assert "Hello DOCX world" in result
-
-
-# ---------------------------------------------------------------------------
-# Research tool (renamed inquiry)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
 # Resolver: toolkit names resolve with backward compat
 # ---------------------------------------------------------------------------
 
@@ -296,50 +214,43 @@ class TestResolverToolkitNames:
 
     def test_wizsearch_resolves(self) -> None:
         """Wizsearch toolkit should resolve to 2 tools."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
+        from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
         tools = _resolve_single_tool_group_uncached("wizsearch")
         assert len(tools) == 2
         assert tools[0].name == "wizsearch_search"
         assert tools[1].name == "wizsearch_crawl"
 
-    def test_file_ops_resolves(self) -> None:
-        """File_ops toolkit should resolve to 6 surgical tools."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
+    def test_surgical_file_names_resolve_individually(self) -> None:
+        """Surgical FS names resolve via single-name routing (file_ops group retired)."""
+        from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
-        tools = _resolve_single_tool_group_uncached("file_ops")
-        assert len(tools) == 6
-        tool_names = {t.name for t in tools}
-        # Surgical file operations (not basic read/write)
-        assert "delete" in tool_names
-        assert "file_info" in tool_names
-        assert "edit_lines" in tool_names
-        assert "insert_lines" in tool_names
-        assert "delete_lines" in tool_names
-        assert "apply_diff" in tool_names
-        # NOT included (provided by soothe_deepagents)
-        assert "read_file" not in tool_names
-        assert "write_file" not in tool_names
-        assert "search_files" not in tool_names
-        assert "list_files" not in tool_names
+        expected = {
+            "delete",
+            "file_info",
+            "edit_lines",
+            "insert_lines",
+            "delete_lines",
+            "apply_diff",
+        }
+        for name in expected:
+            tools = _resolve_single_tool_group_uncached(name)
+            assert len(tools) == 1, f"expected exactly one tool for {name}"
+            assert tools[0].name == name
+        # Base surface names resolve through the same middleware factory.
+        for base_name in ("read_file", "write_file"):
+            tools = _resolve_single_tool_group_uncached(base_name)
+            assert {t.name for t in tools} == {base_name}
 
     def test_execution_resolves(self) -> None:
         """Execution toolkit should resolve to 5 tools."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
+        from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
-        tools = _resolve_single_tool_group_uncached("execution")
+        tools = _resolve_single_tool_group_uncached("shell")
         assert len(tools) == 5
         assert tools[0].name == "run_command"
         tool_names = {t.name for t in tools}
         assert "tail_background_log" in tool_names
-
-    def test_data_resolves(self) -> None:
-        """Data toolkit should resolve to 6 tools."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
-
-        tools = _resolve_single_tool_group_uncached("data")
-        assert len(tools) == 6
-        assert tools[0].name == "inspect_data"
 
 
 class TestResolverOldNamesRejected:
@@ -347,7 +258,7 @@ class TestResolverOldNamesRejected:
 
     def test_old_names_rejected(self) -> None:
         """Legacy names without backward compat should not resolve."""
-        from soothe_nano.resolve._resolver_tools import _resolve_single_tool_group_uncached
+        from soothe_nano.utils.resolver import _resolve_single_tool_group_uncached
 
         for old_name in (
             "inquiry",
@@ -357,6 +268,10 @@ class TestResolverOldNamesRejected:
             "tabular",
             "document",
             "python_executor",
+            "data",
+            "image",
+            "analyze_image",
+            "inspect_data",
         ):
             tools = _resolve_single_tool_group_uncached(old_name)
             assert tools == [], f"Legacy name '{old_name}' should not resolve"
@@ -380,7 +295,8 @@ class TestDomainScopedPrompts:
             _SUBAGENT_GUIDE,
         )
 
-        assert "websearch" in _RESEARCH_GUIDE or "search_web" in _RESEARCH_GUIDE
+        assert "wizsearch_search" in _RESEARCH_GUIDE
+        assert "wizsearch_crawl" in _RESEARCH_GUIDE
         assert "research" in _RESEARCH_GUIDE.lower()
         assert "read_file" in _FILE_OPS_GUIDE or "file" in _FILE_OPS_GUIDE.lower()
         assert "grep" in _FILE_OPS_GUIDE
@@ -398,25 +314,27 @@ class TestDomainScopedPrompts:
         assert "run_command` with `rg`" not in _SUBAGENT_GUIDE
 
     def test_orchestration_guide_has_all_domains(self) -> None:
-        from soothe_nano.prompts import _TOOL_ORCHESTRATION_GUIDE
+        from soothe_nano.prompts import SystemTemplates
 
+        guide = SystemTemplates.TOOL_ORCHESTRATION_GUIDE
         # Check for tool categories mentioned in the guide
-        guide_lower = _TOOL_ORCHESTRATION_GUIDE.lower()
+        guide_lower = guide.lower()
         assert "read_file" in guide_lower or "file" in guide_lower
         assert "run_command" in guide_lower or "shell" in guide_lower
         assert "data" in guide_lower
-        assert "search_web" in guide_lower or "websearch" in guide_lower or "web" in guide_lower
+        assert "wizsearch_search" in guide_lower or "web" in guide_lower
         assert "research" in guide_lower
         assert "native tools first" in guide_lower or "grep tool" in guide_lower
 
     def test_no_old_tool_names_in_guide(self) -> None:
-        from soothe_nano.prompts import _TOOL_ORCHESTRATION_GUIDE
+        from soothe_nano.prompts import SystemTemplates
 
+        guide = SystemTemplates.TOOL_ORCHESTRATION_GUIDE
         # Old names should not appear (they've been consolidated)
         # Note: wizsearch is a valid name, so we check for the old web_search pattern
         # file_edit is also valid (backward compat), so we check for truly deprecated ones
-        assert "run_cli" not in _TOOL_ORCHESTRATION_GUIDE
-        assert "python_executor" not in _TOOL_ORCHESTRATION_GUIDE
-        assert "inquiry" not in _TOOL_ORCHESTRATION_GUIDE
-        assert "search_files" not in _TOOL_ORCHESTRATION_GUIDE
-        assert "list_files" not in _TOOL_ORCHESTRATION_GUIDE
+        assert "run_cli" not in guide
+        assert "python_executor" not in guide
+        assert "inquiry" not in guide
+        assert "search_files" not in guide
+        assert "list_files" not in guide

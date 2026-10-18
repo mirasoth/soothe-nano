@@ -170,7 +170,7 @@ class PluginRegistry:
         matching `_tool_group` attribute.
 
         Args:
-            group_name: Tool group name (e.g., `execution`, `file_ops`).
+            group_name: Tool group name (e.g., `shell`, `file_ops`).
 
         Returns:
             List of tools for the group, or an empty list if none match.

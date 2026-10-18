@@ -5,12 +5,12 @@ from unittest.mock import MagicMock
 
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from soothe_nano.toolkits.execution import (
-    ExecutionToolkit,
+from soothe_nano.toolkits.shell import (
     KillProcessTool,
     RunBackgroundTool,
     RunCommandShellTool,
     RunPythonREPLTool,
+    ShellToolkit,
     TailBackgroundLogTool,
 )
 
@@ -98,7 +98,7 @@ class TestRunCommandShellToolInitialization:
         assert tool.security_config is None
 
     def test_execution_toolkit_returns_five_tools(self) -> None:
-        tools = ExecutionToolkit().get_tools()
+        tools = ShellToolkit().get_tools()
 
         assert len(tools) == 5
         assert isinstance(tools[0], RunCommandShellTool)

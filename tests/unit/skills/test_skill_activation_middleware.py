@@ -8,8 +8,8 @@ import pytest
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
-from soothe_nano.intention.models import RoutingClassification, TaskComplexity
 from soothe_nano.middleware.skill_activation import FILE_OP_TOOLS, SkillActivationMiddleware
+from soothe_nano.protocols.routing import RoutingClassification, TaskComplexity
 from soothe_nano.skills.registry import ProgressiveSkillRegistry
 
 
@@ -65,7 +65,7 @@ class TestAbeforeAgent:
             "routing_classification": RoutingClassification(task_complexity=TaskComplexity.MINIMAL),
         }
         with patch(
-            "soothe_nano.middleware.skill_activation.prefetch_deferred_skills",
+            "soothe_nano.middleware.skill_activation.SkillSearcher.prefetch_from_goal",
             new=AsyncMock(),
         ) as deferred_mock:
             result = await middleware.abefore_agent(state, MagicMock())

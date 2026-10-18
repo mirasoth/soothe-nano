@@ -10,11 +10,7 @@ from langchain_core.messages import HumanMessage
 from soothe_nano.middleware.skill_activation import SkillActivationMiddleware
 from soothe_nano.skills.index import SkillIndexEntry
 from soothe_nano.skills.registry import ProgressiveSkillRegistry
-from soothe_nano.skills.search import (
-    merge_search_results,
-    prefetch_core_skills_from_corpus,
-    search_deferred_skills,
-)
+from soothe_nano.skills.search import SkillSearcher
 
 
 def _entry(name: str, *, source: str = "user") -> SkillIndexEntry:
@@ -35,13 +31,13 @@ class TestMergeSearchResults:
             (0.9, _entry("beta")),
             (0.95, _entry("gamma")),
         ]
-        merged = merge_search_results(substring, semantic, limit=3)
+        merged = SkillSearcher.merge_search_results(substring, semantic, limit=3)
         assert [entry.name for entry in merged] == ["alpha", "gamma", "beta"]
 
     def test_dedupes_by_name(self) -> None:
         substring = [_entry("alpha")]
         semantic = [(0.9, _entry("alpha"))]
-        merged = merge_search_results(substring, semantic, limit=3)
+        merged = SkillSearcher.merge_search_results(substring, semantic, limit=3)
         assert [entry.name for entry in merged] == ["alpha"]
 
 
@@ -50,14 +46,11 @@ class TestSubstringSearch:
     async def test_search_deferred_uses_substring_only(self) -> None:
         registry = ProgressiveSkillRegistry()
         deferred = [_entry("db-migrate"), _entry("vector-only")]
-        matches = await search_deferred_skills(
+        matches = await SkillSearcher(registry).search(
             "deploy",
             deferred,
             discovered=set(),
             limit=5,
-            registry=registry,
-            config=MagicMock(),
-            catalog_by_name={entry.name: entry for entry in deferred},
         )
         # "deploy" does not substring-match either name/description tag set here
         assert matches == []
@@ -66,14 +59,11 @@ class TestSubstringSearch:
     async def test_search_deferred_matches_by_name_substring(self) -> None:
         registry = ProgressiveSkillRegistry()
         deferred = [_entry("db-migrate"), _entry("vector-only")]
-        matches = await search_deferred_skills(
+        matches = await SkillSearcher(registry).search(
             "migrate",
             deferred,
             discovered=set(),
             limit=5,
-            registry=registry,
-            config=MagicMock(),
-            catalog_by_name={entry.name: entry for entry in deferred},
         )
         assert [entry.name for entry in matches] == ["db-migrate"]
 
@@ -95,12 +85,11 @@ class TestSubstringSearch:
             path="/tmp/github",
             mtime=0.0,
         )
-        matches = prefetch_core_skills_from_corpus(
+        matches = SkillSearcher(registry).prefetch_core_from_corpus(
             "北京今天的天气",
             [weather, github],
             discovered=set(),
             limit=2,
-            registry=registry,
         )
         assert [entry.name for entry in matches] == ["weather"]
 
@@ -122,12 +111,11 @@ class TestSubstringSearch:
             path="/tmp/weather",
             mtime=0.0,
         )
-        matches = prefetch_core_skills_from_corpus(
+        matches = SkillSearcher(registry).prefetch_core_from_corpus(
             "is there skill of drawio on claw hub",
             [weather, clawhub],
             discovered=set(),
             limit=2,
-            registry=registry,
         )
         assert [entry.name for entry in matches] == ["clawhub"]
 
@@ -249,7 +237,7 @@ class TestIntentPrefetch:
             return_value="clawhub",
         ) as mock_invoke:
             with patch(
-                "soothe_nano.middleware.skill_activation.prefetch_deferred_skills",
+                "soothe_nano.middleware.skill_activation.SkillSearcher.prefetch_from_goal",
                 new_callable=AsyncMock,
             ) as mock_deferred:
                 result = await middleware.abefore_agent(state, None)

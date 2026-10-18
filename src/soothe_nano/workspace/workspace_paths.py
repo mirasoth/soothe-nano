@@ -1,12 +1,11 @@
-"""Workspace path helpers for tool and filesystem operations."""
+"""Workspace path resolution bound to a root and sandbox policy."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from soothe_nano.config import SootheConfig
-from soothe_nano.workspace.workspace_runtime import resolve_process_workspace_root
+from soothe_nano.workspace.workspace_runtime import WorkspaceRuntime
 
 # Product layout under the workspace (not soothe-deepagents defaults).
 WORKSPACE_BACKUP_DIR = ".soothe/backups"
@@ -34,7 +33,7 @@ _UNIX_HOST_ROOT_TOP_NAMES: frozenset[str] = frozenset(
 )
 
 
-def config_workspace_root(config: Any | None) -> str | None:
+def _config_workspace_root(config: Any | None) -> str | None:
     """Return configured `filesystem_middleware.workspace_root` when set."""
     if config is None:
         return None
@@ -43,42 +42,6 @@ def config_workspace_root(config: Any | None) -> str | None:
     if isinstance(root, str) and root.strip():
         return root
     return None
-
-
-def static_tool_workspace_fallback(config: Any | None = None) -> Path:
-    """Static workspace when no stream ContextVar or RunnableConfig is bound."""
-    root = config_workspace_root(config)
-    if root:
-        return Path(root).expanduser().resolve()
-    return resolve_process_workspace_root()
-
-
-def resolve_effective_tool_workspace(
-    config: Any | None = None,
-    *,
-    runtime: Any | None = None,
-) -> Path:
-    """Resolve workspace for tool construction and filesystem operations."""
-    from soothe_nano.workspace.workspace_policy import resolve_workspace_for_tool_execution
-
-    fallback = static_tool_workspace_fallback(config)
-    resolved = resolve_workspace_for_tool_execution(
-        runtime=runtime,
-        fallback=fallback,
-        use_langgraph_config=True,
-    )
-    if resolved is not None:
-        return resolved.resolve()
-    return fallback
-
-
-def workspace_path_for_tool_resolution(
-    config: Any | None = None,
-    *,
-    runtime: Any | None = None,
-) -> Path:
-    """Workspace root for toolkit path resolution."""
-    return resolve_effective_tool_workspace(config, runtime=runtime)
 
 
 def _posix_first_segment_name(expanded: Path) -> str | None:
@@ -90,101 +53,124 @@ def _posix_first_segment_name(expanded: Path) -> str | None:
     return parts[1]
 
 
-def should_use_virtual_path_resolution(file_path: str, workspace_root: Path) -> bool:
-    """True when a leading-`/` path should use virtual sandbox resolution."""
-    if not file_path.strip().startswith("/"):
-        return False
-    expanded = Path(file_path.strip()).expanduser()
-    try:
-        expanded.resolve().relative_to(workspace_root.resolve())
-    except ValueError:
-        pass
-    else:
-        return False
-    first = _posix_first_segment_name(expanded)
-    if first is None:
-        return True
-    return first not in _UNIX_HOST_ROOT_TOP_NAMES
+class WorkspacePaths:
+    """Path resolution bound to a workspace root, sandbox mode, and size cap."""
 
+    def __init__(
+        self,
+        root: Path | str,
+        *,
+        virtual_mode: bool = False,
+        max_file_size_mb: int = 10,
+    ) -> None:
+        self._root = Path(root)
+        self._virtual_mode = virtual_mode
+        self._max_file_size_mb = max_file_size_mb
 
-def resolve_backend_os_path(
-    path: str,
-    *,
-    workspace: Path,
-    virtual_mode: bool,
-    max_file_size_mb: int = 10,
-) -> Path:
-    """Resolve *path* to the on-disk path the unified filesystem would use."""
-    from soothe_nano.workspace.workspace_filesystem import NormalizedPathBackend
+    @classmethod
+    def from_config(cls, config: Any | None) -> WorkspacePaths:
+        """Build from host config: configured root or process default."""
+        root_text = _config_workspace_root(config)
+        root = (
+            Path(root_text).expanduser().resolve()
+            if root_text
+            else WorkspaceRuntime.process_workspace_root()
+        )
+        virtual_mode = False
+        max_file_size_mb = 10
+        if config is not None:
+            security = getattr(config, "security", None)
+            if security is not None:
+                virtual_mode = not getattr(security, "allow_paths_outside_workspace", True)
+            fs = getattr(config, "filesystem_middleware", None)
+            if fs is not None and hasattr(fs, "max_file_size_mb"):
+                max_file_size_mb = int(fs.max_file_size_mb)
+        return cls(root, virtual_mode=virtual_mode, max_file_size_mb=max_file_size_mb)
 
-    backend = NormalizedPathBackend(
-        root_dir=workspace.resolve(),
-        virtual_mode=virtual_mode,
-        max_file_size_mb=max_file_size_mb,
-    )
-    return backend.resolve_os_path(path)
+    @property
+    def root(self) -> Path:
+        """Workspace root path."""
+        return self._root
 
+    @property
+    def virtual_mode(self) -> bool:
+        """Whether paths are sandboxed to the workspace."""
+        return self._virtual_mode
 
-def join_workspace_normalized_path(workspace: Path, normalized: str) -> Path:
-    """Convert a validator-normalized logical path to an on-disk path."""
-    path = Path(normalized)
-    if path.is_absolute():
-        return path.resolve()
-    return (workspace / normalized).resolve()
+    @property
+    def max_file_size_mb(self) -> int:
+        """Max file size (MB) for filesystem backends."""
+        return self._max_file_size_mb
 
+    def should_use_virtual_path_resolution(self, file_path: str) -> bool:
+        """True when a leading-`/` path should use virtual sandbox resolution."""
+        if not file_path.strip().startswith("/"):
+            return False
+        expanded = Path(file_path.strip()).expanduser()
+        try:
+            expanded.resolve().relative_to(self._root.resolve())
+        except ValueError:
+            pass
+        else:
+            return False
+        first = _posix_first_segment_name(expanded)
+        if first is None:
+            return True
+        return first not in _UNIX_HOST_ROOT_TOP_NAMES
 
-def filesystem_virtual_mode_from_soothe_config(config: SootheConfig) -> bool:
-    """Return `FilesystemBackend.virtual_mode` from security settings."""
-    return not config.security.allow_paths_outside_workspace
+    def resolve_os_path(self, path: str) -> Path:
+        """Resolve *path* to the on-disk path the unified filesystem would use."""
+        from soothe_nano.workspace.workspace_filesystem import NormalizedPathBackend
 
+        backend = NormalizedPathBackend(
+            root_dir=self._root.resolve(),
+            virtual_mode=self._virtual_mode,
+            max_file_size_mb=self._max_file_size_mb,
+        )
+        return backend.resolve_os_path(path)
 
-def max_file_size_mb_for_filesystem_backend(config: SootheConfig) -> int:
-    """Return max file size (MB) for filesystem backends."""
-    max_file_size_mb = 10
-    if hasattr(config, "filesystem_middleware") and hasattr(
-        config.filesystem_middleware, "max_file_size_mb"
-    ):
-        max_file_size_mb = int(config.filesystem_middleware.max_file_size_mb)
-    return max_file_size_mb
-
-
-def resolve_workspace_backup_dir(
-    configured: str | Path | None = None,
-    *,
-    backend: Any | None = None,
-    workspace_root: str | Path | None = None,
-) -> str:
-    """Resolve product backup directory for tool/backend use.
-
-    Defaults to workspace `.soothe/backups`. Returns a virtual absolute path
-    when the backend is in virtual mode; otherwise a host path under the
-    workspace root.
-    """
-    raw = str(configured).strip() if configured is not None else ""
-    rel = raw or WORKSPACE_BACKUP_DIR
-    path = Path(rel)
-    virtual = bool(getattr(backend, "virtual_mode", False)) if backend is not None else False
-    if virtual:
+    def join_normalized_path(self, normalized: str) -> Path:
+        """Convert a validator-normalized logical path to an on-disk path."""
+        path = Path(normalized)
         if path.is_absolute():
-            cwd = getattr(backend, "cwd", None)
-            if cwd is not None:
-                try:
-                    rel_to_cwd = path.resolve().relative_to(Path(str(cwd)).resolve())
-                    return "/" + rel_to_cwd.as_posix()
-                except ValueError:
-                    return str(path)
+            return path.resolve()
+        return (self._root / normalized).resolve()
+
+    def resolve_backup_dir(
+        self,
+        configured: str | Path | None = None,
+        *,
+        backend: Any | None = None,
+    ) -> str:
+        """Resolve product backup directory for tool/backend use.
+
+        Defaults to workspace `.soothe/backups`. Returns a virtual absolute path
+        when the backend is in virtual mode; otherwise a host path under the
+        workspace root.
+        """
+        raw = str(configured).strip() if configured is not None else ""
+        rel = raw or WORKSPACE_BACKUP_DIR
+        path = Path(rel)
+        virtual = bool(getattr(backend, "virtual_mode", False)) if backend is not None else False
+        if virtual:
+            if path.is_absolute():
+                cwd = getattr(backend, "cwd", None)
+                if cwd is not None:
+                    try:
+                        rel_to_cwd = path.resolve().relative_to(Path(str(cwd)).resolve())
+                        return "/" + rel_to_cwd.as_posix()
+                    except ValueError:
+                        return str(path)
+                return str(path)
+            return "/" + rel.replace("\\", "/").lstrip("/")
+
+        if path.is_absolute():
             return str(path)
-        return "/" + rel.replace("\\", "/").lstrip("/")
 
-    if path.is_absolute():
-        return str(path)
-
-    cwd = getattr(backend, "cwd", None) if backend is not None else None
-    root: Path | None = None
-    if cwd is not None:
-        root = Path(str(cwd))
-    elif workspace_root is not None:
-        root = Path(workspace_root)
-    if root is not None:
+        cwd = getattr(backend, "cwd", None) if backend is not None else None
+        root: Path | None = None
+        if cwd is not None:
+            root = Path(str(cwd))
+        else:
+            root = self._root
         return str(root / path)
-    return rel

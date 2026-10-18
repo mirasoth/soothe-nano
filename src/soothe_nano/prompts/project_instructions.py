@@ -28,31 +28,6 @@ PROJECT_INSTRUCTION_HEADLINE_MAX_CHARS = 25000
 PROJECT_INSTRUCTION_HEADLINE_PARAGRAPH_BOUNDARY = "\n\n"
 
 
-def _read_file_head_lines(path: Path, *, max_lines: int) -> tuple[str, bool]:
-    """Read up to `max_lines` from a text file.
-
-    Args:
-        path: File to read.
-        max_lines: Maximum number of lines to include.
-
-    Returns:
-        Tuple of (content, truncated) where truncated is True when more lines exist.
-    """
-    lines: list[str] = []
-    truncated = False
-    try:
-        with path.open(encoding="utf-8", errors="replace") as handle:
-            for line_no, line in enumerate(handle, start=1):
-                if line_no > max_lines:
-                    truncated = True
-                    break
-                lines.append(line.rstrip("\n\r"))
-    except OSError as exc:
-        logger.debug("Could not read project instruction file %s: %s", path, exc)
-        return "", False
-    return "\n".join(lines), truncated
-
-
 def _headline_excerpt(body: str, max_chars: int) -> tuple[str, bool]:
     """Return `(headline, was_truncated)`.
 
@@ -76,97 +51,6 @@ def _agents_md_candidates(workspace: Path) -> list[Path]:
     ]
 
 
-def load_agent_instructions(
-    workspace: str | Path | None,
-    *,
-    max_lines: int = DEFAULT_PROJECT_INSTRUCTION_MAX_LINES,
-    headline_max_chars: int = PROJECT_INSTRUCTION_HEADLINE_MAX_CHARS,
-) -> str | None:
-    """Load AGENTS.md (preferred) or CLAUDE.md from the workspace.
-
-    Priority order:
-    1. AGENTS.md in workspace root
-    2. .soothe/AGENTS.md
-    3. CLAUDE.md in workspace root (fallback when no AGENTS.md found)
-
-    Only ONE file is loaded. Files under `headline_max_chars` inline
-    verbatim; larger files emit a partial headline plus a `<NOTE>` directing
-    the LLM to `read_file` for the full body (progressive disclosure).
-
-    Args:
-        workspace: Thread workspace directory.
-        max_lines: Per-file line cap (default 500).
-        headline_max_chars: Inline char cap (default 25000); above this the
-            full body is suppressed in favor of a read_file hint.
-
-    Returns:
-        XML fragment `<AGENT_INSTRUCTIONS>` for execute-type system messages,
-        or `None` when no files were found or `workspace` is unset.
-    """
-    if not workspace:
-        return None
-    root = Path(workspace).expanduser().resolve()
-    if not root.is_dir():
-        return None
-
-    candidates: list[tuple[str, Path]] = [
-        (path.relative_to(root).as_posix(), path)
-        for path in _agents_md_candidates(root)
-        if path.is_file()
-    ]
-    if not candidates:
-        claude_path = root / "CLAUDE.md"
-        if claude_path.is_file():
-            candidates.append(("CLAUDE.md", claude_path))
-
-    for label, path in candidates:
-        try:
-            mtime_ns = path.stat().st_mtime_ns
-        except OSError as exc:
-            logger.debug("stat failed for %s: %s", path, exc)
-            continue
-        block = _build_block_cached(
-            label=label,
-            path_str=str(path),
-            mtime_ns=mtime_ns,
-            max_lines=max_lines,
-            headline_max_chars=headline_max_chars,
-        )
-        if block is not None:
-            return block
-    return None
-
-
-@functools.lru_cache(maxsize=32)
-def _build_block_cached(
-    *,
-    label: str,
-    path_str: str,
-    mtime_ns: int,  # cache key — invalidates on file edit
-    max_lines: int,
-    headline_max_chars: int,
-) -> str | None:
-    """Read + format one instruction file. Cached on `(path, mtime, caps)`."""
-    path = Path(path_str)
-    body, truncated_lines = read_file_head_lines(path, max_lines=max_lines)
-    if not body.strip():
-        return None
-    headline, partial = _headline_excerpt(body, max_chars=headline_max_chars)
-    inlined: Literal["full", "partial"] = "partial" if partial else "full"
-    block = _format_instruction_block(
-        label,
-        path,
-        headline,
-        truncated_lines=truncated_lines,
-        inlined=inlined,
-    )
-    if partial or truncated_lines:
-        note = f'\n<NOTE>Full body — use `read_file("{path}")` to load on demand.</NOTE>'
-    else:
-        note = ""
-    return "<AGENT_INSTRUCTIONS>\n" + block + note + "\n</AGENT_INSTRUCTIONS>"
-
-
 def _format_instruction_block(
     label: str,
     path: Path,
@@ -185,20 +69,124 @@ def _format_instruction_block(
     )
 
 
-load_workspace_project_instructions = load_agent_instructions
+class ProjectInstructions:
+    """Workspace project-instruction loader (AGENTS.md / CLAUDE.md)."""
 
-# Public aliases for the cached block builder and head-line reader. Host
-# packages import these instead of reaching into the underscore-prefixed
-# names; the private names remain as the canonical implementations so
-# existing internal call sites and test monkeypatches keep working.
-build_block_cached = _build_block_cached
-read_file_head_lines = _read_file_head_lines
+    @staticmethod
+    def read_file_head_lines(path: Path, *, max_lines: int) -> tuple[str, bool]:
+        """Read up to `max_lines` from a text file.
 
-__all__ = [
-    "DEFAULT_PROJECT_INSTRUCTION_MAX_LINES",
-    "PROJECT_INSTRUCTION_HEADLINE_MAX_CHARS",
-    "load_agent_instructions",
-    "load_workspace_project_instructions",
-    "build_block_cached",
-    "read_file_head_lines",
-]
+        Args:
+            path: File to read.
+            max_lines: Maximum number of lines to include.
+
+        Returns:
+            Tuple of (content, truncated) where truncated is True when more lines exist.
+        """
+        lines: list[str] = []
+        truncated = False
+        try:
+            with path.open(encoding="utf-8", errors="replace") as handle:
+                for line_no, line in enumerate(handle, start=1):
+                    if line_no > max_lines:
+                        truncated = True
+                        break
+                    lines.append(line.rstrip("\n\r"))
+        except OSError as exc:
+            logger.debug("Could not read project instruction file %s: %s", path, exc)
+            return "", False
+        return "\n".join(lines), truncated
+
+    @staticmethod
+    @functools.lru_cache(maxsize=32)
+    def build_block_cached(
+        *,
+        label: str,
+        path_str: str,
+        mtime_ns: int,  # cache key — invalidates on file edit
+        max_lines: int,
+        headline_max_chars: int,
+    ) -> str | None:
+        """Read + format one instruction file. Cached on `(path, mtime, caps)`."""
+        path = Path(path_str)
+        body, truncated_lines = ProjectInstructions.read_file_head_lines(path, max_lines=max_lines)
+        if not body.strip():
+            return None
+        headline, partial = _headline_excerpt(body, max_chars=headline_max_chars)
+        inlined: Literal["full", "partial"] = "partial" if partial else "full"
+        block = _format_instruction_block(
+            label,
+            path,
+            headline,
+            truncated_lines=truncated_lines,
+            inlined=inlined,
+        )
+        if partial or truncated_lines:
+            note = f'\n<NOTE>Full body — use `read_file("{path}")` to load on demand.</NOTE>'
+        else:
+            note = ""
+        return "<AGENT_INSTRUCTIONS>\n" + block + note + "\n</AGENT_INSTRUCTIONS>"
+
+    @staticmethod
+    def load(
+        workspace: str | Path | None,
+        *,
+        max_lines: int = DEFAULT_PROJECT_INSTRUCTION_MAX_LINES,
+        headline_max_chars: int = PROJECT_INSTRUCTION_HEADLINE_MAX_CHARS,
+    ) -> str | None:
+        """Load AGENTS.md (preferred) or CLAUDE.md from the workspace.
+
+        Priority order:
+        1. AGENTS.md in workspace root
+        2. .soothe/AGENTS.md
+        3. CLAUDE.md in workspace root (fallback when no AGENTS.md found)
+
+        Only ONE file is loaded. Files under `headline_max_chars` inline
+        verbatim; larger files emit a partial headline plus a `<NOTE>` directing
+        the LLM to `read_file` for the full body (progressive disclosure).
+
+        Args:
+            workspace: Thread workspace directory.
+            max_lines: Per-file line cap (default 500).
+            headline_max_chars: Inline char cap (default 25000); above this the
+                full body is suppressed in favor of a read_file hint.
+
+        Returns:
+            XML fragment `<AGENT_INSTRUCTIONS>` for execute-type system messages,
+            or `None` when no files were found or `workspace` is unset.
+        """
+        if not workspace:
+            return None
+        root = Path(workspace).expanduser().resolve()
+        if not root.is_dir():
+            return None
+
+        candidates: list[tuple[str, Path]] = [
+            (path.relative_to(root).as_posix(), path)
+            for path in _agents_md_candidates(root)
+            if path.is_file()
+        ]
+        if not candidates:
+            claude_path = root / "CLAUDE.md"
+            if claude_path.is_file():
+                candidates.append(("CLAUDE.md", claude_path))
+
+        for label, path in candidates:
+            try:
+                mtime_ns = path.stat().st_mtime_ns
+            except OSError as exc:
+                logger.debug("stat failed for %s: %s", path, exc)
+                continue
+            block = ProjectInstructions.build_block_cached(
+                label=label,
+                path_str=str(path),
+                mtime_ns=mtime_ns,
+                max_lines=max_lines,
+                headline_max_chars=headline_max_chars,
+            )
+            if block is not None:
+                return block
+        return None
+
+
+__all__ = ["ProjectInstructions"]

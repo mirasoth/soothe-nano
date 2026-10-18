@@ -7,12 +7,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Literal
 
-from soothe_nano.persistence.postgres_pool_lifecycle import (
-    apply_row_factory,
-    close_async_pool,
-    postgres_pool_timing_from_config,
-    release_idle_pool_connections,
-)
+from soothe_nano.persistence.postgres_pool_lifecycle import PostgresPoolLifecycle
 
 if TYPE_CHECKING:
     from psycopg_pool import AsyncConnectionPool
@@ -128,10 +123,10 @@ class PostgresPoolRegistry:
                 return
 
             from soothe_nano.persistence.postgres_provisioning import (
-                ensure_postgres_databases_async,
+                PostgresProvisioning,
             )
 
-            await ensure_postgres_databases_async(self._config)
+            await PostgresProvisioning.ensure_databases_async(self._config)
             self.validate_budget(self._config)
 
             for db_key in self._databases_to_open():
@@ -169,13 +164,13 @@ class PostgresPoolRegistry:
 
         dsn = self._config.resolve_postgres_dsn_for_database(db_key)
         max_size = self._max_size_for(db_key)
-        timing = postgres_pool_timing_from_config(self._config, max_size=max_size)
+        timing = PostgresPoolLifecycle.timing_from_config(self._config, max_size=max_size)
         pool_kwargs: dict[str, Any] = {
             "max_size": max_size,
             "open": False,
             **timing,
         }
-        pool = AsyncConnectionPool(dsn, **apply_row_factory(pool_kwargs))
+        pool = AsyncConnectionPool(dsn, **PostgresPoolLifecycle.apply_row_factory(pool_kwargs))
         await pool.open()
         await self._initialize_pool_schema(db_key, pool)
 
@@ -193,9 +188,9 @@ class PostgresPoolRegistry:
         Nano initializes metadata only. Host subclasses add checkpoints schema.
         """
         if db_key == "metadata":
-            from soothe_nano.persistence.db_init import initialize_database
+            from soothe_nano.persistence.db_init import DatabaseInit
 
-            await initialize_database(pool, "soothe_metadata")
+            await DatabaseInit.initialize(pool, "soothe_metadata")
 
     def _max_size_for(self, db_key: DbKey) -> int:
         if db_key == "checkpoints":
@@ -207,13 +202,13 @@ class PostgresPoolRegistry:
     async def release_idle_all(self) -> None:
         """Return idle connections on all open pools."""
         for db_key, pool in self._pools.items():
-            await release_idle_pool_connections(pool, label=db_key)
+            await PostgresPoolLifecycle.release_idle(pool, label=db_key)
 
     async def close_all(self) -> None:
         """Close all pools and reset the registry singleton."""
         async with _async_lock:
             for db_key, pool in list(self._pools.items()):
-                await close_async_pool(pool, label=db_key)
+                await PostgresPoolLifecycle.close(pool, label=db_key)
             self._pools.clear()
             self._opened = False
         global _registry

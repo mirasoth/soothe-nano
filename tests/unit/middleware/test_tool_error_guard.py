@@ -1,4 +1,4 @@
-"""Tests for ``ToolErrorGuardMiddleware``."""
+"""Tests for ``ToolErrorGuardMiddleware`` and invalid-tool-name hints."""
 
 from __future__ import annotations
 
@@ -8,8 +8,13 @@ from unittest.mock import AsyncMock
 import pytest
 from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
+from langgraph.types import Command
 
-from soothe_nano.middleware.tool_error_guard import ToolErrorGuardMiddleware
+from soothe_nano.middleware.tool_error_guard import (
+    ToolErrorGuardMiddleware,
+    extract_tool_message_content,
+    is_invalid_tool_error,
+)
 
 
 def _request(name: str = "kill_process", call_id: str = "call_1") -> ToolCallRequest:
@@ -118,3 +123,26 @@ async def test_error_text_is_truncated() -> None:
     content = str(result.content)
     assert len(content) <= 2200  # cap + truncation marker
     assert content.endswith("[truncated]")
+
+
+def test_is_invalid_tool_error_matches_langgraph_marker() -> None:
+    assert is_invalid_tool_error("Error: 'foo_bar' is not a valid tool")
+    assert not is_invalid_tool_error("Error: tool 'kill_process' raised ValueError: boom")
+    assert not is_invalid_tool_error("")
+
+
+def test_extract_tool_message_content_from_tool_message() -> None:
+    msg = ToolMessage(content="hello", tool_call_id="call_1", name="grep")
+    assert extract_tool_message_content(msg) == "hello"
+
+
+def test_extract_tool_message_content_from_command() -> None:
+    msg = ToolMessage(content="from command", tool_call_id="call_2", name="grep")
+    cmd = Command(update={"messages": [msg]})
+    assert extract_tool_message_content(cmd) == "from command"
+
+
+def test_extract_tool_message_content_from_command_without_tool_message() -> None:
+    cmd = Command(update={"messages": []})
+    assert extract_tool_message_content(cmd) is None
+    assert extract_tool_message_content(Command(update="not-a-dict")) is None

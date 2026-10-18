@@ -3,16 +3,23 @@
 LangGraph may stream only `ToolMessage` results without preceding `AIMessage` tool
 metadata (e.g. some fast-model paths). The registry records args from
 `ToolCallRequest` in middleware before tools run so downstream stream code can
-attach them to unified wire ids.
+attach them to unified wire ids. `ToolCallArgsMiddleware` is the lightweight
+recorder; optimization logic is owned by `ToolOptimizationMiddleware`.
 """
 
 from __future__ import annotations
 
 import json
 from contextvars import ContextVar
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
+from langchain_core.messages import ToolMessage
+from langgraph.types import Command
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 _registry: ContextVar[dict[str, dict[str, Any]] | None] = ContextVar(
     "tool_call_args_registry",
@@ -67,7 +74,37 @@ def get_recorded_tool_call_args(tool_call_id: str) -> dict[str, Any]:
     return dict(stored) if isinstance(stored, dict) else {}
 
 
+class ToolCallArgsMiddleware(AgentMiddleware):
+    """Record tool-call kwargs at invocation time for display purposes.
+
+    Captures kwargs from each ``ToolCallRequest`` so downstream stream code
+    can attach them to unified wire ids (subagent display). Batched
+    operations are skipped. Must wrap ``EditCoalescingMiddleware`` (outer):
+    coalescing intercepts edit tools without calling inner handlers.
+
+    Example:
+        mw = ToolCallArgsMiddleware()
+    """
+
+    name = "ToolCallArgsMiddleware"
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+    ) -> ToolMessage | Command[Any]:
+        """Record tool call args before execution."""
+        # Fast path: skip recording for batched operations
+        metadata = getattr(request, "metadata", None) or {}
+        if metadata.get("_batched"):
+            return await handler(request)
+
+        record_tool_call_args_from_request(request)
+        return await handler(request)
+
+
 __all__ = [
+    "ToolCallArgsMiddleware",
     "coerce_tool_call_args",
     "get_recorded_tool_call_args",
     "init_tool_call_args_registry",

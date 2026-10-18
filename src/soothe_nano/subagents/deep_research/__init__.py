@@ -37,8 +37,7 @@ class DeepResearchPlugin:
         description=(
             "deep_research: iterative public web research with URL crawling and adaptive "
             "report generation. Use for external facts, comparisons, how-tos, and industry "
-            "landscape. Do NOT use for local codebase, repository files, or academic papers "
-            "(use academic_research)."
+            "landscape. Do NOT use for local codebase or repository files."
         ),
         system_context="""<DEEP_RESEARCH_RULES>
 <BOUNDARY>

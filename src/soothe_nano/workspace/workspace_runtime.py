@@ -1,4 +1,4 @@
-"""Runtime workspace context and process-level defaults."""
+"""Per-async-task workspace state and process-level defaults."""
 
 from __future__ import annotations
 
@@ -18,86 +18,90 @@ class WorkspaceContext:
     virtual_home: Path | None = None
 
 
-_workspace_context: ContextVar[WorkspaceContext] = ContextVar(
-    "soothe_workspace_context",
-    default=WorkspaceContext(),
-)
+class WorkspaceRuntime:
+    """Owns the per-async-task workspace ContextVar and process defaults."""
 
-
-def set_workspace_context(
-    *,
-    workspace: Path | str | None = None,
-    virtual_mode: bool = False,
-) -> Token[WorkspaceContext]:
-    """Set workspace context for current async task."""
-    ws_path = Path(workspace) if isinstance(workspace, str) else workspace
-    virtual_home = ws_path / ".soothe" if virtual_mode and ws_path else None
-    ctx = WorkspaceContext(
-        workspace=ws_path,
-        virtual_mode=virtual_mode,
-        virtual_home=virtual_home,
+    _context: ContextVar[WorkspaceContext] = ContextVar(
+        "soothe_workspace_context",
+        default=WorkspaceContext(),
     )
-    return _workspace_context.set(ctx)
 
+    @classmethod
+    def set(
+        cls,
+        *,
+        workspace: Path | str | None = None,
+        virtual_mode: bool = False,
+    ) -> Token[WorkspaceContext]:
+        """Set workspace context for the current async task."""
+        ws_path = Path(workspace) if isinstance(workspace, str) else workspace
+        virtual_home = ws_path / ".soothe" if virtual_mode and ws_path else None
+        ctx = WorkspaceContext(
+            workspace=ws_path,
+            virtual_mode=virtual_mode,
+            virtual_home=virtual_home,
+        )
+        return cls._context.set(ctx)
 
-def get_workspace_context() -> WorkspaceContext:
-    """Get workspace context for current async task."""
-    return _workspace_context.get()
+    @classmethod
+    def get(cls) -> WorkspaceContext:
+        """Get workspace context for the current async task."""
+        return cls._context.get()
 
+    @classmethod
+    def reset(cls, token: Token[WorkspaceContext] | None = None) -> None:
+        """Clear workspace context at stream end."""
+        if token is not None:
+            try:
+                cls._context.reset(token)
+            except ValueError:
+                cls._context.set(WorkspaceContext())
+        else:
+            cls._context.set(WorkspaceContext())
 
-def reset_workspace_context(token: Token[WorkspaceContext] | None = None) -> None:
-    """Clear workspace context at stream end."""
-    if token is not None:
+    @classmethod
+    def set_virtual_mode(cls, virtual_mode: bool, workspace: Path) -> None:
+        """Set virtual mode context for the current async task."""
+        cls.set(workspace=workspace, virtual_mode=virtual_mode)
+
+    @classmethod
+    def clear_virtual_mode(cls) -> None:
+        """Clear virtual mode context at stream end."""
+        cls.reset()
+
+    @classmethod
+    def virtual_home(cls) -> Path:
+        """Home directory for the current context."""
+        ctx = cls.get()
+        if ctx.virtual_home is not None:
+            return ctx.virtual_home
+        from soothe_nano.config import SOOTHE_HOME
+
+        return Path(SOOTHE_HOME)
+
+    @classmethod
+    def virtual_mode(cls) -> bool:
+        """Whether virtual mode is enabled for the current context."""
+        return cls.get().virtual_mode
+
+    @classmethod
+    def virtual_home_relative_path(cls, host_path: Path) -> str | None:
+        """Convert a host-absolute path to virtual-home-relative if under virtual home."""
+        ctx = cls.get()
+        if ctx.virtual_home is None:
+            return None
         try:
-            _workspace_context.reset(token)
+            rel = host_path.resolve().relative_to(ctx.virtual_home.resolve())
+            return f"/.soothe/{rel.as_posix()}"
         except ValueError:
-            _workspace_context.set(WorkspaceContext())
-    else:
-        _workspace_context.set(WorkspaceContext())
+            return None
 
-
-def set_virtual_mode_context(virtual_mode: bool, workspace: Path) -> None:
-    """Set virtual mode context for current async task."""
-    set_workspace_context(workspace=workspace, virtual_mode=virtual_mode)
-
-
-def get_virtual_home() -> Path:
-    """Get the appropriate home directory for the current context."""
-    ctx = get_workspace_context()
-    if ctx.virtual_home is not None:
-        return ctx.virtual_home
-    from soothe_nano.config import SOOTHE_HOME
-
-    return Path(SOOTHE_HOME)
-
-
-def get_virtual_mode() -> bool:
-    """Check if virtual mode is enabled for current context."""
-    return get_workspace_context().virtual_mode
-
-
-def clear_virtual_mode_context() -> None:
-    """Clear virtual mode context at stream end."""
-    reset_workspace_context()
-
-
-def get_virtual_home_relative_path(host_path: Path) -> str | None:
-    """Convert a host-absolute path to virtual-home-relative if under virtual home."""
-    ctx = get_workspace_context()
-    if ctx.virtual_home is None:
-        return None
-    try:
-        rel = host_path.resolve().relative_to(ctx.virtual_home.resolve())
-        return f"/.soothe/{rel.as_posix()}"
-    except ValueError:
-        return None
-
-
-def resolve_process_workspace_root() -> Path:
-    """Resolve process-default workspace root when no explicit workspace is bound."""
-    env_workspace = os.environ.get("SOOTHE_WORKSPACE")
-    if env_workspace:
-        return Path(env_workspace).expanduser().resolve()
-    workspace = Path(tempfile.gettempdir()) / "soothe-workspace"
-    workspace.mkdir(parents=True, exist_ok=True)
-    return workspace.resolve()
+    @classmethod
+    def process_workspace_root(cls) -> Path:
+        """Process-default workspace root when no explicit workspace is bound."""
+        env_workspace = os.environ.get("SOOTHE_WORKSPACE")
+        if env_workspace:
+            return Path(env_workspace).expanduser().resolve()
+        workspace = Path(tempfile.gettempdir()) / "soothe-workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+        return workspace.resolve()

@@ -294,7 +294,7 @@ def _extract_required_permission(action: ActionRequest) -> Permission | None:
             scope = extract_filesystem_path_for_policy(name, action.tool_args) or "*"
             action_kind = "write" if meta.outcome_type == "file_write" else "read"
             return Permission("fs", action_kind, scope)
-        if meta and meta.category == "execution":
+        if meta and meta.category == "shell":
             cmd = action.tool_args.get("command", "") or action.tool_args.get("cmd", "")
             cmd_s = str(cmd) if cmd is not None else ""
             first_word = cmd_s.split()[0] if cmd_s.split() else "*"

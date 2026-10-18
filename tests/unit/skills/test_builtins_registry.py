@@ -5,13 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from soothe_nano.config import SootheConfig
-from soothe_nano.skills.builtins import (
-    is_builtin_skill_directory,
-    iter_skill_roots,
-    register_builtin_skill_root,
-)
+from soothe_nano.skills.builtins import SkillRoots
 from soothe_nano.skills.index import SkillIndex
-from soothe_nano.skills.workspace_sync import collect_external_skills_to_mirror
+from soothe_nano.skills.workspace_sync import WorkspaceSkillMirror
 
 
 def _make_skill(root: Path, name: str, description: str = "desc") -> Path:
@@ -29,9 +25,9 @@ def test_register_builtin_skill_root_appears_in_iter(tmp_path: Path) -> None:
 
     host = tmp_path / "fj_skills"
     host.mkdir()
-    unregister = register_builtin_skill_root(host)
+    unregister = SkillRoots.register(host)
     try:
-        roots = iter_skill_roots()
+        roots = SkillRoots.roots()
         paths = [p for p, _ in roots]
         resolved = host.resolve()
         assert resolved in paths
@@ -41,16 +37,16 @@ def test_register_builtin_skill_root_appears_in_iter(tmp_path: Path) -> None:
         assert sources[resolved] == "builtin"
     finally:
         unregister()
-    assert host.resolve() not in [p for p, _ in iter_skill_roots()]
+    assert host.resolve() not in [p for p, _ in SkillRoots.roots()]
 
 
 def test_register_duplicate_ignored(tmp_path: Path) -> None:
     host = tmp_path / "fj_skills"
     host.mkdir()
-    u1 = register_builtin_skill_root(host)
-    u2 = register_builtin_skill_root(host)
+    u1 = SkillRoots.register(host)
+    u2 = SkillRoots.register(host)
     try:
-        count = sum(1 for p, _ in iter_skill_roots() if p == host.resolve())
+        count = sum(1 for p, _ in SkillRoots.roots() if p == host.resolve())
         assert count == 1
     finally:
         u1()
@@ -61,14 +57,14 @@ def test_registered_root_indexed_as_builtin(tmp_path: Path) -> None:
     host = tmp_path / "fj_skills"
     host.mkdir()
     _make_skill(host, "fj-review")
-    unregister = register_builtin_skill_root(host)
+    unregister = SkillRoots.register(host)
     try:
         index = SkillIndex()
         entries = index.rebuild_if_stale()
         match = next((e for e in entries if e.name == "fj-review"), None)
         assert match is not None
         assert match.source == "builtin"
-        assert is_builtin_skill_directory(match.path)
+        assert SkillRoots.is_builtin_directory(match.path)
     finally:
         unregister()
 
@@ -79,10 +75,10 @@ def test_registered_builtin_not_mirrored(tmp_path: Path) -> None:
     host = tmp_path / "fj_skills"
     host.mkdir()
     _make_skill(host, "fj-review")
-    unregister = register_builtin_skill_root(host)
+    unregister = SkillRoots.register(host)
     try:
         cfg = SootheConfig()
-        to_mirror = collect_external_skills_to_mirror(cfg, ws)
+        to_mirror = WorkspaceSkillMirror(cfg, ws).collect_external()
         assert "fj-review" not in to_mirror
     finally:
         unregister()
@@ -93,10 +89,10 @@ def test_config_builtin_skill_roots(tmp_path: Path) -> None:
     host.mkdir()
     _make_skill(host, "yaml-skill")
     # Validator registers the root; keep an unregister handle via re-register (idempotent).
-    unregister = register_builtin_skill_root(host)
+    unregister = SkillRoots.register(host)
     try:
         SootheConfig(builtin_skill_roots=[str(host)])
-        assert host.resolve() in [p for p, _ in iter_skill_roots()]
+        assert host.resolve() in [p for p, _ in SkillRoots.roots()]
         index = SkillIndex()
         entries = index.rebuild_if_stale()
         assert any(e.name == "yaml-skill" for e in entries)

@@ -6,11 +6,7 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any
 
-from soothe_nano.persistence.postgres_pool_lifecycle import (
-    apply_row_factory,
-    postgres_pool_timing_from_config,
-    release_idle_pool_connections,
-)
+from soothe_nano.persistence.postgres_pool_lifecycle import PostgresPoolLifecycle
 from soothe_nano.persistence.postgres_pool_registry import PostgresPoolRegistry
 
 if TYPE_CHECKING:
@@ -73,19 +69,19 @@ class SharedMetadataPool:
                 return None
 
             from soothe_nano.persistence.postgres_provisioning import (
-                ensure_postgres_databases,
+                PostgresProvisioning,
             )
 
-            ensure_postgres_databases(config)
+            PostgresProvisioning.ensure_databases(config)
             dsn = config.resolve_postgres_dsn_for_database("metadata")
             max_size = cls._REGISTRY_CLS.resolve_metadata_pool_size(config)
-            timing = postgres_pool_timing_from_config(config, max_size=max_size)
+            timing = PostgresPoolLifecycle.timing_from_config(config, max_size=max_size)
             pool_kwargs: dict[str, Any] = {
                 "max_size": max_size,
                 "open": False,
                 **timing,
             }
-            pool = AsyncConnectionPool(dsn, **apply_row_factory(pool_kwargs))
+            pool = AsyncConnectionPool(dsn, **PostgresPoolLifecycle.apply_row_factory(pool_kwargs))
             _shared_metadata_pool = pool
             logger.info(
                 "Created singleton shared PostgreSQL metadata pool (max_size=%d)",
@@ -101,7 +97,7 @@ class SharedMetadataPool:
     @classmethod
     async def release_idle(cls) -> None:
         """Drop idle metadata connections (process periodic maintenance)."""
-        await release_idle_pool_connections(_shared_metadata_pool, label="metadata")
+        await PostgresPoolLifecycle.release_idle(_shared_metadata_pool, label="metadata")
 
     @classmethod
     async def close_shared_instance(cls) -> None:

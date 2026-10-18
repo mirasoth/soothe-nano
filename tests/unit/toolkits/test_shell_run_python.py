@@ -1,0 +1,65 @@
+"""Unit tests for run_python REPL persistence and async path."""
+
+from __future__ import annotations
+
+import sys
+from unittest.mock import patch
+
+import pytest
+
+from soothe_nano.toolkits.shell import RunPythonREPLTool
+
+
+def test_run_python_persistence_on_same_instance() -> None:
+    tool = RunPythonREPLTool()
+    tool._run(code="counter = 1")
+    out = tool._run(code="print(counter + 1)")
+    assert "2" in str(out)
+
+
+def test_run_python_fresh_instance_has_isolated_namespace() -> None:
+    tool_a = RunPythonREPLTool()
+    tool_a._run(code="counter = 99")
+    tool_b = RunPythonREPLTool()
+    out = tool_b._run(code="print('counter' in dir())")
+    assert "False" in str(out)
+
+
+def test_run_python_description_mentions_catalog_rebuild() -> None:
+    tool = RunPythonREPLTool()
+    assert "tool catalog is rebuilt" in tool.description
+
+
+@pytest.mark.asyncio
+async def test_run_python_arun_uses_executor() -> None:
+    tool = RunPythonREPLTool()
+
+    async def fake_executor(_pool, fn, code):
+        return fn(code)
+
+    with patch("soothe_nano.toolkits.shell.run_in_executor", side_effect=fake_executor):
+        result = await tool._arun(code="print(42)")
+    assert "42" in str(result)
+
+
+def test_run_python_restores_stderr_after_user_code_redirects_it() -> None:
+    """User code that reassigns sys.stderr must not corrupt the host process."""
+    tool = RunPythonREPLTool()
+    original_stderr = sys.stderr
+    tool._run(code="import sys, io; sys.stderr = io.StringIO(); print('hi')")
+    assert sys.stderr is original_stderr
+
+
+def test_run_python_captures_stderr_output() -> None:
+    """Content written to stderr inside the REPL should appear in the result."""
+    tool = RunPythonREPLTool()
+    out = tool._run(code="import sys; sys.stderr.write('warn-msg\\n')")
+    assert "warn-msg" in str(out)
+
+
+def test_run_python_restores_stderr_on_exception() -> None:
+    """sys.stderr must be restored even when user code raises."""
+    tool = RunPythonREPLTool()
+    original_stderr = sys.stderr
+    tool._run(code="import sys, io; sys.stderr = io.StringIO(); raise ValueError('boom')")
+    assert sys.stderr is original_stderr

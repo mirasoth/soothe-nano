@@ -7,55 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **ArcBox sandbox backend**: `ArcBoxBackend` runs shell commands and workspace file operations inside an ArcBox Linux microVM while the agent loop and model credentials stay on the host. Injected via `create_nano_agent(..., backend=ArcBoxBackend(sandbox_id=...))`; the caller owns the sandbox lifecycle. Design and usage: `docs/arcbox-backend.md`.
+  - `arcbox>=0.1.0` is now a core dependency (lazily imported; a fake client can be injected for daemon-free tests).
+  - Shell tools keep their names and schemas but execute through an injected `CommandExecutor`; host mode is unchanged.
+  - Every tool gets a build-time placement under a sandbox backend (`protocol` / `guest` / `shuttle` / `host` / `deny`), reported via `builder.placement_report`; undeclared custom / MCP / plugin tools are rejected by default (`sandbox.on_deny`).
+  - Framework state (`/memories`, `/.soothe`, `/large_tool_results`, `/conversation_history`) is routed to the host via `CompositeBackend`, so it survives VM teardown.
+  - Guest background jobs use `setsid` + process-group kill; a bridge deadline never claims the guest command was killed — only the SDK's server-side timeout maps to `exit_code=124`.
+  - Live E2E suite `tests/integration/test_arcbox_e2e.py` (15 tests; opt-in via `--run-integration`, requires a local daemon, skips cleanly without one).
+
+### Removed
+- Retired the `file_ops` toolkit group: the middleware filesystem surface is now the single source of file tools in every mode. `tools.file_ops.enabled=False` gates the surgical family (`file_info` / `edit_lines` / `insert_lines` / `delete_lines` / `apply_diff`) on the middleware allowlist (`delete` stays — base mutating surface); `toolkits/file_ops.py` is deleted. See `docs/arcbox-backend.md` §9.
+- Deleted the `academic_research` subagent entirely (module tree, resolver factory registration, builtin plugin discovery entry, default config entry, tool metadata, and its tests) — no compat shim; use `deep_research` for all web/academic research.
+- Deleted dead modules with zero consumers: `core.types` (unused `VerbosityLevel` export) and `agent.factory` (`soothe_nano.create_nano_agent` now imports from `agent.builder` directly; public name unchanged).
+- Inlined single-consumer helper modules: `utils.thread_id` into `backends.durability.base`, and `utils.url_validation.validate_url` into `toolkits._internal.wizsearch`.
+- Deleted the `data` and `image` toolkits (host-path-bound file-inspection tools duplicating `read_file` + `run_python`), including their config groups, plugin registrations, registry entries, and prompt guide listings.
+- Resolver dead code: unused `_resolve_postgres_checkpointer`/`_mask_dsn` (superseded by the shared checkpointer pool), `clear_tool_cache`/`get_cache_stats` (no callers in any repo), the fake parallel subagent branch, the never-supplied `LazySubagentRunnable(materialize=...)` parameter, and the unused dict-like methods on `SUBAGENT_FACTORIES` (`__getitem__`/`keys`/`items`/`__len__`).
+- Removed dead prompt-module exports (zero consumers, verified by import-graph sweep): `build_shared_environment_workspace_prefix` and `RFC104_CONTEXT_XML_VERSION` (`context_xml.py`), the `load_workspace_project_instructions` alias (`project_instructions.py`), and the `soothe_nano.config` re-exports of the underscore prompt template globals.
+
+### Changed
+- The planner subagent now works in sandbox mode: its read-only recon tools bind to the composite backend with the guest workspace root (it was previously disabled there). Host mode is unchanged.
+- Removed the `soothe_nano.resolve` package: the full host-resolution API (protocols, durability/checkpointer, tools, subagents, lazy compilation) now lives in `soothe_nano.utils.resolver` (single module, was 6 files; it also exports `resolve_checkpointer` / `resolve_durability` so hosts bind their own pools via public imports). The shared checkpointer pool moved to `soothe_nano.persistence.shared_checkpointer_pool`. Hard moves, no shims.
+- Folded the research helper modules into the `deep_research` package: `_research_json_util` → `json_util`, `_research_timeouts` → `timeouts`, `_research_topic_util` → `topic_util`, `research_wire` → `wire`; their tests moved to `tests/unit/subagents/deep_research/`. Hard moves, no shims.
+- Consolidated `soothe_nano.middleware` tool-* modules (9 → 5 files), zero behavior change; import `ToolCallArgsMiddleware` / `ToolResultStorageMiddleware` / `ToolResultEvictionMiddleware` from their new modules.
+- Renamed the `execution` tool group to `shell` (module, plugin, config key `tools.shell`, `ToolMeta.category`); tool names are unchanged.
+- Renamed `soothe_nano.ux` to `soothe_nano.wire` — it holds wire-format contracts, not UX logic. Hard rename, no compat shim.
+- Moved `soothe_nano.intention.models` to `soothe_nano.protocols.routing`, and the four duck-typed config protocols (`WebSocketConfigProtocol` / `DaemonTransportConfigProtocol` / `DaemonConfigProtocol` / `CliConfigProtocol`) from `soothe_nano.paths` to `soothe_nano.protocols.daemon_config` (re-exported from `soothe_nano.protocols`). Hard moves, no shims; `soothe_nano.paths` now holds only path constants and resolvers.
+- `soothe_nano.workspace` module-level functions are now class-based APIs (hard move, no shims): `WorkspaceResolver` (`workspace_policy.py`), `WorkspaceRuntime` (`workspace_runtime.py`), `WorkspacePaths` (`workspace_paths.py`), `WorkspaceBackendRegistry` (`workspace_filesystem.py`). `workspace_api.py` is now the types facade (`ResolvedWorkspace` / `WorkspacePrecedence`); the `get_virtual_*` / `*_workspace_context` / `resolve_workspace_for_*` function families are gone.
+- `soothe_nano.skills` module-level functions are now class-based APIs (hard move, no shims): `SkillRoots` (`builtins.py`), `SkillCatalog` + `SlashSkillLine` (`catalog.py`), `WorkspaceSkillMirror` (`workspace_sync.py`), `SkillSearcher` (`search.py`), `ProgressiveSkillRegistry` (`resolve_core_names` / `is_core`), `CorpusMatcher` (`corpus_match.py`), `SkillListingBudget` (`budget.py`). The langchain tool factories in `discovery_tools.py` stay module-level.
+- `soothe_nano.prompts` functional modules are now class-based APIs (hard move, no shims): `ContextXml`, `PromptIdentity` (identity fragment read lazily so host persona patches apply), `ProjectInstructions`, `SystemTemplates` (template constants are now class attributes). `soothe_nano.prompts` is a class facade; `soothe_nano.config` no longer re-exports the old prompt constants.
+- `soothe_nano.persistence` functional modules are now class-based APIs (hard move, no shims): `PostgresPoolLifecycle`, `PostgresProvisioning` (private hook is now `PostgresProvisioning._initialize_schemas` — patch targets follow), `ConnectionRetry` (`retry_utils.py`), `DatabaseInit` (`db_init/runner.py`). `MigrationScript` / `DatabaseSchemaResult` / `DbKey` stay module-level types.
+
+### Fixed
+- System-prompt guides now reference real bound tool names: `wizsearch_search`/`wizsearch_crawl` instead of the legacy `search_web`/`crawl_web` aliases (which the model was steered to but never bound); the data guide points tabular/document work at `read_file` + `run_python` + `file_info`. Tool-trigger registry keys renamed to match.
+- Coalescing middlewares no longer impose a fixed 50 ms latency floor on lone calls: `ReadCoalescingMiddleware`, `ToolOptimizationMiddleware` (grep/glob batch window), and `EditCoalescingMiddleware` fast-flush after one event-loop tick when no sibling call has joined the window; batched calls still wait the full detection window. `read_coalescing`/`tool_optimization` futures now use `asyncio.get_running_loop()` instead of the deprecated `get_event_loop()`.
+- `RoleRoutingMiddleware` no longer rescans the full message history for its debug log on every hop (the hop index is only computed when debug logging is enabled).
+- Eviction dead branch removed in `ToolResultEvictionMiddleware` (`NON_EVICTABLE_TOOLS` re-check is subsumed by the `EVICTABLE_TOOLS` membership test) and the never-called `_time_since_last_assistant` placeholder deleted.
+- Coalescing middlewares (`ReadCoalescingMiddleware` / `ToolOptimizationMiddleware` / `EditCoalescingMiddleware`) key their pending queues, staging buffers, and detection windows by request scope (`thread_id:checkpoint_ns`, shared helper `middleware._scope.request_scope_id`) — concurrent graph threads on one compiled graph no longer co-mingle reads/searches/edits or head-of-line block each other. `WorkspaceContextMiddleware` stores its reset token in a task-local `ContextVar` instead of instance state, so interleaved turns no longer clobber each other's workspace context.
+- `SystemPromptMiddleware` per-hop dedup: recent tool calls extracted once (was 3×) and trigger sections derived once for the memory/protocol/tool-context blocks; the workspace resolution chain is skipped when `modify_request` already resolved the workspace into state. `ToolResultEvictionMiddleware` measures token estimates and collects evictable candidates in a single pass (was two full scans); `ToolResultStorageMiddleware` persists oversized outputs via `asyncio.to_thread` (`amaybe_persist_tool_result`) so large writes never block the event loop.
+- Batched edit dispatch is no longer an unprotected fast path: `EditCoalescingConfig.batch_dispatch_timeout_seconds` (default 60s, matching the tool-timeout middleware default) caps each file's batched write — lone pass-through edits are excluded (their handler chain already runs through the inner tool-timeout middleware with per-tool overrides). Any timed-out or failed batch resolves every pending future with an error ToolMessage instead of hanging the caller, and one file's dispatch failure no longer hangs the remaining files in the same window. `SoothePolicyMiddleware` memoizes workspace `Path.resolve()` per raw configurable string (bounded at 128 entries).
+- Shared detection-window infrastructure: `middleware._window` (`ScopeWindowBank` + `resolve_pending_results`) is now the single implementation of the enqueue/fast-flush/take cycle and the singleton-vs-gather execution + future resolution used by `ReadCoalescingMiddleware` and `ToolOptimizationMiddleware` (edit coalescing keeps its staging-aware flow). `ProgressiveListingMiddleware` reuses the stack-builder's `SkillIndex`/`ProgressiveSkillRegistry` (skills scanned once per staleness window, not once per middleware) and builds its config-derived tool-listing registry once instead of per hop.
+
 ## [1.4.2] - 2026-10-13
 
 ### Removed
-- Dead code cleanup (no importers in `src`/`tests`/`examples`/downstream, verified by an AST import-graph sweep):
-  - `soothe_nano.utils.llm` — back-compat shim (`from soothe_nano.llm import *` plus `OpenAICompatModelWrapper` / `JsonSchemaModelWrapper` aliases). Import `soothe_nano.llm` directly.
-  - `soothe_nano.utils.embeddings_dashscope` and `soothe_nano.utils.embeddings_dashscope_openai` — unreferenced DashScope embedding implementations.
-  - MemU `config/{activity,event,profile}` config modules (`ActivityConfig` / `EventConfig` / `ProfileConfig`). The per-category `prompt.txt` files stay — they are loaded by path at runtime.
-  - `soothe_nano.filesystem.langchain_adapter` (`LangChainAdapter`) and `soothe_nano.filesystem.factory` (`FilesystemFactory`, `create_filesystem`, `FilesystemConfig`, `FilesystemType`, `PathValidationConfig`, and the filesystem-local `SecurityConfig`) — superseded by the soothe-deepagents backend layer; neither the soothe host, the daemon, the CLI, nor any other downstream consumer references them. `UnifiedFilesystem`, `LocalFilesystem`, `WorkspaceFilesystem`, `discovery_hints`, and `exceptions` stay.
-  - Unused helpers: `mcp.cleanup.cleanup_all_subprocesses`, `mcp.mcp_events.emit_list_changed` / `emit_prompt_invoked` (the event classes stay registered), `middleware.tool_call_args_registry.clear_tool_call_args_registry`, `middleware.tool_name_hints.sanitize_hallucinated_tool_name`, and the `llm.response_text._extract_json_str_from_response` back-compat alias.
-- Drop the `aiohttp`, `firecrawl-anydoc`, `dashscope`, and `httpx` runtime dependency declarations — nothing in the package imports them.
+- Dead code cleanup (verified by an AST import-graph sweep): `soothe_nano.utils.llm` back-compat shim, unreferenced DashScope embedding modules, MemU per-category config modules, `filesystem.langchain_adapter` / `filesystem.factory` (superseded by the soothe-deepagents backend layer), and various unused helpers.
+- Dropped the `aiohttp`, `firecrawl-anydoc`, `dashscope`, and `httpx` runtime dependencies (unused).
 
 ### Changed
-- Tests: `tests/unit/utils/llm/` (the leftover path from the removed `soothe_nano.utils.llm` shim) merged into `tests/unit/llm/`.
-- `make examples` now also runs `example-06` (computer-use subagent) and `example-07` (computer-use WeChat Favorites harvest); both have dedicated targets.
+- `make examples` now also runs `example-06` (computer-use subagent) and `example-07` (computer-use WeChat Favorites harvest).
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.4.1...v1.4.2
 
 ## [1.4.1] - 2026-10-13
 
 ### Fixed
-- `soothe_nano.ux.stream_tool_wire`: the 1.4.0 copy lazily imported `soothe_nano.ux.task_namespace`, which was not shipped — any caller of `unified_tool_update_allowed_without_args` raised `ModuleNotFoundError` at first use. `ux/task_namespace.py` (the unified tool-call ID parser) now ships in this package.
+- `soothe_nano.ux.stream_tool_wire` lazily imported `soothe_nano.ux.task_namespace`, which was not shipped — `ux/task_namespace.py` now ships in this package.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.4.0...v1.4.1
 
 ## [1.4.0] - 2026-10-13
 
 ### Added
-- Absorb the shared-contract layer formerly shipped as the separate `soothe-sdk` package (the SDK is being dissolved; soothe-nano is the canonical home for the agent-side contracts):
-  - `soothe_nano.plugin` now owns the plugin-author decorator API: `@plugin`, `@tool`, `@tool_group`, `@subagent`, `PluginManifest`, `PluginContext`, `SootheConfigProtocol`, `PluginHealth`, `library`, `emit_progress`, `set_stream_writer`, `register_event`.
-  - `soothe_nano.core` — event contracts (`SootheEvent` and friends), the event registry (`REGISTRY`), verbosity tiers, exceptions, subagent wire helpers.
-  - `soothe_nano.protocols` — CoreAgent, planner, policy, memory, durability, persistence, vector store, identity, operation security, concurrency (`workspace_sync` stays in the soothe host; only the host consumes it).
-  - `soothe_nano.paths` — `SOOTHE_HOME` / `SOOTHE_DATA_DIR` and the SQLite store path resolvers (now owned directly, previously re-exported).
-  - `soothe_nano.tools` — tool metadata used by security classification (`get_tool_meta`, operation kinds).
-  - `soothe_nano.observability.langfuse` — Langfuse client/merge/tracer/system-hint helpers.
-  - `soothe_nano.intention` — routing classification models; `soothe_nano.ux.stream_tool_wire` — streaming tool-call wire constants.
-  - `soothe_nano.utils` — `formatting`, `serde` (`create_soothe_serde`), and the `ShortLevelFormatter` logging helper.
+- Absorb the shared-contract layer formerly shipped as the separate `soothe-sdk` package: the plugin decorator API (`soothe_nano.plugin`), event contracts (`soothe_nano.core`), protocols, paths, tool metadata (`soothe_nano.tools`), Langfuse helpers (`soothe_nano.observability.langfuse`), intent routing (`soothe_nano.intention`), wire constants (`soothe_nano.ux.stream_tool_wire`), and core utils.
 
 ### Changed
-- Drop the `soothe-sdk` dependency — soothe-nano is now self-contained (only first-party runtime dep: `soothe-deepagents`, which never depended on the SDK).
-- **Plugin authors**: the canonical import for the decorator API is now `from soothe_nano.plugin import plugin, tool, subagent` (previously `soothe_sdk.plugin`). Migrate `soothe_sdk.*` imports for the absorbed modules to their `soothe_nano.*` equivalents; `soothe-sdk` is deprecated as a separate package.
-- Host consumers (soothe / soothe-daemon): until the host migrates to `soothe_nano.core.events` / `soothe_nano.core.registry`, event metadata registered by nano lives in the nano-owned registry singleton — plan the host cutover in the same deploy window.
+- Drop the `soothe-sdk` dependency — soothe-nano is now self-contained (only first-party runtime dep: `soothe-deepagents`).
+- **Plugin authors**: migrate `soothe_sdk.*` imports to their `soothe_nano.*` equivalents; `soothe-sdk` is deprecated as a separate package.
+- Host consumers (soothe / soothe-daemon): plan the migration to `soothe_nano.core.events` / `soothe_nano.core.registry` in the same deploy window.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.3.3...v1.4.0
 
 ## [1.3.3] - 2026-10-12
 
 ### Fixed
-- `SootheConfig.secret_resolver` property: `MCPRegistry` construction in the daemon and per-thread runner raised `AttributeError: 'SootheConfig' object has no attribute 'secret_resolver'`, leaving the MCP registry empty and the agent with zero tools. The property now returns the shared `_resolve_env` helper.
-- `fetch_tools_and_descriptors` is now async and awaits `client.get_tools(...)` when it returns a coroutine (`langchain-mcp-adapters` 0.3.x), instead of iterating the coroutine as a list. Previously every MCP server logged `'coroutine' object is not iterable`, the coroutine was never awaited, and zero tools loaded despite `Initialized: N connected, 0 failed`.
+- `SootheConfig.secret_resolver` was missing, leaving the MCP registry empty and the agent with zero tools; the property now returns the shared `_resolve_env` helper.
+- `fetch_tools_and_descriptors` is now async and awaits `client.get_tools(...)` (`langchain-mcp-adapters` 0.3.x); previously the coroutine was never awaited and zero tools loaded.
 
 ### Changed
 - Widened `langchain-mcp-adapters` pin from `<0.3.1` to `<0.4.0` (0.3.0 caused the async `get_tools` regression above) and bumped the langchain ecosystem to latest stable: `langchain` 1.4.4, `langchain-core` 1.6.9, `langchain-openai` 1.7.0, `langchain-community` 0.4.2, `langgraph` 1.2.14, `mcp` 1.30.
@@ -103,75 +130,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.30] - 2026-09-21
 
 ### Added
-- Add `classifier` config block with shared decision parameters (`enabled`, `provider`, `min_confidence`, `min_margin`, `suppress_min_confidence`, `shadow`, `strict`) and a `classifier_providers` list, so a swappable calibrated-probability backend is configured once for nano internals and host consumers.
-- Add `classifier.suppress_min_confidence` (default 0.9): verdicts that suppress downstream work need a higher confidence than the fail-safe direction, since acting on a wrong suppression costs more than doing the redundant work.
-- Add `SootheConfig.classifier_provider_kwargs()` resolving the configured provider into transport kwargs, returning `None` when classification is unavailable.
+- Add `classifier` config block (`enabled`, `provider`, `min_confidence`, `min_margin`, `suppress_min_confidence`, `strict`) plus a `classifier_providers` list, so a swappable calibrated-probability backend is configured once for nano and hosts.
+- Add `classifier.suppress_min_confidence` (default 0.9): suppression verdicts need higher confidence than the fail-safe direction.
+- Add `SootheConfig.classifier_provider_kwargs()` resolving the configured provider into transport kwargs.
 
 ### Fixed
-- Gate classifier verdicts on `Choice` answers: binary `Noul` answers expose only a probability and carry no confidence, so they cannot be screened for distribution shift.
+- Gate classifier verdicts on `Choice` answers (binary `Noul` answers carry no confidence).
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.29...v1.2.30
 
 ## [1.2.29] - 2026-09-19
 
 ### Added
-- **Tool call efficiency suite (IG-778).** Six improvements to reduce tool-call count and context bloat, benchmarked against Claude Code's patterns:
-  - **Explicit parallel-call instruction** in the system prompt — tells the model to batch independent tool calls in a single response (30-50% fewer model hops expected).
-  - **Cross-step tool result eviction** (`ToolResultEvictionMiddleware`) — evicts old non-mutation tool results from context when total tool-result tokens exceed threshold (60K default), protecting the most recent 3 results. Runs in `awrap_model_call` (idempotent per hop).
-  - **Shrunk core tool set (26 → 20)** — moved `file_info`, `apply_diff`, `delete`, `tail_background_log`, `kill_process`, `current_datetime` to deferred loading, reducing per-hop schema tokens by ~2-4K.
-  - **Multi-file read coalescing** (`ReadCoalescingMiddleware`) — collects parallel `read_file` calls within a 50ms window and executes them concurrently via `asyncio.gather`, returning per-call results.
-  - **Search consolidation** in `ToolOptimizationMiddleware` — batches parallel `grep`/`glob` calls within a 50ms detection window for concurrent execution.
-  - **Tool result disk storage with compact reference** (`ToolResultStorageMiddleware`) — persists large tool outputs (>10K chars) to `.soothe/tool-results/{session_id}/`, replaces with a 2K preview + file path reference. Enforces per-message aggregate budget (200K chars). No information loss — model can `read_file` the persisted path.
+- **Tool call efficiency suite.** Parallel-call batching instruction in the system prompt; cross-step tool-result eviction (`ToolResultEvictionMiddleware`); multi-file read coalescing and search consolidation in `ToolOptimizationMiddleware`; large tool outputs (>10K chars) persisted to disk with a compact reference (`ToolResultStorageMiddleware`).
 
 ### Changed
-- **`DEFAULT_CORE_TOOL_NAMES` reduced from 26 to 20.** `file_info`, `apply_diff`, `delete`, `tail_background_log`, `kill_process`, `current_datetime` moved to `DEFERRED_FROM_CORE`. The `<TIMESTAMP>` block in the system prompt already provides current time, making `current_datetime` safe to defer.
-- **`_TOOL_ORCHESTRATION_GUIDE` updated** with parallel-call batching guide and large-result re-fetch guide.
+- **Core tool set reduced 26 → 20** (`file_info`, `apply_diff`, `delete`, `tail_background_log`, `kill_process`, `current_datetime` moved to deferred loading).
+- Updated the tool orchestration prompt guide with batching and large-result re-fetch guidance.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.28...v1.2.29
 
 ## [1.2.28] - 2026-09-15
 
 ### Fixed
-- **Thinking-only streams now trigger failover in `MultiModelChatModel`.** When a thinking model (e.g. glm-5.2 with `hide_thinking_tokens=True`) emits its entire output inside ``` blocks, `ThinkingStreamFilter` strips them, leaving chunks with only whitespace content. The streaming failover in `_stream` and `_astream` now detects this post-strip emptiness — via `_chunk_has_content()` (checks for non-whitespace text or tool-call chunks) — and fails over to the next endpoint instead of silently surfacing empty content. Applies to both sync and async streaming paths. Thinking-only responses also count toward the per-model circuit breaker threshold.
+- **Thinking-only streams now trigger failover in `MultiModelChatModel`.** When thinking tokens are stripped and nothing remains, the empty stream fails over like any other failure (sync and async paths) and counts toward the circuit breaker.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.27...v1.2.28
 
 ### Added
-- **Identical tool-call repeat breaker constant.** `DEFAULT_IDENTICAL_TOOL_CALL_THRESHOLD=3` exposes the Act-stream circuit-breaker threshold so the host (`soothe`) can import and use it. When the same tool is invoked with identical arguments 3 consecutive times within a single step's Act stream, the stream is stopped to prevent degenerate repetition loops (e.g. heartbeat-sentinel recovery re-emitting the same `read_file` call indefinitely).
+- `DEFAULT_IDENTICAL_TOOL_CALL_THRESHOLD=3` exposed so hosts can import the Act-stream circuit-breaker threshold (stops degenerate same-tool repeat loops).
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.26...v1.2.27
 
 ## [1.2.26] - 2026-09-12
 
 ### Fixed
-- **`git rm` no longer blocked as a destructive `rm`.** The banned-command patterns now anchor on a negative lookbehind for `git `, so `git rm -r crates/foo/` (a repo-index operation that cannot delete arbitrary filesystem paths) is no longer tripped by the standalone-`rm` rules. Standalone `rm -rf /`, `cd x && rm -r y`, and `bash -c "rm -rf /"` remain blocked.
-- **Tool security gate now honors loop-scoped human approvals.** When the operator approves a command through the `tool_approval` pipeline, the `run_command` tool's own security gate reads the allowlist from the LangGraph configurable and no longer re-denies the same command or rule family, preventing the retry loop from re-escalating until the model emits an empty turn.
+- **`git rm` no longer blocked as a destructive `rm`** (negative lookbehind for `git `); standalone `rm -rf` variants remain blocked.
+- **Tool security gate honors loop-scoped human approvals** — a command approved via the `tool_approval` pipeline is no longer re-denied by `run_command`'s own security gate.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.25...v1.2.26
 
 ## [1.2.25] - 2026-09-08
 
 ### Fixed
-- **Contentless 200-OK responses now trigger failover in `MultiModelChatModel`.** A model returning a 200-OK with no text content and no tool calls (empty response) is treated as a failure and triggers failover to the next endpoint, like a raised exception. Applies to all four generation paths (`_generate`, `_agenerate`, `_stream`, `_astream`). Empty responses also count toward the per-model circuit breaker threshold.
+- **Empty 200-OK responses now trigger failover in `MultiModelChatModel`** (no text, no tool calls) across all four generation paths, and count toward the circuit breaker.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.24...v1.2.25
 
 ## [1.2.24] - 2026-09-07
 
 ### Added
-- **`dangerous_command_rule_id` exposed in `security_api`.** Public function returning the canonical safety `rule_id` for the first banned command pattern a command matches (reuses `_BANNED_COMMAND_PATTERNS`). Host `interrupt_on` when-predicates import this so a prior rule-level approval suppresses re-interrupt for a different command under the same rule — no duplicated pattern/rule-id mapping in the host.
-- **`rule_family()` helper in `operation_guard`.** Returns all rule ids in the same family as a given `rule_id` (inclusive). Approving one rule in a family now suppresses all rules in that family for the rest of the loop — e.g. approving `rm -rf /` also suppresses `rm -rf <folder>`. Two initial families: `rm`-root/rf/r/sudo variants, and `dd`/`dd_block_device_write`.
+- `dangerous_command_rule_id` in `security_api` and `rule_family()` in `operation_guard` — approving one rule now suppresses re-interrupt for the whole rule family (e.g. `rm` variants, `dd` writes).
 
 ### Changed
-- **Inter-endpoint failover cooldown in `MultiModelChatModel`.** After a failed endpoint, the router now waits `failover_cooldown_s` seconds (default 3) before attempting the next endpoint, pacing failover across all four generation paths (`_generate`, `_agenerate`, `_stream`, `_astream`). The cooldown fires only between attempts — never before the first, never after the last failure, and never on success — smoothing burst traffic against a struggling provider without compounding retries. Configurable via the `failover_cooldown_s` field; independent of the existing 60s circuit-breaker cooldown (which governs skipping persistently-failing models, not pacing between attempts).
-- **Raised LLM rate-limit defaults.** `LLMRateLimitConfig` defaults increased: `rpm_limit` 60→120, `concurrent_limit` 2→4, `global_concurrent_limit` 4→10. Better matches modern multi-model workloads that fan out across several providers concurrently.
+- Inter-endpoint failover cooldown in `MultiModelChatModel` (`failover_cooldown_s`, default 3) to pace failover attempts.
+- Raised LLM rate-limit defaults: `rpm_limit` 60→120, `concurrent_limit` 2→4, `global_concurrent_limit` 4→10.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.23...v1.2.24
 
 ## [1.2.23] - 2026-09-03
 
 ### Fixed
-- **Per-model circuit breaker in `MultiModelChatModel`.** After N consecutive failures (default 5), a model's circuit opens for a cooldown period (default 60s). While open, the model is skipped in `_shuffled_models()`. If all circuits are open, falls back to the full pool. Success resets the counter. Prevents repeated identical API-key errors from being retried model-by-model on every call.
+- **Per-model circuit breaker in `MultiModelChatModel`.** After N consecutive failures (default 5) a model's circuit opens for 60s; falls back to the full pool if all are open; success resets.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.22...v1.2.23
 
@@ -192,47 +212,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.20] - 2026-09-01
 
 ### Fixed
-- **`.env` loaded at import time.** `soothe_nano` now calls `bootstrap_dotenv()` in `__init__.py` before any `soothe_sdk` import, loading `SOOTHE_HOME/.env` and project-level `.env` files into `os.environ` before YAML config parsing resolves `${VAR}` placeholders. This fixes `fj` (and any other nano consumer) failing on all models in multi-model configs when the shell hasn't exported `DS1_API_KEY` etc. — providers previously resolved with `api_key=None`, causing `AuthenticationError` across the entire failover pool.
+- **`.env` loaded at import time.** `bootstrap_dotenv()` runs in `__init__.py` before YAML config parsing resolves `${VAR}` placeholders, fixing auth failures in multi-model configs when env keys weren't exported in the shell.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.19...v1.2.20
 
 ## [1.2.19] - 2026-09-01
 
 ### Fixed
-- **Silenced litellm's bare-print() debug noise.** `litellm.suppress_debug_info = True` is now set before any LangChain imports, suppressing the "Give Feedback / Get Help" and "LiteLLM.Info" messages that litellm prints to stdout on every exception-mapping call. With `MultiModelChatModel` failover across N instances, each failed model previously produced 2 lines of noise (2*N total), bypassing the logging system entirely. Also added `LiteLLM` to the suppressed third-party loggers in `_suppress_noisy_third_party`.
-- **E402 lint violations resolved.** Module-level imports in `provider.py` that must follow the `litellm` import (for the `suppress_debug_info` side-effect) are now annotated with `# noqa: E402`, documenting the intentional ordering. `make lint` passes cleanly.
+- Silenced litellm's bare-print debug noise via `litellm.suppress_debug_info = True` before any LangChain import; `LiteLLM` added to the suppressed third-party loggers.
+- Resolved E402 lint violations in `provider.py` with intentional-ordering `# noqa` annotations.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.18...v1.2.19
 
 ## [1.2.18] - 2026-09-01
 
 ### Fixed
-- **`_model_cache_lock` is now an `RLock` instead of a `Lock`.** `LLMFactory` methods that hold the cache lock call other methods that also try to acquire it, causing a deadlock (`RuntimeError: can't re-enter the same RLock` / frozen thread) under concurrent model creation. Switching to `threading.RLock()` allows re-entrant acquisition within the same thread.
+- `_model_cache_lock` is now an `RLock` — re-entrant acquisition within `LLMFactory` methods, fixing a deadlock under concurrent model creation.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.17...v1.2.18
 
 ## [1.2.17] - 2026-09-01
 
 ### Added
-- **Bypass permissions mode (`interaction_mode="bypass"`).** A new interaction mode that skips all security enforcement layers — policy middleware, operation security (dangerous paths, banned commands), interrupt_on approval prompts, and tool approval pipeline safety checks — giving the agent unrestricted filesystem and shell access within a session. Per-session only (not a config default); selected via the CLI composer mode cycle or per-request via wire field.
+- **Bypass permissions mode (`interaction_mode="bypass"`)** — per-session mode that skips all security enforcement layers (policy middleware, dangerous paths/commands, approval prompts). Not a config default.
 
 ### Changed
-- **Multi-model router profiles with per-call failover.** The LLM provider now supports configurable router profiles that can fail over across models on a per-call basis.
+- Multi-model router profiles with per-call failover.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.16...v1.2.17
 
 ## [1.2.16] - 2026-08-30
 
 ### Fixed
-- **`kill_process` now coerces string PIDs via `args_schema`.** `KillProcessTool` was the only tool in `toolkits/execution.py` without a Pydantic `args_schema`; an LLM-supplied string `pid` (`"14449"` — common when numeric args arrive as JSON strings during streaming) reached `if pid <= 0` and raised `TypeError: '<=' not supported between instances of 'str' and 'int'`, aborting the entire execute step (loop 33c1). Added `KillProcessInput` (`pid: int`) so LangChain coerces before `_run`, plus a defensive `isinstance` guard for direct callers.
-- **New `ToolErrorGuardMiddleware` isolates single-tool failures.** Any exception escaping the inner tool-call chain — including the ones the network-error recovery middleware re-raises and everything the graph's default tool-error handler re-raises — is now converted into an `error` `ToolMessage` so the agent self-recovers via the existing `has_tool_error` / deliverable-gate retry loop instead of the whole step dying. Sits outer to `NetworkToolErrorsMiddleware`; `CancelledError` propagates for cooperative shutdown.
+- **`kill_process` now coerces string PIDs** via a Pydantic `args_schema`, instead of raising `TypeError` on JSON-string PIDs and aborting the whole step.
+- **New `ToolErrorGuardMiddleware` isolates single-tool failures** — exceptions become error `ToolMessage`s so the agent self-recovers instead of the whole step dying.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.15...v1.2.16
 
 ## [1.2.15] - 2026-08-29
 
 ### Fixed
-- **`_state_retrieval_config` now strips `__pregel_scratchpad`** alongside `checkpoint_ns`/`checkpoint_id`/`checkpoint_map`. The parent Pregel loop's scratchpad carries atomic counters whose `subgraph_counter()` can be > 0 on resume; `AsyncPregelLoop.__init__` then hard-accesses `checkpoint_ns` (already stripped) and raises `KeyError: 'checkpoint_ns'` (loops c982 / 7a90). Mirrors `strip_parent_checkpoint_coordinates` in the host package.
+- `_state_retrieval_config` now strips `__pregel_scratchpad` alongside the other parent checkpoint coordinates, fixing `KeyError: 'checkpoint_ns'` on resume.
 
 ## [1.2.14] - 2026-08-28
 
@@ -245,148 +265,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.13] - 2026-08-27
 
 ### Fixed
-- **`WorkspaceToolOperationSecurity` now blocks dangerous paths even without a `SecurityConfig`.** Added a bypass-immune `_DANGEROUS_PATH_COMPONENTS` check (`.git/`, `.bashrc`, `.vscode/`, etc.) that runs *before* the `security_config` branch in `_check_filesystem`, so sensitive paths are denied even when no `SecurityConfig` is wired. Mirrors the `DANGEROUS_COMPONENTS` set in `PathValidator`, keeping both layers in sync.
-- **Expanded banned command patterns.** `_BANNED_COMMAND_PATTERNS` now also matches `rm -rf` (bare), `rm -r`, `sudo` (bare), `shred`, `chmod 777` (bare), and `git push --force` — bringing coverage in line with soothe's `tool_safety_check.py`.
-- **`PathValidator` now flags UNC paths and more dangerous components.** Added `unc_path_forward` (`^//`) and `unc_path_backslash` (`^\\\\`) to `SUSPICIOUS_PATTERNS` (CRITICAL severity). Extended `DANGEROUS_COMPONENTS` with project-config dirs (`.vscode`, `.idea`, `.claude`), shell-config files (`.bashrc`, `.zshrc`, `.profile`, …), and git config files (`.gitconfig`, `.gitmodules`).
+- `WorkspaceToolOperationSecurity` now blocks dangerous paths (`.git/`, `.bashrc`, …) even without a `SecurityConfig`.
+- Expanded banned command patterns: bare `rm -rf` / `rm -r` / `sudo` / `chmod 777`, `shred`, `git push --force`.
+- `PathValidator` now flags UNC paths and more dangerous components (project, shell, and git config files).
 
 ### Changed
-- **`build_operation_security_request` is now a standalone exported function.** Extracted from `ConfigDrivenPolicy._build_operation_security_request` so external callers (e.g. the soothe tool-approval pipeline, RFC-622 §9b) can build an `OperationSecurityRequest` from a tool name + args without subclassing `ConfigDrivenPolicy`. The method now delegates to the standalone function and preserves the original `action_type`. Exported via `soothe_nano.security.security_api`.
+- `build_operation_security_request` is now a standalone exported function in `soothe_nano.security.security_api`.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.12...v1.2.13
 
 ## [1.2.12] - 2026-08-26
 
 ### Fixed
-- **`lc_to_litellm_messages` drops `tool_calls` with a missing/empty `function.name`.**
-  When a resumed long thread carried a historical assistant message whose
-  `tool_calls[i]` had `function.name == ""` or no `name` key at all, the
-  converter emitted it verbatim and providers rejected the whole request with a
-  non-retriable 400 `invalid_request_error`:
-  `messages[N].tool_calls[0].function missing required field "name"`. The
-  error surfaced in `fjf` (flowjet-agent) as
-  `litellm.BadRequestError: OpenAIException`. Extracted
-  `_normalize_tool_calls_entry`, shared by both the `BaseMessage` path and the
-  dict-passthrough path, which drops malformed `tool_calls` entries (and drops
-  the `tool_calls` field entirely when none survive) so a single corrupt
-  historical turn no longer fails the entire LLM call.
+- **`lc_to_litellm_messages` drops `tool_calls` with a missing/empty `function.name`.** A corrupt historical tool call previously caused a non-retriable 400 `invalid_request_error` from providers, failing the whole LLM call; malformed entries are now dropped.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.11...v1.2.12
 
 ## [1.2.10] - 2026-08-24
 
 ### Changed
-- **`general_purpose_subagent` is now a mode enum.** Replaced the two booleans
-  `general_purpose_subagent` (bool) and `general_purpose_subagent_readonly`
-  (bool) on `AgentRuntimeConfig` with a single
-  `general_purpose_subagent: Literal["off", "full", "readonly", "per_step"]`
-  field (default `"full"`). This collapses the prior flag combination into a
-  single knob and adds a new `per_step` variant.
-  - `off` disables the GP subagent entirely (was `general_purpose_subagent=False`).
-  - `full` registers a single GP variant with full filesystem access
-    (was `general_purpose_subagent=True, general_purpose_subagent_readonly=False`).
-  - `readonly` restricts the GP variant to read-only filesystem tools
-    (`ls`, `read_file`, `file_info`, `glob`, `grep`) with write-deny permissions
-    (was `general_purpose_subagent=True, general_purpose_subagent_readonly=True`).
-  - `per_step` (new) registers two variants — `general-purpose` (full) for
-    agent-mode steps (including Eval) and `general-purpose-readonly` for
-    plan/ask steps — so a host middleware can redirect `task` calls to the
-    read-only variant on plan/ask steps. The model only sees `general-purpose`.
-  - `AgentBuilder._compile_deep_agent` now branches on the mode to construct
-    the appropriate profile / extra subagent spec; the deprecated
-    `general_purpose_subagent_readonly` field has been removed.
+- **`general_purpose_subagent` is now a mode enum**: `Literal["off", "full", "readonly", "per_step"]` (default `"full"`) replaces the two booleans. `per_step` (new) registers a full variant for agent-mode steps plus a read-only variant for plan/ask steps; the deprecated `general_purpose_subagent_readonly` field is removed.
 
 ### Fixed
-- **Per-step GP variant wiring.** The `per_step` mode now constructs a
-  `general-purpose-readonly` `SubAgent` spec with a `FilesystemMiddleware`
-  restricted to `FILESYSTEM_TOOLS_ASK` and `ask_permissions()`, and appends it
-  to the graph subagents so a host middleware can route plan/ask `task` calls
-  to it without advertising the variant to the model.
+- Per-step GP variant wiring: the read-only variant is appended to the graph subagents so a host middleware can route plan/ask `task` calls to it without advertising it to the model.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.9...v1.2.10
 
 ## [1.2.9] - 2026-08-24
 
 ### Added
-- **General-purpose readonly subagent.** New `general_purpose_subagent_readonly` config flag
-  on `AgentRuntimeConfig` (default `false`). When true and `interaction_mode` is `agent`,
-  the general-purpose subagent is configured with read-only filesystem tools
-  (`ls`, `read_file`, `file_info`, `glob`, `grep`) and write-deny permissions via
-  `GeneralPurposeSubagentProfile`, while the main agent retains full filesystem access.
-  Requires `soothe-deepagents>=0.8.6`.
-  - `AgentBuilder` constructs a `GeneralPurposeSubagentProfile` with readonly
-    tools/permissions/prompt and passes it to `create_deep_agent` via the new
-    `general_purpose_subagent_profile` parameter.
-  - New `READONLY_GP_SYSTEM_PROMPT` constant in `interaction_mode.py`.
+- **General-purpose readonly subagent**: new `general_purpose_subagent_readonly` flag restricting the GP subagent to read-only filesystem tools with write-deny permissions. Requires `soothe-deepagents>=0.8.6`.
 
 ## [1.2.8] - 2026-08-21
 
 ### Added
-- **New `plan` interaction mode.** A read-only mode that mirrors `ask` constraints
-  (read-only filesystem allowlist, write/execute-deny permissions, no mutating tool
-  groups, no general-purpose subagent) but is tuned for producing implementation
-  plans rather than answering questions. `AgentBuilder` now branches on `plan`:
-  applies `FILESYSTEM_TOOLS_PLAN`, `PLAN_POLICY_PROFILE`, `plan_permissions()`,
-  an empty `PLAN_SUBAGENT_ALLOWLIST`, and a `PLAN_SYSTEM_PROMPT_SUFFIX` that
-  instructs the agent to inspect the workspace with read-only tools and produce a
-  clear, actionable plan for approval and execution in Agent mode.
-  - `InteractionMode` is now `Literal["agent", "ask", "plan"]`.
-  - `resolve_interaction_mode` accepts `"plan"` from the kwarg or
-    `agent.runtime.interaction_mode`.
-  - `filter_subagents_for_mode` returns an empty list for `plan`.
-  - New `PLAN_PROFILE` security profile (read/network/MCP only; no subagent
-    spawning) registered in `DEFAULT_PROFILES` as `"plan"`.
+- **New `plan` interaction mode** — read-only like `ask`, but tuned for producing implementation plans. `InteractionMode` is now `Literal["agent", "ask", "plan"]`; `AgentBuilder` applies plan tool allowlists, permissions, an empty subagent allowlist, and a plan system-prompt suffix.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.7...v1.2.8
 
 ## [1.2.7] - 2026-08-21
 
 ### Fixed
-- **`_StructuredOutputRunnable` tolerates a leaked `CallbackManager` in `config['callbacks']`.**
-  When Langfuse is off, a LangGraph node's `AsyncCallbackManager` can leak into
-  the structured-output `RunnableConfig`. `_config_for_model` did
-  `list(config.get("callbacks"))` to check for the token-usage handler, but a
-  `CallbackManager` is not iterable →
-  `TypeError: 'AsyncCallbackManager' object is not iterable` →
-  `StructuredOutputError` → intake fail-safe routed every query (including
-  chitchat like "how are u") as a complex task. Added
-  `_flatten_callback_handlers` which reads `.handlers` /
-  `.inheritable_handlers` (and recurses through nested lists/tuples) to
-  flatten any callback shape to a plain handler list before the membership
-  check.
+- **`_StructuredOutputRunnable` tolerates a leaked `CallbackManager` in `config['callbacks']`** (not iterable), which previously routed every query through the intake fail-safe.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.6...v1.2.7
 
 ## [1.2.6] - 2026-08-21
 
 ### Added
-- **New builtin skills: drawio, office, pdf, anydoc.** Renamed the package
-  skills directory `builtin_skills/` -> `builtin/` and updated references in
-  `builtins.py`, `index.py`, `README.md`, and tests. Added four new skills:
-  - **drawio** — `SKILL.md`, shape index data, references (autolayout,
-    derasterize, diagram-types, live-infra, mermaid-authoring, pr-bot,
-    shapes, style-extraction/presets, toolbox, troubleshooting, tubemap,
-    xml-authoring), ~40 authoring scripts, and built-in style presets.
-  - **office** — `SKILL.md`, OOXML (ISO/IEC 29500-4) schema bundles,
-    validators for docx/pptx, and scripts for docx/pptx editing, comments,
-    recalc, thumbnails, and merge runs.
-  - **pdf** — `SKILL.md`, forms/reference docs, and scripts for form
-    extraction, filling, bounding-box checks, and PDF-to-image conversion.
-  - **anydoc** — `SKILL.md` entry point.
+- **New builtin skills: drawio, office, pdf, anydoc.** Renamed `builtin_skills/` → `builtin/`; the new skills ship authoring references, OOXML validators, and supporting scripts.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.5...v1.2.6
 
 ## [1.2.5] - 2026-08-20
 
 ### Fixed
-- **Structured-output calls now emit Langfuse generations.**
-  `_StructuredOutputRunnable` invoked `ChatLitellmModel._agenerate` directly,
-  which skipped LangChain callbacks. Pass 1 / intent, veritas, and other
-  `invoke_structured_chat` paths produced a parent span with no child
-  GENERATION even when a traced RunnableConfig was passed. The runnable now
-  uses public `invoke` / `ainvoke` with `config=`, keeps `response_format` in
-  litellm kwargs, and still strips `config`/`callbacks` so handlers are not
-  JSON-serialized into the HTTP body. Token usage is recorded via those
-  callbacks instead of a second inline `on_llm_end`.
+- **Structured-output calls now emit Langfuse generations.** The runnable bypassed LangChain callbacks; it now uses public `invoke`/`ainvoke` with `config=` so token usage is recorded via callbacks.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.4...v1.2.5
 
@@ -407,301 +341,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.3] - 2026-08-17
 
 ### Fixed
-- **`lc_to_litellm_messages` now accepts plain dict messages.** The planner
-  engine (`soothe_nano.subagents.plan.engine`) builds message lists as plain
-  `{"role", "content"}` dicts, and LangChain's structured-output runnable
-  passes them through to `_agenerate` uncoerced. The converter previously
-  raised `AttributeError: 'dict' object has no attribute 'type'` on the
-  structured-output draft path. Dict entries are now normalized (role aliases
-  like `human`/`ai` mapped to `user`/`assistant`, content coerced to `str`)
-  and passed through, preserving any `tool_calls` / `tool_call_id` / `name`
-  fields. The `BaseMessage` path is unchanged.
+- **`lc_to_litellm_messages` now accepts plain dict messages**, normalizing role aliases and content; fixes `AttributeError` on the structured-output draft path.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.2...v1.2.3
 
 ## [1.2.2] - 2026-08-16
 
 ### Fixed
-- **`_StructuredOutputRunnable` leaked the LangChain `config` into litellm kwargs.**
-  `invoke_structured_chat` passes the LangChain `config` RunnableConfig (with
-  `callbacks=[SootheLLMTokenUsageCallbackHandler()]`, injected by
-  `merge_token_usage_callbacks`) through `**kwargs`. The runnable forwarded
-  every kwarg into `_generate`/`_agenerate` → `_litellm_kwargs` →
-  `litellm.completion`, so the live callback-handler object reached the HTTP
-  body and failed JSON serialization:
-  `litellm.InternalServerError: OpenAIException - Object of type
-  SootheLLMTokenUsageCallbackHandler is not JSON serializable`. The structured
-  call then raised `StructuredOutputError`, and callers fell back to
-  heuristics — every intake `Pass1`/`Pass2` classification degraded to the
-  task/simple fallback, so queries routed via heuristic instead of the LLM
-  verdict even though the classifiers were initialized in LLM mode. `config`
-  is a RunnableConfig, not a litellm kwarg: `invoke`/`ainvoke` now call
-  `_split_call_kwargs` to pop it out before forwarding.
-- **Token-usage callback now fires inline for structured-output calls.**
-  Because the runnable bypasses `BaseChatModel`'s callback machinery, the
-  shared handler's `on_llm_end` would no longer run — loop token
-  accumulation silently stopped for planner/intent calls. `_fire_token_callback`
-  invokes the handler inline, passing the `ChatResult` directly (it
-  duck-types as `LLMResult` — do not rebuild an `LLMResult`, pydantic
-  revalidation breaks on `ChatResult.generations`).
+- **`_StructuredOutputRunnable` no longer leaks the LangChain `config` into litellm kwargs** (previously failed JSON serialization → `StructuredOutputError` → degraded intake classification); the config is popped before forwarding.
+- **Token-usage callback now fires inline for structured-output calls**, so loop token accumulation keeps working for planner/intent calls.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.1...v1.2.2
 
 ## [1.2.1] - 2026-08-16
 
 ### Fixed
-- **Disable litellm remote model-cost-map fetch.** Set
-  `LITELLM_LOCAL_MODEL_COST_MAP=True` before importing litellm so it uses the
-  local backup instead of fetching `raw.githubusercontent.com` on every import
-  (which timed out and logged a warning when offline).
-- **Use `ConfigDict` instead of deprecated `class Config` in
-  `ChatLitellmModel`.** Silences the `PydanticDeprecatedSince20` warning
-  emitted on every import; class-based config is removed in Pydantic v3.
+- Disable litellm's remote model-cost-map fetch (`LITELLM_LOCAL_MODEL_COST_MAP=True`) to avoid offline timeouts on import.
+- Use `ConfigDict` instead of deprecated `class Config` in `ChatLitellmModel`.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.2.0...v1.2.1
 
 ## [1.2.0] - 2026-08-16
 
 ### Changed
-- **LLM utilities refactored into a top-level `soothe_nano.llm` package.**
-  Consolidate LLM primitives previously scattered under `utils/llm` into
-  `src/soothe_nano/llm` with a single coherent surface: `factory`, `registry`,
-  `provider` abstraction, `base` model wrapper, `message`, `tools`,
-  `structured` output, `thinking`-token filter, `observability`,
-  `invoke_policy`, `response_text`, `schema_wire`, and `types`. The old
-  `utils/llm` shims (`factory.py`, `registry.py`, `types.py`, `wrappers.py`)
-  are removed; the thin `utils/llm/__init__` re-exports keep existing imports
-  working during migration.
-- **Provider abstraction is first-class.** `llm/provider.py` (478 lines) and
-  `llm/registry.py` (263 lines) formalize provider configs, multi-provider
-  factory construction, streaming resolution, and `max_tokens` injection.
-- **Structured output re-architecture.** `llm/structured.py` now drives
-  `json_schema` method routing with validation-retry recovery from empty
-  object payloads — the new-arch equivalent of the legacy wrapper's
-  empty-object recovery path.
-- **Subagents, middleware, and toolkits** updated to import from the new
-  `soothe_nano.llm` package; `diagnose/providers` and `config/settings`
-  aligned to the new registry.
+- **LLM utilities consolidated into a top-level `soothe_nano.llm` package** (`factory`, `registry`, `provider`, `base`, `message`, `tools`, `structured`, `thinking`, `observability`, `invoke_policy`, `response_text`, `schema_wire`, `types`); old `utils/llm` shims removed (thin re-exports kept during migration).
+- Provider abstraction is first-class; structured output now drives `json_schema` method routing with validation-retry recovery from empty payloads.
+- Subagents, middleware, and toolkits import from the new `soothe_nano.llm` package.
 
 ### Added
-- `examples/llm/` with eight runnable examples (openai, gemini, openrouter,
-  anthropic, ollama, dashscope custom endpoint, structured output,
-  multi-provider factory) plus a shared `_helpers` module and README.
+- `examples/llm/` with eight runnable examples plus a shared `_helpers` module and README.
 
 ### Fixed
-- `test_role_routing` now constructs a config with role routing disabled,
-  matching the middleware's real no-op contract.
-- `test_invoke_structured_chat_recovers_from_empty_object_payload` uses a
-  `minLength:1` schema so the empty-string first payload fails
-  post-validation, exercising the validation-retry path.
+- Test fixes aligning with the middleware's no-op contract and the validation-retry path.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.19...v1.2.0
 
 ## [1.1.19] - 2026-08-14
 
 ### Changed
-- **Removed the Muse-Glimmer-specific adapter** (`soothe_nano.utils.llm.muse_glimmer`,
-  816 lines) and its test suite (514 lines). The model-agnostic implementation in
-  `OpenAICompatModelWrapper` — tool_choice sanitization, `json_schema`
-  structured-output routing, thinking-token stripping, and the streaming
-  auto-fallback — already covers every OpenAI-compatible provider, so the
-  dedicated protocol adapter is no longer needed. New local models sharing the
-  wire protocol keep working without a code change.
-- **`bind_tools` re-wraps the bound model** in a new `OpenAICompatModelWrapper`
-  so thinking-token stripping and the streaming auto-fallback still apply on
-  every tool-bound invocation; the previous release shipped this fix but it
-  was shadowed in some local installs and is now confirmed green.
+- Removed the Muse-Glimmer-specific adapter — the model-agnostic implementation in `OpenAICompatModelWrapper` already covers every OpenAI-compatible provider.
+- `bind_tools` re-wraps the bound model so thinking-token stripping and streaming auto-fallback apply on every tool-bound invocation.
 
 ### Fixed
-- Lockfile markers for platform-conditional dependencies (`zipp` on Python
-  <3.12, `cryptography`/`jeepney` on non-Windows) so `uv sync` resolves cleanly
-  across platforms.
+- Lockfile markers for platform-conditional dependencies so `uv sync` resolves cleanly across platforms.
 
 ## [1.1.18] - 2026-08-13
 
 ### Changed
-
-- **Protocol detection is now content-based, not name-based.** The
-  `muse_glimmer` adapter runs on every generation via
-  `OpenAICompatModelWrapper` and no-ops when the wire markers
-  (`to=self<|message|>`, `<|eom|>`, `<atem:`) are absent. New models sharing
-  the protocol work without a code change or name match.
-- **Streaming auto-fallback.** `_stream`/`_astream` now catch LangChain's
-  `No generations found in stream` (a server ignoring `stream: true`, e.g.
-  vLLM-Metal) and transparently retry via `_generate`/`_agenerate`. Broken
-  streaming endpoints self-heal without `streaming: false`.
-- **Provider-level `max_tokens`.** `ModelProviderConfig` accepts `max_tokens`;
-  `get_provider_kwargs` injects it into `init_chat_model` kwargs so servers
-  that truncate when the field is omitted (vLLM-Metal mid-tool-call) set it
-  once at the provider level. Caller params still take precedence.
-- **`bind_tools` re-wraps the bound model** so the adapter and auto-fallback
-  apply on every tool-bound invocation.
+- **Protocol detection is now content-based, not name-based** — the adapter no-ops when the wire markers are absent, so new models sharing the protocol need no code change.
+- **Streaming auto-fallback** for servers ignoring `stream: true` (e.g. vLLM-Metal).
+- Provider-level `max_tokens` on `ModelProviderConfig`.
+- `bind_tools` re-wraps the bound model so the adapter and auto-fallback apply on every tool-bound invocation.
 
 ### Removed
-- `_is_muse_glimmer_model` name-based detection and the `muse_glimmer` flag on
-  `OpenAICompatModelWrapper` / `LLMFactory` — superseded by content
-  detection.
+- Name-based `muse_glimmer` detection and flag — superseded by content detection.
 
 ## [1.1.17] - 2026-08-13
 
 ### Added
-- **Muse-Glimmer response adapter** (`soothe_nano.utils.llm.muse_glimmer`):
-  handles the self-talk wire protocol (`to=self<|message|>…<|eom|>` followed
-  by `<|start|>assistant to=user<|message|>…`) emitted as raw `content` by
-  vLLM-Metal (`localhost:9543`) and oMLX. Strips self-talk, extracts the
-  `to=user` reply, parses six tool-call XML dialects into structured
-  `tool_calls` (+ `tool_call_chunks` for streaming), and detects the
-  vLLM-Metal chat-template repetition loop.
-- Document parsing for Word, PowerPoint, OpenDocument, `.rtf`, and `.epub`
-  via `firecrawl-anydoc` (Rust converter, GIL-releasing).
-- `ExtractTextTool` advertises and routes the new Office/OpenDocument
-  formats.
+- Muse-Glimmer response adapter: strips the self-talk wire protocol, extracts the `to=user` reply, parses six XML tool-call dialects into structured `tool_calls`, and detects the repetition loop.
+- Document parsing for Word, PowerPoint, OpenDocument, `.rtf`, `.epub` via `firecrawl-anydoc`; `ExtractTextTool` routes the new formats.
 
 ### Changed
-- `LLMFactory` injects a default `max_tokens=2048` for Muse-Glimmer models
-  so vLLM doesn't truncate mid-tool-call XML.
-- `OpenAICompatModelWrapper` accepts `streaming` and `muse_glimmer` flags;
-  when `muse_glimmer` is set, `_generate`/`_agenerate` transform every
-  `AIMessage`, and `_stream`/`_astream` buffer the full turn and emit one
-  transformed chunk so live reasoning tokens never leak.
-- `bind_tools` re-wraps the bound model so the adapter applies on every
-  tool-bound invocation; `_extract_tool_param_order` feeds bound tool
-  schemas for positional-arg-to-keyword mapping.
-- `_parse_document` routes `_ANYDOC_EXTENSIONS` to `_parse_with_anydoc`,
-  falling back to PDF/DOCX/TXT.
+- `LLMFactory` injects a default `max_tokens=2048` for Muse-Glimmer models; `OpenAICompatModelWrapper` gains `streaming`/`muse_glimmer` flags with buffered streaming turns; `_parse_document` routes anydoc extensions with PDF/DOCX/TXT fallback.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.16...v1.1.17
 
 ## [1.1.16] - 2026-08-13
 
 ### Changed
-- `LLMFactory` now reads a per-provider `streaming` flag (default `True`) from
-  `ModelProviderConfig` and passes `streaming`/`stream_usage` to
-  `init_chat_model` accordingly. The model cache key no longer hard-codes
-  `streaming:` so providers with the same spec but different streaming settings
-  no longer collide.
-- `ProviderRegistry.get_provider_streaming` resolves whether LangChain should
-  stream a provider's responses; returns `True` for unknown providers.
+- `LLMFactory` reads a per-provider `streaming` flag (default `True`); the model cache key no longer hard-codes `streaming:`.
 
 ### Removed
-- `soothe_nano.utils.llm.muse_glimmer` adapter and its test suite
-  (`tests/unit/utils/llm/test_muse_glimmer_adapter.py`). The adapter worked
-  around an oMLX/vLLM-Metal prototype endpoint that ignores `stream: true` and
-  returns a single non-SSE JSON body. Instead of translating the model's
-  internal self-talk protocol per-model, disable streaming at the provider
-  level (`streaming: false`) so LangChain's non-streaming `_agenerate` path is
-  used.
-- `muse_glimmer` flag and auto-detection (`_is_muse_glimmer_model`) from
-  `OpenAICompatModelWrapper` and `LLMFactory`; the `muse_glimmer` exports were
-  dropped from `soothe_nano.utils.llm.__init__`.
+- The `muse_glimmer` adapter and auto-detection — replaced by disabling streaming at the provider level for servers with broken streaming endpoints.
 
 ### Fixed
-- `ModelProviderConfig.streaming` field (default `True`) lets a provider opt
-  out of streaming for OpenAI-compatible servers whose streaming endpoint is
-  broken or unsupported (e.g. vLLM-Metal prototype), avoiding
-  `No generations found in stream` errors.
+- `ModelProviderConfig.streaming` field (default `True`) lets a provider opt out of streaming.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.15...v1.1.16
 
 ## [1.1.15] - 2026-08-12
 
 ### Added
-- Muse-Glimmer response adapter (`soothe_nano.utils.llm.muse_glimmer`): the
-  oMLX endpoint model emits a self-talk protocol (`to=self<|message|>…`)
-  as raw content and embeds tool calls as XML (``<atem:function_calls>``/
-  ``<atem:invoke>``, ``<function name="…"><arg>``, self-named
-  ``<read_file file_path="…"/>``) never as structured `tool_calls`. The
-  adapter strips self-talk, extracts the `to=user` reply into `content`,
-  and parses all six tool-call dialects into structured `tool_calls`
-  (+ `tool_call_chunks` for streaming). Streaming turns are buffered and
-  emitted as one transformed chunk because the live tokens are internal
-  reasoning that must be hidden anyway. Wired into
-  `OpenAICompatModelWrapper` via a `muse_glimmer` flag (auto-triggered for
-  model names starting with `muse-glimmer`); `bind_tools` re-wraps the
-  bound model so the adapter applies on every tool-bound invocation.
+- Muse-Glimmer response adapter (`soothe_nano.utils.llm.muse_glimmer`): strips self-talk, extracts the `to=user` reply, parses XML tool calls into structured `tool_calls`, and buffers streaming turns into one transformed chunk. Wired via a `muse_glimmer` flag auto-triggered for `muse-glimmer` models.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.14...v1.1.15
 
 ## [1.1.14] - 2026-08-12
 
 ### Fixed
-- `computer_use` vision loop: attach the latest screenshot as a multimodal
-  `image_url` block so the model can see the desktop instead of stalling on
-  repeated screenshot-only steps; auto-capture an observation before the first
-  step and after each UI action (`action_delay_s`); nudge after consecutive
-  observe-only actions; treat screenshot/wait-only runs as no-progress; probe
-  and correct Retina `coordinate_scale` from the first full-screen capture.
-- `computer_use` input backend: missing `pyautogui` now raises
-  `DesktopInputUnavailableError` with install guidance, is logged as
-  `input_unavailable` at startup, and is returned as a step-level error rather
-  than aborting the whole run (macOS screenshots can still work via
-  `screencapture`).
-- Stop emitting the noisy `soothe.internal.policy.checked` event on every
-  policy check; denials still emit `PolicyDeniedEvent`.
+- `computer_use` vision loop: attach the latest screenshot as a multimodal block, auto-capture observations, treat observe-only runs as no-progress, and probe Retina coordinate scale.
+- Missing `pyautogui` now raises a step-level error with install guidance instead of aborting the whole run.
+- Stop emitting the noisy `soothe.internal.policy.checked` event per check; denials still emit `PolicyDeniedEvent`.
 
 ### Changed
-- Default `computer_use` `max_steps` raised from 10 to 99.
-- Example `07_nano_computer_use_weixin_favorites.py`: bring WeChat forward via
-  Spotlight and rely on auto-detected coordinate scale.
+- Default `computer_use` `max_steps` raised 10 → 99.
+- Example `07` brings WeChat forward via Spotlight and relies on auto-detected coordinate scale.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.13...v1.1.14
 
 ## [1.1.13] - 2026-08-12
 
 ### Added
-- `computer_use` subagent: `create_computer_use_tools` and
-  `resolve_computer_use_backend` factory functions for direct main-agent
-  desktop-tool binding (Style 1 — routed delegation), exported from the
-  `soothe_nano.subagents.computer_use` package.
-- Foreground session tracking for `run_command`: writes
-  `{workspace}/.soothe/foreground/fg-{pid}.session` markers while a
-  synchronous shell command is in flight so host cancel can reap the
-  process group (mirrors the existing `run_background` log tracking).
-  New helpers `_register_foreground_session` /
-  `_unregister_foreground_session` / `_foreground_session_path` /
-  `_resolve_foreground_session_dir` in `toolkits/execution.py`.
-- Examples `06_nano_computer_use_example.py` (desktop GUI automation via
-  the computer_use subagent) and `07_nano_computer_use_weixin_favorites.py`
-  (WeChat Favorites article-link harvester).
+- `computer_use` subagent factory functions (`create_computer_use_tools`, `resolve_computer_use_backend`) for direct main-agent desktop-tool binding.
+- Foreground session tracking for `run_command` so host cancel can reap the process group.
+- Examples `06` (desktop GUI automation) and `07` (WeChat Favorites harvester).
 
 ### Changed
-- `examples/_shared/config.py` injects the repo `src/` dir onto `sys.path`
-  so examples run under a foreign venv with a stale flat-snapshot install.
-- System prompt: the `computer_use` subagent is advertised in the
-  subagent guide and noted as reachable via the `task` tool rather than
-  bound directly on the main agent.
+- Examples inject the repo `src/` onto `sys.path`; the system prompt advertises the `computer_use` subagent as reachable via `task`.
 
 ### Fixed
-- `RunCommandShellTool`: foreground `run_command` invocations now register
-  an in-flight session marker so cancellation drains the child process
-  group even for synchronous commands; marker is removed on exit.
+- Foreground `run_command` registers an in-flight session marker so cancellation drains the child process group.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.12...v1.1.13
 
 ## [1.1.12] - 2026-08-11
 
 ### Fixed
-- `computer_use` subagent: add missing `CallbackManagerForToolRun` import to
-  `tools.py` (fixes F821 undefined name at 4 sites) and apply ruff format to
-  subagent files and tests (fixes format-check on 6 files). CI verified:
-  ruff check passed, ruff format --check clean (444 files), pytest unit
-  1596 passed / 42 skipped / 0 failed.
-- LLM stack: strip inline thinking tokens (`<think>`, `<thinking>`,
-  `<reasoning>`) from DeepSeek-R1-style local model output. Adds
-  `thinking_filter.py` with `strip_thinking` (stateless, complete blocks) and
-  `ThinkingStreamFilter` (stateful, buffers partial tag fragments split across
-  streaming chunks). Stripped content is logged at DEBUG before removal.
-- Wire the thinking filter through the LLM stack:
-  - `SootheConfig.hide_thinking_tokens` (default `True`; env override
-    `SOOTHE_HIDE_THINKING_TOKENS`).
-  - `LLMFactory._apply_wrapper_chain` passes the flag to both
-    `OpenAICompatModelWrapper` and `SootheTokenUsageChatModel`.
-  - `OpenAICompatModelWrapper` strips blocks in `_generate/_agenerate` and
-    filters streaming deltas in `_stream/_astream` with per-stream
-    `ThinkingStreamFilter` instances.
-  - `SootheTokenUsageChatModel` carries the flag for consistent downstream use.
-  - `llm_response_text` strips thinking from assembled responses.
-  - Export `strip_thinking`/`ThinkingStreamFilter` from the llm package.
+- `computer_use` subagent: missing import fix + ruff format.
+- **Strip inline thinking tokens** (`<think>`, `<thinking>`, `<reasoning>`) from DeepSeek-R1-style output: stateless `strip_thinking` and stateful `ThinkingStreamFilter`, wired through `SootheConfig.hide_thinking_tokens`, the LLM wrapper chain, and `llm_response_text`.
 
 [Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v1.1.11...v1.1.12
 
@@ -934,14 +692,11 @@ Yanked / not published (CI lock pulled mcp 2.0 incompatibly). See 1.1.4.
 ## [1.0.4] - 2026-07-24
 
 ### Fixed
-- `toolkits.execution` no longer depends on the sunset `langchain-experimental` `ShellTool` / `PythonREPL`; `run_command` and `run_python` are now implemented on `BaseTool` with an in-process REPL. `datetime.utcnow` replaced with timezone-aware UTC.
-- Bump `soothe-sdk>=1.0.6` (required for the unified SQLite runtime contract).
+- `toolkits.execution` no longer depends on the sunset `langchain-experimental` `ShellTool` / `PythonREPL`; `run_command` and `run_python` are now implemented on `BaseTool` with an in-process REPL.
 
 ### Changed
-- Unify SQLite durability, vector store, and persistence under a single process-scoped runtime (`sqlite_runtime`) with a shared runtime lifecycle and pool registry, matching the PostgreSQL control-plane shape.
-- Rewrite `sqlite_store` and `sqlite_vec` to route through the runtime, dropping redundant per-instance connection plumbing.
-- Centralize SQLite path resolution in `paths.sqlite_paths`, threaded through config models/settings and the resolver infra.
-- Align `postgres_pool_lifecycle` / `postgres_pool_registry` with the unified runtime shape.
+- Unify SQLite durability, vector store, and persistence under a single process-scoped runtime (`sqlite_runtime`); centralize SQLite path resolution in `paths.sqlite_paths`.
+- Bump `soothe-sdk>=1.0.6`.
 
 ### Added
 - `tests/unit/persistence/test_sqlite_runtime.py` covering the new SQLite runtime.
@@ -995,13 +750,9 @@ Yanked / not published (CI lock pulled mcp 2.0 incompatibly). See 1.1.4.
 - `mcp-builder` builtin skill for MCP server development, loaded on demand with `skill-creator` instead of at cold start.
 
 ### Changed
-- Raise `AgentRuntimeConfig.recursion_limit` default from 200 to 9_999 to reduce spurious recursion caps during deep agent runs.
-- Decouple nano from the host package: fix import paths from `soothe` to `soothe_nano` in filesystem README, browser-use preview docstring, and toolkits internal docstring.
-- Add host extension points in `PostgresPoolRegistry`: template methods `_databases_to_open()` and `_initialize_pool_schema()` let host subclasses prepend checkpoints DB and add schema bootstrap.
-- Add injectable pool class params (`metadata_pool_cls`, `checkpointer_pool_cls`) to `resolve_durability`/`resolve_checkpointer` so the host can inject registry-bound subclasses.
-- Add `_REGISTRY_CLS` class attribute to `SharedCheckpointerPool` for host subclass override of the backing registry.
-- Update resolver and test imports from `soothe.runner.resolver` to `soothe_nano.resolve` (module path migration).
-- Point docs and tests at `soothe.coreagent` / `soothe.sloop` instead of the removed `soothe.foundation` namespace.
+- Raise `AgentRuntimeConfig.recursion_limit` default from 200 to 9_999.
+- Decouple nano from the host package (import paths, docs, tests now point at `soothe_nano` / `soothe.coreagent`).
+- Add host extension points: `PostgresPoolRegistry` template methods, injectable pool classes in `resolve_durability`/`resolve_checkpointer`, and `_REGISTRY_CLS` on `SharedCheckpointerPool`.
 - Require `soothe-sdk>=1.0.5` for the updated wire constants.
 
 ### Removed

@@ -47,6 +47,10 @@ class SoothePolicyMiddleware(AgentMiddleware):
         """
         self._policy = policy
         self._profile_name = profile_name
+        # Memoized workspace resolution: Path.resolve() hits the filesystem,
+        # and it would otherwise run on every tool call. Workspaces per
+        # process are few; the cache is bounded defensively.
+        self._workspace_memo: dict[str, str] = {}
 
     async def awrap_tool_call(
         self,
@@ -132,8 +136,7 @@ class SoothePolicyMiddleware(AgentMiddleware):
                     return thread_id
         return None
 
-    @staticmethod
-    def _workspace_from_request(request: ToolCallRequest) -> str | None:
+    def _workspace_from_request(self, request: ToolCallRequest) -> str | None:
         """Absolute workspace string from LangGraph configurable, if present."""
         config = getattr(request.runtime, "config", None)
         if not isinstance(config, dict):
@@ -144,10 +147,17 @@ class SoothePolicyMiddleware(AgentMiddleware):
         raw = configurable.get("workspace")
         if not isinstance(raw, str) or not raw.strip():
             return None
+        cached = self._workspace_memo.get(raw)
+        if cached is not None:
+            return cached
         try:
-            return str(Path(raw).expanduser().resolve())
+            resolved = str(Path(raw).expanduser().resolve())
         except (OSError, ValueError):
-            return raw.strip()
+            resolved = raw.strip()
+        if len(self._workspace_memo) >= 128:
+            self._workspace_memo.clear()
+        self._workspace_memo[raw] = resolved
+        return resolved
 
     @staticmethod
     def _emit_policy_event(request: ToolCallRequest, event_dict: dict[str, Any]) -> None:

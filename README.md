@@ -83,6 +83,12 @@ Use **nano** when you want a coding agent that already knows how to work in a re
 uv add soothe-nano
 ```
 
+## Sandbox execution
+
+Run the agent's shell and filesystem tools inside an [ArcBox](https://github.com/mirasoth) microVM while framework state stays on the host — see [docs/arcbox-backend.md](docs/arcbox-backend.md).
+
+## Quick start
+
 ## Quick start
 
 ```python

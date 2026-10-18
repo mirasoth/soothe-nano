@@ -15,12 +15,12 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Send
 
-from soothe_nano.subagents._research_timeouts import effective_source_timeout_sec
-from soothe_nano.subagents._research_topic_util import (
+from soothe_nano.subagents.deep_research.timeouts import effective_source_timeout_sec
+from soothe_nano.subagents.deep_research.topic_util import (
     planned_research_topic,
     topic_without_attachments,
 )
-from soothe_nano.subagents.research_wire import ResearchWireEmitter
+from soothe_nano.subagents.deep_research.wire import ResearchWireEmitter
 from soothe_nano.toolkits.url_crawl import crawl_urls, urls_from_search_results
 from soothe_nano.utils.subagent_emit import emit_subagent_wire_event
 
