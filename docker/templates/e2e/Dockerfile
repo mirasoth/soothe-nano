@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # soothe-nano ArcBox E2E guest template (docs/arcbox-backend.md §12 image prerequisites).
 #
 # Minimal guest image for the E2E suite (tests/integration/test_arcbox_e2e.py).

@@ -1,9 +1,9 @@
-# syntax=docker/dockerfile:1
 # soothe-nano ArcBox production guest template.
 #
 # Formal guest image for real ArcBox sandbox sessions. Extends the E2E
-# prerequisites (python3 + POSIX coreutils + setsid + procps) with a non-root
-# runtime user and a workspace layout suitable for long-lived agent sessions.
+# prerequisites (python3 + POSIX coreutils + setsid + procps) with a workspace
+# layout suitable for long-lived agent sessions. ArcBox runs the guest as root
+# by default; no USER directive is set.
 #
 # Uses the lacogito base image (same registry namespace as ../flowjet).
 #
@@ -20,7 +20,7 @@ ARG PYTHON_BASE=registry.cn-hangzhou.aliyuncs.com/lacogito/python:3.12-bookworm
 FROM ${PYTHON_BASE}
 
 LABEL org.opencontainers.image.title="soothe-nano ArcBox Production Guest" \
-    org.opencontainers.image.description="Production guest for ArcBox sandbox sessions — python3 + POSIX coreutils + non-root runtime" \
+    org.opencontainers.image.description="Production guest for ArcBox sandbox sessions — python3 + POSIX coreutils" \
     org.opencontainers.image.source="https://github.com/mirasoth/soothe-nano"
 
 ENV PYTHONUNBUFFERED=1 \
@@ -47,12 +47,8 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Non-root runtime user. The ArcBox backend never injects model API keys into
-# the guest (docs/arcbox-backend.md §11); the user exists only for least-privilege process
-# isolation inside the VM.
-RUN useradd --create-home --system nano \
-    && mkdir -p /workspace \
-    && chown -R nano:nano /workspace
-
-USER nano
+# ArcBox runs the guest as root by default; the backend never injects model API
+# keys into the guest (docs/arcbox-backend.md §11), so a non-root USER directive
+# is unnecessary and is not set here.
+RUN mkdir -p /workspace
 WORKDIR /workspace
