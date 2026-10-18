@@ -19,6 +19,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
 from langchain_core.messages import ToolMessage
 
+from soothe_nano.middleware._window import ScopeWindowBank, resolve_pending_results
 from soothe_nano.middleware.tool_call_args_registry import coerce_tool_call_args
 
 if TYPE_CHECKING:
@@ -326,11 +327,10 @@ class ToolOptimizationMiddleware(AgentMiddleware):
 
     def __init__(self) -> None:
         super().__init__()
-        # Per-scope (thread_id:checkpoint_ns) pending state: concurrent graph
-        # threads share this middleware instance and must not co-mingle searches.
-        self._pending_searches: dict[str, list[PendingSearch]] = {}
-        self._search_window_tasks: dict[str, asyncio.Task[None]] = {}
-        self._search_lock = asyncio.Lock()
+        self._search_bank: ScopeWindowBank[PendingSearch] = ScopeWindowBank(
+            _SEARCH_DETECTION_WINDOW_MS / 1000.0,
+            on_flush=self._flush_searches,
+        )
 
     async def awrap_tool_call(
         self,
@@ -523,74 +523,21 @@ class ToolOptimizationMiddleware(AgentMiddleware):
         Returns:
             ToolMessage or Command result from the (possibly batched) execution.
         """
-        async with self._search_lock:
-            scope = _scope_id_for_request(request)
-            pending_search = PendingSearch(
-                tool_name=tool_name,
-                args=args,
-                tool_call_id=tool_call_id,
-                request=request,
-                handler=handler,
-            )
-            pending = self._pending_searches.setdefault(scope, [])
-            pending.append(pending_search)
-            task = self._search_window_tasks.get(scope)
-            if task is None or task.done():
-                self._search_window_tasks[scope] = asyncio.create_task(
-                    self._flush_pending_searches_after_window(scope)
-                )
-            result_future = pending_search.result_future
+        pending_search = PendingSearch(
+            tool_name=tool_name,
+            args=args,
+            tool_call_id=tool_call_id,
+            request=request,
+            handler=handler,
+        )
+        await self._search_bank.enqueue(pending_search, _scope_id_for_request(request))
 
-        result: ToolMessage | Command[Any] = await result_future
+        result: ToolMessage | Command[Any] = await pending_search.result_future
         return result
 
-    async def _flush_pending_searches_after_window(self, scope: str) -> None:
-        """Wait for the detection window, then flush pending searches.
-
-        Fast path: after one event-loop tick, if no sibling search has joined
-        the window, skip the full wait — batching cannot help a singleton.
-        """
-        await asyncio.sleep(0)
-        async with self._search_lock:
-            solo = len(self._pending_searches.get(scope, [])) == 1
-        if not solo:
-            await asyncio.sleep(self._SEARCH_DETECTION_WINDOW_MS / 1000.0)
-        await self._flush_pending_searches(scope)
-
-    async def _flush_pending_searches(self, scope: str) -> None:
+    async def _flush_searches(self, scope: str, pending: list[PendingSearch]) -> None:
         """Execute pending searches concurrently and resolve futures."""
-        async with self._search_lock:
-            pending = self._pending_searches.pop(scope, [])
-            self._search_window_tasks.pop(scope, None)
-
-        if not pending:
-            return
-
-        # If only one search, execute directly (no gather overhead)
-        if len(pending) == 1:
-            p = pending[0]
-            try:
-                result = await p.handler(p.request)
-                if not p.result_future.done():
-                    p.result_future.set_result(result)
-            except Exception as exc:
-                if not p.result_future.done():
-                    p.result_future.set_exception(exc)
-            return
-
-        # Execute all searches concurrently
-        results = await asyncio.gather(
-            *[p.handler(p.request) for p in pending],
-            return_exceptions=True,
-        )
-
-        for search, result in zip(pending, results, strict=True):
-            if isinstance(result, BaseException):
-                if not search.result_future.done():
-                    search.result_future.set_exception(result)
-            else:
-                if not search.result_future.done():
-                    search.result_future.set_result(result)
+        await resolve_pending_results(pending)
 
 
 __all__ = ["ToolOptimizationMiddleware", "get_tool_reuse_metrics_snapshot"]

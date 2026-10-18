@@ -34,6 +34,10 @@ class ProgressiveListingMiddleware(AgentMiddleware):
         mcp_registry: Optional MCP registry for deferred MCP tool listings.
         progressive_tool_middleware: Optional progressive-tool middleware
             consulted for available-tool listings.
+        skill_index: Optional shared ``SkillIndex``; when omitted one is
+            created lazily. Pass the stack-builder's instance so skill files
+            are scanned once, not once per middleware.
+        skill_registry: Optional shared ``ProgressiveSkillRegistry``.
 
     Example:
         mw = ProgressiveListingMiddleware(config, mcp_registry=reg)
@@ -45,13 +49,18 @@ class ProgressiveListingMiddleware(AgentMiddleware):
         *,
         mcp_registry: Any | None = None,
         progressive_tool_middleware: Any | None = None,
+        skill_index: Any | None = None,
+        skill_registry: Any | None = None,
     ) -> None:
         self._config = config
         self._mcp_registry = mcp_registry
         self._progressive_tool_middleware = progressive_tool_middleware
-        # Cache SkillIndex/ProgressiveSkillRegistry across hops.
-        self._skill_index: Any = None
-        self._skill_registry: Any = None
+        # Shared/lazily-created skill infra, reused across hops.
+        self._skill_index: Any = skill_index
+        self._skill_registry: Any = skill_registry
+        # Tool-listing registry is derived from static config; build once.
+        self._tools_registry: Any = None
+        self._tools_registry_core: list[str] | None = None
 
     def _compose_skills_block(self, state: dict[str, Any] | None) -> tuple[str | None, list[str]]:
         if not state:
@@ -71,14 +80,10 @@ class ProgressiveListingMiddleware(AgentMiddleware):
 
             self._skill_index = SkillIndex()
         if self._skill_registry is None:
-            from soothe_nano.skills.registry import (
-                ProgressiveSkillRegistry,
-                resolve_core_skill_names,
-            )
+            from soothe_nano.skills.registry import ProgressiveSkillRegistry
 
             self._skill_registry = ProgressiveSkillRegistry()
-        else:
-            from soothe_nano.skills.registry import resolve_core_skill_names
+        from soothe_nano.skills.registry import resolve_core_skill_names
 
         entries = self._skill_index.rebuild_if_stale()
         core_names = resolve_core_skill_names(self._config.progressive_skills.core_skills)
@@ -204,7 +209,12 @@ class ProgressiveListingMiddleware(AgentMiddleware):
                 core = list(DEFAULT_CORE_TOOL_NAMES)
             elif "search_tools" not in core:
                 core.append("search_tools")
-        registry = ProgressiveToolRegistry(core_tools=core)
+
+        # The registry derives from static config — build it once, not per hop.
+        if self._tools_registry is None or self._tools_registry_core != core:
+            self._tools_registry = ProgressiveToolRegistry(core_tools=core)
+            self._tools_registry_core = core
+        registry = self._tools_registry
 
         if deferred_tools is None:
             return None

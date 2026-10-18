@@ -956,7 +956,8 @@ output offsets / resume，用其恢复读取同一次 execution 的输出。
 > 处置：构建 production 模板 `soothe-nano-e2e`
 > （`python:3.12-slim-bookworm` + util-linux[setsid]/procps[kill -- -PGID]/
 > coreutils/findutils/grep/sed/ca-certificates，512 MiB，digest
-> `sha256:655e0721…`），E2E 以 `ARCBOX_E2E_TEMPLATE` 选择模板、daemon
+> `sha256:655e0721…`；模板定义签入 `scripts/arcbox-e2e-template.Dockerfile`），
+> E2E 以 `ARCBOX_E2E_TEMPLATE` 选择模板、daemon
 > 不可达时干净 skip（无 daemon CI 仍绿）。
 > 平台观察（flowjet/ArcBox 范围，非本仓）：沙箱创建偶发
 > "stopped before becoming ready"（约 1/7，重试即可）。

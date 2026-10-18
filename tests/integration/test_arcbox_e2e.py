@@ -3,9 +3,11 @@
 Opt-in: ``uv run pytest tests/integration/test_arcbox_e2e.py --run-integration``.
 The guest template must ship a working ``python3`` (all ``BaseSandbox``-derived
 file tools run ``python3 -c`` stdlib scripts) plus GNU coreutils, ``setsid``
-(util-linux) and a ``kill`` that accepts ``-- -PGID`` (procps). Build one with::
+(util-linux) and a ``kill`` that accepts ``-- -PGID`` (procps). The canonical
+template definition lives at ``scripts/arcbox-e2e-template.Dockerfile``::
 
-    abctl sandbox template build soothe-nano-e2e --from-dockerfile <Dockerfile>
+    abctl sandbox template build soothe-nano-e2e \
+        --from-dockerfile scripts/arcbox-e2e-template.Dockerfile
 
 Override the template via ``ARCBOX_E2E_TEMPLATE``.
 """

@@ -12,7 +12,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
@@ -20,9 +20,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 from soothe_nano.middleware._scope import request_scope_id
-
-if TYPE_CHECKING:
-    pass
+from soothe_nano.middleware._window import ScopeWindowBank, resolve_pending_results
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +53,10 @@ class ReadCoalescingMiddleware(AgentMiddleware):
     def __init__(self, *, detection_window_ms: int = 50) -> None:
         super().__init__()
         self._detection_window_ms = detection_window_ms
-        # Per-scope (thread_id:checkpoint_ns) pending state: concurrent graph
-        # threads share this middleware instance and must not co-mingle reads.
-        self._pending_reads: dict[str, list[PendingRead]] = {}
-        self._window_tasks: dict[str, asyncio.Task[None]] = {}
-        self._lock = asyncio.Lock()
+        self._bank: ScopeWindowBank[PendingRead] = ScopeWindowBank(
+            detection_window_ms / 1000.0,
+            on_flush=self._flush_reads,
+        )
 
     async def awrap_tool_call(
         self,
@@ -82,65 +79,14 @@ class ReadCoalescingMiddleware(AgentMiddleware):
         if tool_name != self.READ_TOOL_NAME:
             return await handler(request)
 
-        scope = request_scope_id(request)
-        async with self._lock:
-            pending = self._pending_reads.setdefault(scope, [])
-            pending_read = PendingRead(
-                request=request,
-                handler=handler,
-                tool_call_id=tool_call_id,
-            )
-            pending.append(pending_read)
-            task = self._window_tasks.get(scope)
-            if task is None or task.done():
-                self._window_tasks[scope] = asyncio.create_task(self._flush_after_window(scope))
-
+        pending_read = PendingRead(
+            request=request,
+            handler=handler,
+            tool_call_id=tool_call_id,
+        )
+        await self._bank.enqueue(pending_read, request_scope_id(request))
         return await pending_read.result_future
 
-    async def _flush_after_window(self, scope: str) -> None:
-        """Wait for the detection window, then flush pending reads.
-
-        Fast path: after one event-loop tick, if no sibling read has joined
-        the window, skip the full wait — batching cannot help a singleton.
-        """
-        await asyncio.sleep(0)
-        async with self._lock:
-            solo = len(self._pending_reads.get(scope, [])) == 1
-        if not solo:
-            await asyncio.sleep(self._detection_window_ms / 1000.0)
-        await self._flush_pending_reads(scope)
-
-    async def _flush_pending_reads(self, scope: str) -> None:
+    async def _flush_reads(self, scope: str, pending: list[PendingRead]) -> None:
         """Execute all pending reads concurrently and resolve futures."""
-        async with self._lock:
-            pending = self._pending_reads.pop(scope, [])
-            self._window_tasks.pop(scope, None)
-
-        if not pending:
-            return
-
-        # If only one read, execute directly (no gather overhead)
-        if len(pending) == 1:
-            p = pending[0]
-            try:
-                result = await p.handler(p.request)
-                if not p.result_future.done():
-                    p.result_future.set_result(result)
-            except Exception as exc:
-                if not p.result_future.done():
-                    p.result_future.set_exception(exc)
-            return
-
-        # Execute all reads concurrently
-        results: list[ToolMessage | Command[Any] | BaseException] = await asyncio.gather(  # type: ignore[assignment]
-            *[p.handler(p.request) for p in pending],
-            return_exceptions=True,
-        )
-
-        for read, result in zip(pending, results, strict=True):  # type: ignore[assignment]
-            if isinstance(result, BaseException):
-                if not read.result_future.done():
-                    read.result_future.set_exception(result)
-            else:
-                if not read.result_future.done():
-                    read.result_future.set_result(cast("ToolMessage | Command[Any]", result))
+        await resolve_pending_results(pending)

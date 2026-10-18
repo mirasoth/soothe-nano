@@ -37,6 +37,10 @@ DEFAULT_DETECTION_WINDOW_MS: int = 50
 DEFAULT_STAGING_BUFFER_MAX_ENTRIES: int = 64
 DEFAULT_STAGING_BUFFER_EVICTION_POLICY: str = "reject_newest"
 
+# Default cap for one file's batched dispatch (matches the tool-timeout
+# middleware default; batched writes bypass that middleware, see _builder).
+DEFAULT_BATCH_DISPATCH_TIMEOUT_SECONDS: float = 60.0
+
 # Edit tools that are coalesced
 EDIT_TOOL_NAMES: frozenset[str] = frozenset(
     {
@@ -128,11 +132,15 @@ class EditCoalescingConfig:
         staging_buffer_eviction_policy: Policy when the staging buffer
             exceeds max entries. `reject_newest` rejects the incoming
             entry (default); `evict_oldest` drops the oldest entry.
+        batch_dispatch_timeout_seconds: Cap for one file's batched
+            dispatch. Batched writes call the backend directly and bypass
+            the inner tool-timeout middleware, so this is the only guard.
     """
 
     detection_window_ms: int = DEFAULT_DETECTION_WINDOW_MS
     staging_buffer_max_entries: int = DEFAULT_STAGING_BUFFER_MAX_ENTRIES
     staging_buffer_eviction_policy: str = DEFAULT_STAGING_BUFFER_EVICTION_POLICY
+    batch_dispatch_timeout_seconds: float = DEFAULT_BATCH_DISPATCH_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
         """Validate config fields after initialization."""
@@ -144,6 +152,11 @@ class EditCoalescingConfig:
             raise ValueError(
                 f"staging_buffer_max_entries must be positive, "
                 f"got {self.staging_buffer_max_entries}"
+            )
+        if self.batch_dispatch_timeout_seconds <= 0:
+            raise ValueError(
+                "batch_dispatch_timeout_seconds must be positive, "
+                f"got {self.batch_dispatch_timeout_seconds}"
             )
         if self.staging_buffer_eviction_policy not in _VALID_EVICTION_POLICIES:
             raise ValueError(
@@ -465,17 +478,46 @@ class EditCoalescingMiddleware(AgentMiddleware):
             string_edits = [e for e in edits if e.tool_name == "edit_file"]
             line_edits = [e for e in edits if e.tool_name != "edit_file"]
 
-            # Dispatch string-replacement batch if any
-            if string_edits:
-                if len(string_edits) == 1:
-                    await self._dispatch_single_string_edit(string_edits[0])
-                else:
-                    replacements = staging.get(file_path, [])
-                    await self._dispatch_string_replacements(file_path, string_edits, replacements)
+            try:
+                async with asyncio.timeout(self._config.batch_dispatch_timeout_seconds):
+                    # Dispatch string-replacement batch if any
+                    if string_edits:
+                        if len(string_edits) == 1:
+                            await self._dispatch_single_string_edit(string_edits[0])
+                        else:
+                            replacements = staging.get(file_path, [])
+                            await self._dispatch_string_replacements(
+                                file_path, string_edits, replacements
+                            )
 
-            # Dispatch line-based batch if any
-            if line_edits:
-                await self._dispatch_batched_edits(file_path, line_edits)
+                    # Dispatch line-based batch if any
+                    if line_edits:
+                        await self._dispatch_batched_edits(file_path, line_edits)
+            except TimeoutError:
+                logger.warning(
+                    "Batched edit dispatch timed out for %s after %.0fs",
+                    file_path,
+                    self._config.batch_dispatch_timeout_seconds,
+                )
+            finally:
+                # Batched writes bypass the inner tool-timeout middleware
+                # (direct backend calls), so a hang here must never leave a
+                # caller awaiting its future forever.
+                for edit in (*string_edits, *line_edits):
+                    if not edit.result_future.done():
+                        edit.result_future.set_result(
+                            ToolMessage(
+                                content=(
+                                    f"Error: batched edit dispatch to {file_path} timed out "
+                                    "after "
+                                    f"{self._config.batch_dispatch_timeout_seconds:.0f}s; "
+                                    "file state is unknown — re-read before editing."
+                                ),
+                                tool_call_id=edit.tool_call_id,
+                                name=edit.tool_name,
+                                status="error",
+                            )
+                        )
 
     async def _dispatch_single_string_edit(self, edit: PendingEdit) -> None:
         """Pass a lone edit_file call through to the direct handler."""

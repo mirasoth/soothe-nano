@@ -120,10 +120,14 @@ def build_soothe_middleware_stack(
 
     from .skill_activation import SkillActivationMiddleware
 
+    # One SkillIndex/registry pair shared by skill activation (#3) and
+    # progressive listing (#12) so skill files are scanned once per staleness
+    # window, not once per middleware.
     _skill_index = SkillIndex()
+    _skill_registry = ProgressiveSkillRegistry()
     stack.append(
         SkillActivationMiddleware(
-            registry=ProgressiveSkillRegistry(),
+            registry=_skill_registry,
             catalog_provider=lambda: _skill_index.rebuild_if_stale(),
             config=config,
         )
@@ -246,6 +250,8 @@ def build_soothe_middleware_stack(
             config=config,
             mcp_registry=mcp_registry,
             progressive_tool_middleware=progressive_tool_middleware,
+            skill_index=_skill_index,
+            skill_registry=_skill_registry,
         )
     )
     logger.info("[Middleware] Progressive listing middleware enabled")
