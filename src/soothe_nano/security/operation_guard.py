@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import os
 import re
 from collections.abc import Mapping
 from pathlib import Path
@@ -192,7 +193,22 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         if context.workspace and str(context.workspace).strip():
             workspace_root = expand_path(str(context.workspace).strip())
 
-        resolved_path = expand_path(file_path)
+        # Relative tool paths resolve against the workspace root — the same
+        # anchor the file-tool backends (NormalizedPathBackend) use — not the
+        # process CWD. Without this, a bare relative path like
+        # "working/notes.md" lands outside the workspace boundary and is
+        # denied, even though the tool itself would have written inside the
+        # workspace. Traversal inside the anchored path is still caught: the
+        # boundary check below judges the resolved path, so
+        # "working/../../etc/x" resolves outside and is denied as before.
+        anchored_path = file_path
+        if workspace_root is not None:
+            expanded_raw = os.path.expandvars(file_path)
+            raw_candidate = Path(expanded_raw).expanduser()
+            if not raw_candidate.is_absolute():
+                anchored_path = str(workspace_root / raw_candidate)
+
+        resolved_path = expand_path(anchored_path)
         if (
             workspace_root is not None
             and not security.allow_paths_outside_workspace
