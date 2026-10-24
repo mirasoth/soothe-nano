@@ -410,6 +410,13 @@ class SystemPromptMiddleware(AgentMiddleware):
             SystemTemplates.build_response_language_hint(response_language),
         ]
 
+        # Deployment-level host rules (`agent.rules`): cache-stable behavioral
+        # contract, present on every complexity tier. Skipped entirely when
+        # unset so default prompts stay byte-identical.
+        host_rules = SystemTemplates.format_host_rules(self._config.agent.rules)
+        if host_rules:
+            static_sections.append(host_rules)
+
         tools_block = state.get("_available_tools_block") if state else None
         if tools_block:
             static_sections.append(tools_block)

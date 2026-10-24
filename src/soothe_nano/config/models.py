@@ -1853,6 +1853,8 @@ class AgentConfig(BaseModel):
     Args:
         name: Display name for the assistant identity in system prompts.
         system_prompt: System prompt override. None generates default using name.
+        rules: Deployment-level host rules appended to every system prompt tier
+            as a `<HOST_RULES>` block. None or empty adds nothing (default).
         protocols: Protocol backends configuration (planner, policy, durability).
         code_interpreter: Code interpreter middleware configuration.
         runtime: CoreAgent cold-start and materialization tuning.
@@ -1893,6 +1895,15 @@ class AgentConfig(BaseModel):
         ge=500,
         le=100_000,
         description="Max chars inlined from AGENTS.md/CLAUDE.md in AGENT_INSTRUCTIONS",
+    )
+
+    rules: list[str] | None = Field(
+        default=None,
+        description=(
+            "Deployment-level host rules appended to every system prompt tier "
+            "as a <HOST_RULES> block (one bullet per entry). None or empty "
+            "adds nothing, keeping prompts byte-identical to the default."
+        ),
     )
 
     @model_validator(mode="after")

@@ -222,6 +222,27 @@ Key rules:
     SIMPLE_SYSTEM_PROMPT = SIMPLE_SYSTEM_PROMPT_FRAGMENT
 
     @staticmethod
+    def format_host_rules(rules: list[str] | None) -> str | None:
+        """Render deployment-level host rules as a cache-stable `<HOST_RULES>` block.
+
+        Blank-only entries are dropped. Returns None for None/empty input so
+        callers skip the section entirely — an unset ``agent.rules`` keeps
+        prompts byte-identical to the default.
+
+        Args:
+            rules: Host rule strings from ``agent.rules`` (one bullet each).
+
+        Returns:
+            The `<HOST_RULES>` XML block, or None when there is nothing to render.
+        """
+        cleaned = [str(rule).strip() for rule in (rules or [])]
+        cleaned = [rule for rule in cleaned if rule]
+        if not cleaned:
+            return None
+        lines = "\n".join(f"- {rule}" for rule in cleaned)
+        return f"<HOST_RULES>\n{lines}\n</HOST_RULES>"
+
+    @staticmethod
     def build_response_language_hint(language: object | None) -> str:
         """Build explicit or fallback `RESPONSE_LANGUAGE_HINT` for system prompts."""
         if language is None:

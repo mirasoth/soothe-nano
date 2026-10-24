@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `agent.rules` config key (list of strings): deployment-level host rules rendered as a cache-stable `<HOST_RULES>` block (one bullet per entry) on every system-prompt tier — both `SootheConfig.resolve_system_prompt()` and the runtime `SystemPromptMiddleware` path. None/empty (default) adds nothing; prompts stay byte-identical when unset.
+
+### Changed
+
+- Default assistant identity no longer carries a personal creator byline: identity answers now name only `{assistant_name}` (vendor denylist kept).
+
 ## [2.0.1] - 2026-10-19
 
 ### Changed
