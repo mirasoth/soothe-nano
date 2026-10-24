@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-10-24
+
+### Fixed
+
+- Operation guard: bare relative tool paths (e.g. `write_file("working/notes.md")`) are now anchored to the workspace root before the boundary comparison, matching the file-tool backends. Previously they were resolved against the process CWD and reported as "outside workspace", which denied every relative-path file write in deployments whose workspace root is not the CWD (e.g. flowjet server sessions). Traversal inside an anchored path (`working/../../etc/x`) is still resolved and rejected by the boundary check.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.2...v2.0.3
+
 ## [2.0.2] - 2026-10-24
 
 ### Added
