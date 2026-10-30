@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-10-30
+
+### Added
+
+- `tool_call_update_event` gained an opt-in `partial` flag: when `True` the `soothe.stream.tool_call.update` payload carries `"partial": true` marking args recovered from an in-flight (unterminated) tool-args JSON stream. Consumers may render them as live hints but must not treat the kwargs as the final invocation until a non-partial update or the tool result arrives. The key is only present when `True`, so complete-arg events remain byte-identical to the historical wire (golden fixtures unchanged).
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.5...v2.0.6
+
 ## [2.0.5] - 2026-10-30
 
 ### Changed
