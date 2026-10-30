@@ -4,12 +4,14 @@ Default posture (`hard_deny_severities = {"critical"}`, uniform for all
 downstream consumers): only critical rules deny; high/medium matches return
 `risk_hint` decisions carrying `rule_id` + `severity` that enforcement points
 treat as allow-with-audit. Operators restore the pre-tiering behavior by
-widening the hard set.
+widening the hard set, or disable hard denies entirely with the empty set
+(sandbox posture: every hit is an audited hint).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -31,10 +33,13 @@ from soothe_nano.security.policy_profiles import (
     ConfigDrivenPolicy,
 )
 
+_NO_SECURITY_CONFIG = object()
 
-def _eval_cmd(command: str, *, hard: set[str] | None = None):
+
+def _eval_cmd(command: str, *, hard: Any = _NO_SECURITY_CONFIG):
+    """Evaluate a command; `hard` omitted means no SecurityConfig is wired."""
     ev = WorkspaceToolOperationSecurity()
-    security = SecurityConfig(hard_deny_severities=hard) if hard else None
+    security = None if hard is _NO_SECURITY_CONFIG else SecurityConfig(hard_deny_severities=hard)
     return ev.evaluate(
         OperationSecurityRequest(
             action_type="tool_call",
@@ -47,8 +52,19 @@ def _eval_cmd(command: str, *, hard: set[str] | None = None):
     )
 
 
-def _eval_fs(path: str, kind: str, *, workspace: str | None = None):
+def _eval_fs(
+    path: str,
+    kind: str,
+    *,
+    workspace: str | None = None,
+    hard: Any = _NO_SECURITY_CONFIG,
+):
     ev = WorkspaceToolOperationSecurity()
+    security = (
+        SecurityConfig()
+        if hard is _NO_SECURITY_CONFIG
+        else SecurityConfig(hard_deny_severities=hard)
+    )
     return ev.evaluate(
         OperationSecurityRequest(
             action_type="tool_call",
@@ -59,7 +75,7 @@ def _eval_fs(path: str, kind: str, *, workspace: str | None = None):
         ),
         OperationSecurityContext(
             workspace=workspace,
-            security_config=SecurityConfig(),
+            security_config=security,
         ),
     )
 
@@ -157,6 +173,68 @@ class TestHardDenySeveritiesConfig:
     def test_medium_in_hard_set(self) -> None:
         decision = _eval_cmd("git push -f origin main", hard={"critical", "high", "medium"})
         assert decision.verdict == "deny"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "rm -rf /root/.cache/pip",
+            "rm -rf /",
+            "sudo rm -rf /tmp/x",
+            "mkfs.ext4 /dev/sda",
+            "pkill -f soothed",
+        ],
+    )
+    def test_empty_hard_set_turns_critical_into_hint(self, command: str) -> None:
+        """`[]` is an explicit opt-out: nothing hard-denies (sandbox posture)."""
+        decision = _eval_cmd(command, hard=set())
+        assert decision.verdict == "risk_hint"
+        assert decision.severity == "critical"
+        assert decision.rule_id is not None
+
+    def test_empty_hard_set_relaxes_critical_filesystem_write(self, tmp_path: Path) -> None:
+        decision = _eval_fs("/etc/hosts", "filesystem_write", workspace=str(tmp_path), hard=set())
+        assert decision.verdict == "risk_hint"
+        assert decision.rule_id == "filesystem.sensitive_system_path"
+        assert decision.severity == "critical"
+
+    def test_empty_hard_set_relaxes_operator_denied_path(self, tmp_path: Path) -> None:
+        ev = WorkspaceToolOperationSecurity()
+        decision = ev.evaluate(
+            OperationSecurityRequest(
+                action_type="tool_call",
+                tool_name="read_file",
+                tool_args={"file_path": "~/private/secret.pem"},
+                operation_kind="filesystem_read",
+                target_path="~/private/secret.pem",
+            ),
+            OperationSecurityContext(
+                workspace=str(tmp_path),
+                security_config=SecurityConfig(
+                    denied_paths=["~/private/**"], hard_deny_severities=set()
+                ),
+            ),
+        )
+        assert decision.verdict == "risk_hint"
+        assert decision.rule_id == "filesystem.denied_path"
+
+    def test_config_without_the_attribute_keeps_default_posture(self) -> None:
+        """Unset (no attribute) must not read as the empty opt-out."""
+
+        class _BareConfig:
+            pass
+
+        decision = WorkspaceToolOperationSecurity().evaluate(
+            OperationSecurityRequest(
+                action_type="tool_call",
+                tool_name="run_command",
+                tool_args={"command": "rm -rf /"},
+                operation_kind="shell_execute",
+                command="rm -rf /",
+            ),
+            OperationSecurityContext(workspace=None, security_config=_BareConfig()),
+        )
+        assert decision.verdict == "deny"
+        assert decision.rule_id == "command.dangerous.rm_root"
 
 
 class TestFilesystemSeverityByKind:

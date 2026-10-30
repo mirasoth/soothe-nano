@@ -1994,12 +1994,18 @@ class SecurityConfig(BaseModel):
     whitelist_commands_bypass: list[str] = Field(default_factory=list)
     """Regex patterns that bypass default command deny checks in operation security."""
     hard_deny_severities: set[str] = Field(default_factory=lambda: {"critical"})
-    """Rule severities that hard-deny; sub-critical matches return `risk_hint`.
+    """Rule severities that hard-deny; other matches return `risk_hint`.
 
     RFC-LOOP-030 risk tiering: `critical` (default) keeps only the highest
     risk level as a hard deny, uniform for all downstream consumers.
     Operators restore the pre-tiering behavior with
-    `["critical", "high", "medium"]`.
+    `["critical", "high", "medium"]`, and disable hard denies entirely with
+    `[]`. The empty set is a real opt-out — not "unset" — so every rule hit,
+    critical ones included, degrades to an audited `risk_hint` that
+    enforcement points allow and judgment-capable hosts may still reject.
+    Only use it where an outer boundary already contains the blast radius
+    (a sandboxed backend running throwaway state); operator-configured
+    `denied_paths` are relaxed the same way.
     """
 
 

@@ -4,7 +4,8 @@ RFC-LOOP-030 risk tiering: every rule carries a severity
 (`critical` / `high` / `medium`). Evaluation maps severity through
 `SecurityConfig.hard_deny_severities` (default `{"critical"}`, uniform for
 all downstream consumers): a hit inside the hard set denies as before; a
-sub-critical hit returns a `risk_hint` decision carrying `rule_id` +
+sub-critical hit — or any hit at all when the set is explicitly empty
+(sandbox posture) — returns a `risk_hint` decision carrying `rule_id` +
 `severity`. Enforcement points without a judgment layer treat `risk_hint`
 as allow-with-audit (the guard logs a warning when it mints one);
 judgment-capable hosts (soothe) consume the hint as dynamic-routing input.
@@ -113,13 +114,19 @@ _KILL_INVOCATION_RE = re.compile(
 )
 
 _HARD_DENY_DEFAULT: frozenset[str] = frozenset({"critical"})
-"""Posture default: only critical rules hard-deny (RFC-LOOP-030)."""
+"""Posture default: only critical rules hard-deny (RFC-LOOP-030).
+
+Applies when the security config carries no `hard_deny_severities` value at
+all. An explicitly empty value means the opposite — no severity hard-denies
+and every rule hit becomes an audited `risk_hint` — so `None` (unset) and
+`()/[]` (opt-out) are deliberately kept distinct.
+"""
 
 
 def _hard_deny_severities(context: OperationSecurityContext) -> frozenset[str]:
     """Resolve the hard-deny severity set from the security config."""
     raw = getattr(context.security_config, "hard_deny_severities", None)
-    if not raw:
+    if raw is None:
         return _HARD_DENY_DEFAULT
     return frozenset(str(item).strip().lower() for item in raw if str(item).strip())
 
