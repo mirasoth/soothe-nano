@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-10-30
+
 ### Added
 
 - RFC-LOOP-030 severity tiering for operation security: every rule (banned command patterns, dangerous path components, sensitive system paths, workspace boundary) carries a severity (`critical` / `high` / `medium`), `OperationSecurityDecision` exposes `severity`, and a new `risk_hint` verdict surfaces sub-critical matches with `rule_id` + severity. `SecurityConfig.hard_deny_severities` (default `{"critical"}`, uniform for all downstream consumers) controls which severities still hard-deny; consumers without a judgment layer treat `risk_hint` as allow-with-audit (the guard logs a warning when it mints one). Filesystem severities are operation-kind aware: sensitive system paths and the workspace boundary are `critical` on write and `high`/`medium` hints on read; dangerous path components are `high` on write, `medium` on read. Operator-configured matches (`denied_paths`, `denied_file_types`, allowed-pattern miss) stay absolute.
@@ -14,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Security posture (behavior change)**: only `critical` rules hard-deny by default. The soothe host's built-in tool-approval deny rules migrated into the registry as `command.restricted.*` entries at `high` (su, doas, recursive chmod/chown/chgrp, fdisk, diskutil, shutdown/reboot/halt, apt/apt-get/brew, npm -g), so those commands now surface as risk hints instead of hard denials. Restore the pre-tiering behavior with `hard_deny_severities: ["critical", "high", "medium"]`. Also fixed rule ordering: device-write `dd … of=/dev/…` is now matched by `command.dangerous.dd_block_device_write` (critical) instead of the generic read-side `dd` rule.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.3...v2.0.4
 
 ## [2.0.3] - 2026-10-24
 
