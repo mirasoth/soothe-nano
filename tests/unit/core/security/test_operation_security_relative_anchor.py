@@ -88,6 +88,8 @@ def test_home_path_not_anchored_into_workspace(tmp_path: Path) -> None:
 
     ev = WorkspaceToolOperationSecurity()
     d = ev._check_filesystem(_ctx(ws), "~/.bashrc")
-    # Either the dangerous-component deny or the workspace-boundary deny is
-    # correct; it must never be allowed.
-    assert d.verdict == "deny"
+    # RFC-LOOP-030 tiering: the dangerous component is `high` on write —
+    # below the default critical-only hard set it surfaces as an audited
+    # hint, but it is never silently allowed.
+    assert d.verdict == "risk_hint"
+    assert d.rule_id == "filesystem.dangerous_component"

@@ -1993,6 +1993,14 @@ class SecurityConfig(BaseModel):
     """Path patterns that bypass default deny checks in operation security."""
     whitelist_commands_bypass: list[str] = Field(default_factory=list)
     """Regex patterns that bypass default command deny checks in operation security."""
+    hard_deny_severities: set[str] = Field(default_factory=lambda: {"critical"})
+    """Rule severities that hard-deny; sub-critical matches return `risk_hint`.
+
+    RFC-LOOP-030 risk tiering: `critical` (default) keeps only the highest
+    risk level as a hard deny, uniform for all downstream consumers.
+    Operators restore the pre-tiering behavior with
+    `["critical", "high", "medium"]`.
+    """
 
 
 # ---------------------------------------------------------------------------

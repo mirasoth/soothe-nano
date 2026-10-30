@@ -15,6 +15,16 @@ OperationKind = Literal[
     "generic",
 ]
 
+RuleSeverity = Literal["critical", "high", "medium"]
+"""Risk tier of a security rule (RFC-LOOP-030).
+
+`critical` rules hard-deny everywhere (irreversible system destruction,
+device writes, daemon self-protection, workspace write boundary, operator
+config). Sub-critical matches surface as `risk_hint` decisions that
+judgment-capable hosts route dynamically and plain enforcement points treat
+as allow-with-audit.
+"""
+
 
 class OperationSecurityRequest(BaseModel):
     """Normalized security request for a single operation."""
@@ -39,9 +49,10 @@ class OperationSecurityContext(BaseModel):
 class OperationSecurityDecision(BaseModel):
     """Security verdict for an operation request."""
 
-    verdict: Literal["allow", "deny", "need_approval"]
+    verdict: Literal["allow", "deny", "need_approval", "risk_hint"]
     reason: str
     rule_id: str | None = None
+    severity: RuleSeverity | None = None
 
 
 @runtime_checkable

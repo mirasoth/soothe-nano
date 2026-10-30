@@ -344,8 +344,19 @@ class ConfigDrivenPolicy:
                     security_config=getattr(self._config, "security", None),
                 )
                 op_decision = self._operation_security.evaluate(request, op_context)
-            if op_decision.verdict != "allow":
+            if op_decision.verdict in ("deny", "need_approval"):
                 return PolicyDecision(verdict=op_decision.verdict, reason=op_decision.reason)
+            if op_decision.verdict == "risk_hint":
+                # RFC-LOOP-030: sub-critical rule hit — allow with audit (the
+                # guard already logged the hint) and proceed to permission
+                # checks.
+                logger.warning(
+                    "[policy] operation security risk_hint (allow-with-audit) "
+                    "rule=%s severity=%s: %s",
+                    op_decision.rule_id,
+                    op_decision.severity,
+                    op_decision.reason,
+                )
 
         required = _extract_required_permission(action)
         if required is None:

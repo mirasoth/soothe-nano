@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import shlex
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -40,6 +41,9 @@ __all__ = [
 
 _BRIDGE_GRACE_SECONDS = 30.0
 """Extra headroom over the per-command timeout for the sync bridge round-trip."""
+
+_FREE_SPACE_PROBE_TIMEOUT = 15
+"""Bridge timeout for one ``df`` probe (cheap, but the guest may be busy)."""
 
 
 class ArcBoxError(Exception):
@@ -336,6 +340,41 @@ class ArcBoxBackend(BaseSandbox):
         if result.truncated:
             output = f"{output}\n... (output truncated)" if output else "... (output truncated)"
         return ExecuteResponse(output=output, exit_code=exit_code, truncated=result.truncated)
+
+    def free_space_bytes(self, path: str | None = None) -> int | None:
+        """Available bytes at ``path`` (default: workspace root) inside the guest.
+
+        One ``df -B1 -P`` round-trip. Returns ``None`` when the probe itself
+        fails (guest down, unexpected output, missing coreutils) so callers
+        can fail open — a broken probe must never block a turn. This method
+        never raises.
+        """
+        target = path or self.workspace_root
+        try:
+            result = self._client.run(
+                f"df -B1 -P {shlex.quote(target)}",
+                cwd=self.workspace_root,
+                timeout=_FREE_SPACE_PROBE_TIMEOUT,
+            )
+            if result.error is not None or (result.exit_code not in (0, None)):
+                logger.debug(
+                    "ArcBox free-space probe failed on %s: %s",
+                    self._sandbox_id,
+                    result.error or result.stderr,
+                )
+                return None
+            for line in (result.stdout or "").splitlines():
+                fields = line.split()
+                # POSIX df format: Filesystem 1B-blocks Used Available Use% Mounted-on
+                if len(fields) >= 4 and fields[-1] == target:
+                    try:
+                        return int(fields[3])
+                    except ValueError:
+                        return None
+            return None
+        except Exception:  # noqa: BLE001 -- probe is best effort by contract
+            logger.debug("ArcBox free-space probe errored on %s", self._sandbox_id, exc_info=True)
+            return None
 
     def upload_files(self, files: Sequence[tuple[str, bytes]]) -> list[FileUploadResponse]:
         responses: list[FileUploadResponse] = []

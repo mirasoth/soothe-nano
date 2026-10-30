@@ -92,8 +92,10 @@ class TestBypassMode:
         assert _op_security_eval(command="rm -rf /") == "deny"
 
     def test_non_bypass_still_blocks_git_path(self) -> None:
-        """.git path is still denied by operation security without bypass."""
-        assert _op_security_eval(path="/workspace/.git/config") == "deny"
+        """.git path is a high-severity hint without bypass (RFC-LOOP-030
+        tiering: dangerous components are `high` on write, below the default
+        critical-only hard set)."""
+        assert _op_security_eval(path="/workspace/.git/config") == "risk_hint"
 
     def test_standard_profile_still_blocks_rm_rf(self) -> None:
         """Standard profile (non-bypass) still denies rm -rf / at policy level."""

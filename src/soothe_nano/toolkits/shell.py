@@ -761,6 +761,15 @@ class RunCommandShellTool(BaseTool):
                 security_config=self.security_config,
             ),
         )
+        if decision.verdict == "risk_hint":
+            # RFC-LOOP-030: sub-critical rule hit — allow with audit (the
+            # guard already logged the hint); judgment-capable hosts saw the
+            # hint at their pre-execution gate and did not block.
+            return (
+                "allow",
+                f"Command allowed with audit (risk_hint rule={decision.rule_id} "
+                f"severity={decision.severity})",
+            )
         if decision.verdict != "allow":
             # Honor a loop-scoped human approval plumbed through the LangGraph
             # configurable: without this, the tool's own gate re-denies a
@@ -1005,6 +1014,13 @@ class RunBackgroundTool(BaseTool):
                 security_config=self.security_config,
             ),
         )
+        if decision.verdict == "risk_hint":
+            # RFC-LOOP-030: sub-critical rule hit — allow with audit.
+            return (
+                "allow",
+                f"Command allowed with audit (risk_hint rule={decision.rule_id} "
+                f"severity={decision.severity})",
+            )
         return decision.verdict, decision.reason
 
     def _run_in_sandbox(self, command: str, executor: Any) -> dict[str, Any]:

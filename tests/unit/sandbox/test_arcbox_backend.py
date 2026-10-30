@@ -402,3 +402,57 @@ class TestSandboxInvariants:
         assert len(set(lines)) == 1
         assert lines[0] in {f"writer-{i}" for i in range(8)}
         assert "\x00" not in content
+
+
+class TestFreeSpaceBytes:
+    """The disk-watermark probe: one ``df -B1 -P`` round-trip, never raises.
+
+    Parsed against canned POSIX ``df`` tables — the real command runs in a
+    Debian guest (GNU coreutils), so a host-simulated guest cannot exercise
+    it portably (macOS ``df`` lacks ``-B``).
+    """
+
+    def test_probes_workspace_root_by_default(self) -> None:
+        client = FakeClient(
+            CommandRunResult(
+                stdout="Filesystem 1B-blocks Used Available Use% Mounted-on\n"
+                "/dev/root 1288490188 1100585369 187904819 97% /workspace\n",
+                exit_code=0,
+            )
+        )
+        backend = make_backend(client)
+        assert backend.free_space_bytes() == 187904819
+        assert client.run_calls[0]["command"] == "df -B1 -P /workspace"
+
+    def test_custom_path_is_quoted(self) -> None:
+        client = FakeClient(
+            CommandRunResult(
+                stdout="Filesystem 1B-blocks Used Available Use% Mounted-on\n"
+                "/dev/root 1024 512 512 51% /srv/data\n",
+                exit_code=0,
+            )
+        )
+        backend = make_backend(client)
+        assert backend.free_space_bytes("/srv/data") == 512
+        assert client.run_calls[0]["command"] == "df -B1 -P /srv/data"
+
+    def test_command_error_fails_open(self) -> None:
+        client = FakeClient(CommandRunResult(error="ArcBox command failed: dead sandbox"))
+        assert make_backend(client).free_space_bytes() is None
+
+    def test_nonzero_exit_fails_open(self) -> None:
+        client = FakeClient(CommandRunResult(stderr="df: bad usage", exit_code=1))
+        assert make_backend(client).free_space_bytes() is None
+
+    def test_unparseable_output_fails_open(self) -> None:
+        client = FakeClient(CommandRunResult(stdout="not a df table", exit_code=0))
+        assert make_backend(client).free_space_bytes() is None
+
+    def test_client_exception_fails_open(self) -> None:
+        class ExplodingClient(FakeClient):
+            def run(
+                self, command: str, *, cwd: str | None = None, timeout: int | None = None
+            ) -> CommandRunResult:
+                raise RuntimeError("transport gone")
+
+        assert make_backend(ExplodingClient(CommandRunResult())).free_space_bytes() is None

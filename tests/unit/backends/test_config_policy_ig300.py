@@ -30,10 +30,15 @@ def _security(
         require_approval_for_file_types=[],
         whitelist_paths_bypass=[],
         whitelist_commands_bypass=[],
+        hard_deny_severities={"critical"},
     )
 
 
-def test_glob_denied_outside_workspace(tmp_path: Path) -> None:
+def test_glob_outside_workspace_read_is_audited_allow(tmp_path: Path) -> None:
+    """RFC-LOOP-030: outside-workspace reads are `high` hints — below the
+    default critical-only hard set the policy allows with audit and the
+    permission grant decides. The write boundary stays critical (see the
+    companion test below)."""
     ws = tmp_path / "proj"
     ws.mkdir()
     other = tmp_path / "other"
@@ -50,6 +55,29 @@ def test_glob_denied_outside_workspace(tmp_path: Path) -> None:
         action_type="tool_call",
         tool_name="glob",
         tool_args={"path": str(other), "pattern": "*.py"},
+    )
+    d = policy.check(action, ctx)
+    assert d.verdict == "allow"
+
+
+def test_edit_outside_workspace_write_still_denied(tmp_path: Path) -> None:
+    """The workspace WRITE boundary is critical and hard-denies (RFC-LOOP-030)."""
+    ws = tmp_path / "proj"
+    ws.mkdir()
+    other = tmp_path / "other"
+    other.mkdir()
+
+    cfg = SimpleNamespace(security=_security(allow_out=False), workspace_dir=str(ws))
+    policy = ConfigDrivenPolicy(config=cfg)
+    ctx = PolicyContext(
+        active_permissions=PermissionSet(frozenset([Permission("fs", "write", "*")])),
+        scope_id="t1",
+        workspace=str(ws.resolve()),
+    )
+    action = ActionRequest(
+        action_type="tool_call",
+        tool_name="edit_file",
+        tool_args={"file_path": str(other / "x.md")},
     )
     d = policy.check(action, ctx)
     assert d.verdict == "deny"
@@ -189,7 +217,9 @@ def test_run_background_denied_for_dangerous_command() -> None:
     assert "Command blocked by security rule" in d.reason
 
 
-def test_sensitive_system_path_denied_even_if_allowed_paths_wildcard(tmp_path: Path) -> None:
+def test_sensitive_system_path_read_audited_allow_write_denied(tmp_path: Path) -> None:
+    """RFC-LOOP-030: sensitive system paths are `medium` hints on read
+    (allow-with-audit) and `critical` hard-denies on write."""
     ws = tmp_path / "proj"
     ws.mkdir()
     cfg = SimpleNamespace(
@@ -207,8 +237,25 @@ def test_sensitive_system_path_denied_even_if_allowed_paths_wildcard(tmp_path: P
         tool_args={"path": "/etc/hosts"},
     )
     d = policy.check(action, ctx)
-    assert d.verdict == "deny"
-    assert "sensitive system pattern" in d.reason
+    assert d.verdict == "allow"
+
+    cfg_w = SimpleNamespace(
+        security=_security(allow_out=True, require_approval_out=False), workspace_dir=str(ws)
+    )
+    policy_w = ConfigDrivenPolicy(config=cfg_w)
+    ctx_w = PolicyContext(
+        active_permissions=PermissionSet(frozenset([Permission("fs", "write", "*")])),
+        scope_id="t1",
+        workspace=str(ws.resolve()),
+    )
+    action_w = ActionRequest(
+        action_type="tool_call",
+        tool_name="edit_file",
+        tool_args={"file_path": "/etc/hosts"},
+    )
+    d_w = policy_w.check(action_w, ctx_w)
+    assert d_w.verdict == "deny"
+    assert "sensitive system pattern" in d_w.reason
 
 
 def test_git_operations_including_push_allowed() -> None:
