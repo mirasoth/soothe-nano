@@ -56,3 +56,13 @@ RUN sed -i 's|http://deb.debian.org|http://mirrors.aliyun.com|g' /etc/apt/source
 # is unnecessary and is not set here.
 RUN mkdir -p /workspace
 WORKDIR /workspace
+
+# Reserved disk headroom for agent turns. The ArcBox rootfs formatter grows a
+# template's disk capacity to fit its content, so without this pad every
+# sandbox would be born nearly full (~100 MB slack). The sparse pad grows the
+# template capacity to content + 3 GiB; flowjet deletes it once per freshly
+# created sandbox (`sandbox.reserved_pad_path`, before the min_free_bytes
+# watermark probe), converting the reserved capacity into free space. Sizing:
+# the pad IS the headroom — raise it (and the template rebuild) together with
+# the watermark in the consuming deployment.
+RUN truncate -s 3G /pad.img
