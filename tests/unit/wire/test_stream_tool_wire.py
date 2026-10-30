@@ -112,3 +112,24 @@ def test_extract_unwraps_data_body_and_rejects_non_dict() -> None:
     assert updates[0]["name"] == "tool"
     assert extract_tool_call_updates_from_wire_message("nope") == []  # type: ignore[arg-type]
     assert extract_tool_call_updates_from_wire_message({}) == []
+
+
+def test_tool_call_update_event_partial_flag_is_opt_in() -> None:
+    """``partial`` only appears when True — complete events stay byte-identical."""
+    complete = tool_call_update_event(tool_call_id="tc1", name="read_file", args={"path": "/x"})
+    assert complete == {
+        "type": STREAM_TOOL_CALL_UPDATE,
+        "tool_call_id": "tc1",
+        "name": "read_file",
+        "args": {"path": "/x"},
+    }
+    partial = tool_call_update_event(
+        tool_call_id="tc1", name="read_file", args={"path": "/x"}, partial=True
+    )
+    assert partial == {
+        "type": STREAM_TOOL_CALL_UPDATE,
+        "tool_call_id": "tc1",
+        "name": "read_file",
+        "args": {"path": "/x"},
+        "partial": True,
+    }

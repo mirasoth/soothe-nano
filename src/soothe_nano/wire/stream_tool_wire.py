@@ -19,14 +19,26 @@ def tool_call_update_event(
     tool_call_id: str,
     name: str,
     args: dict[str, Any],
+    partial: bool = False,
 ) -> dict[str, Any]:
-    """Build a ``mode=custom`` payload with complete tool invocation kwargs."""
-    return {
+    """Build a ``mode=custom`` payload with tool invocation kwargs.
+
+    ``partial=True`` marks args recovered from an in-flight JSON stream
+    (completed key/value pairs only, the invocation has not finished
+    streaming). Consumers may render them as live hints, but must not treat
+    the kwargs as the final invocation until a non-partial update (or the
+    tool result) arrives. The key is only present when ``True`` so
+    complete-arg events stay byte-identical to the historical wire.
+    """
+    event: dict[str, Any] = {
         "type": STREAM_TOOL_CALL_UPDATE,
         "tool_call_id": str(tool_call_id).strip(),
         "name": str(name or "").strip() or "tool",
         "args": dict(args or {}),
     }
+    if partial:
+        event["partial"] = True
+    return event
 
 
 def unified_tool_update_allowed_without_args(tool_call_id: str) -> bool:
