@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-10-30
+
 ### Changed
 
 - `SecurityConfig.hard_deny_severities: []` now disables hard denies entirely — an explicitly empty set is honored as "no severity hard-denies" (sandbox posture) instead of silently falling back to the `{"critical"}` default, while a config that carries no value at all still keeps the default. Every rule hit, critical included (`command.dangerous.rm_root`, `sudo_rm_rf`, device writes, daemon self-protection, `filesystem.sensitive_system_path` / `workspace_boundary` on write, operator `denied_paths`), degrades to an audited `risk_hint`: enforcement points allow-with-audit and judgment-capable hosts can still reject. Intended for sandboxed backends where an outer boundary already contains the blast radius.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.4...v2.0.5
 
 ## [2.0.4] - 2026-10-30
 
