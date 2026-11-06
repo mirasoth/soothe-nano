@@ -35,7 +35,8 @@ class ProviderCapabilities:
     `No generations found in stream` and retries non-streaming."""
 
     hide_thinking_tokens: bool = True
-    """Strip inline `imd...</think>` / `<thinking>` blocks from text."""
+    """Strip inline `<think>` / `<thinking>` / `<reasoning>` blocks (including
+    suffixed/attribute tags such as hy4's `<think:ID>`) from text."""
 
     max_tokens: int | None = None
     """Model-agnostic default generation cap for this provider."""

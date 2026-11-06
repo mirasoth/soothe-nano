@@ -114,3 +114,73 @@ def test_filter_empty_content_no_capture() -> None:
     filt = ThinkingStreamFilter()
     filt.feed("")
     assert filt.captured_reasoning == ""
+
+
+# --- suffixed/attribute tags (Hunyuan hy3/hy4: <think:ID>) ---
+
+
+def test_strip_thinking_suffixed_tag() -> None:
+    """hy4's `<think:ID>...</think:ID>` is stripped and captured."""
+    sink: list[str] = []
+    result = strip_thinking(
+        "before <think:232e4rfa0123>secret reasoning</think:232e4rfa0123> after",
+        capture_sink=sink,
+    )
+    assert result == "before  after"
+    assert sink == ["secret reasoning"]
+
+
+def test_strip_thinking_suffixed_open_bare_close() -> None:
+    """A suffixed opening tag pairs with a bare closing tag."""
+    sink: list[str] = []
+    result = strip_thinking("a <think:abc123>secret</think> b", capture_sink=sink)
+    assert result == "a  b"
+    assert sink == ["secret"]
+
+
+def test_strip_thinking_attribute_tag() -> None:
+    """Whitespace-separated attributes on the opening tag are tolerated."""
+    sink: list[str] = []
+    result = strip_thinking('a <think id="x">secret</think> b', capture_sink=sink)
+    assert result == "a  b"
+    assert sink == ["secret"]
+
+
+def test_strip_thinking_suffixed_variants() -> None:
+    """`<thinking:ID>` and `<reasoning:ID>` are handled too, case-insensitively."""
+    sink: list[str] = []
+    result = strip_thinking(
+        "a <THINKING:zz>one</THINKING:zz> b <reasoning:q>two</reasoning:q> c",
+        capture_sink=sink,
+    )
+    assert result == "a  b  c"
+    assert sink == ["one", "two"]
+
+
+def test_strip_thinking_does_not_match_lookalike_tag() -> None:
+    """`<thinkx>` is not mistaken for `<think>`."""
+    assert strip_thinking("keep <thinkx>this</thinkx> text") == ("keep <thinkx>this</thinkx> text")
+
+
+def test_filter_suffixed_tag_split_across_chunks() -> None:
+    """A suffixed tag split mid-ID is buffered and stripped without leaking."""
+    filt = ThinkingStreamFilter()
+    out = "".join(
+        [
+            filt.feed("hello <think:232e4rfa"),
+            filt.feed("0123>secret rea"),
+            filt.feed("soning</think:232e4"),
+            filt.feed("rfa0123> world"),
+            filt.finalize(),
+        ]
+    )
+    assert out == "hello  world"
+    assert filt.captured_reasoning == "secret reasoning"
+
+
+def test_filter_suffixed_unterminated_captured_on_finalize() -> None:
+    """Unterminated suffixed blocks are captured on finalize."""
+    filt = ThinkingStreamFilter()
+    assert filt.feed("prefix <think:ID>unterminated") == "prefix "
+    assert filt.finalize() == ""
+    assert filt.captured_reasoning == "unterminated"

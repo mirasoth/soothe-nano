@@ -566,6 +566,8 @@ class SootheConfig(BaseSettings):
     """Strip inline `<think>`/`<thinking>`/`<reasoning>` reasoning blocks
     from local-model LLM output before it surfaces to the agent/UI.
 
+    Tags may carry a `:suffix` or attributes (e.g. Hunyuan hy3/hy4's
+    `<think:232e4rfa0123>`); bare and suffixed closing tags are both handled.
     When `True` (default), reasoning tokens emitted inline by local thinking
     models (DeepSeek-R1, QwQ, GLM with thinking enabled, etc.) are removed by
     :mod:`soothe_nano.llm.thinking` and recorded at `DEBUG` level

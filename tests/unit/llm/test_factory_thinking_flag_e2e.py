@@ -97,3 +97,15 @@ def test_factory_flag_propagates_from_real_config() -> None:
     registry = ProviderRegistry(cfg.providers)
     caps = registry.provider_capabilities("local")
     assert caps.hide_thinking_tokens is True
+
+
+def test_generate_strips_hy4_suffixed_thinking_block(_patch_litellm_completion) -> None:
+    """hy4's `<think:ID>...</think:ID>` is stripped end-to-end via `_generate`."""
+    _patch_litellm_completion.return_value = _canned_completion_response(
+        "<think:232e4rfa0123>Let me reason.</think:232e4rfa0123>The answer is 42."
+    )
+    model = _make_model(hide=True)
+    result = model._generate(messages=[HumanMessage(content="hi")])
+    msg = result.generations[0].message
+    assert msg.content == "The answer is 42."
+    assert msg.additional_kwargs.get("reasoning_content") == "Let me reason."
