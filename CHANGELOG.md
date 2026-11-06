@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.7] - 2026-11-06
+
 ### Fixed
 
 - **Hunyuan hy3/hy4 thinking tokens**: the thinking filter now strips inline `<think:ID>...</think:ID>` (and `<thinking:ID>` / `<reasoning:ID>`, attribute-bearing tags, case-insensitively) used by the Hunyuan hy4/hy3 models. Previously only bare `<think>` / `<thinking>` / `<reasoning>` tags were recognized, so hy4's suffixed reasoning blocks leaked into visible agent/UI output. Both the stateless `strip_thinking` and the streaming `ThinkingStreamFilter` (including partial-tag buffering across chunk boundaries) handle the suffixed open/close tags, with captured reasoning still forwarded to the TUI reasoning branch.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.6...v2.0.7
 
 ## [2.0.6] - 2026-10-30
 
