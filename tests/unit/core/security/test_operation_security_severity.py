@@ -36,7 +36,12 @@ from soothe_nano.security.policy_profiles import (
 _NO_SECURITY_CONFIG = object()
 
 
-def _eval_cmd(command: str, *, hard: Any = _NO_SECURITY_CONFIG):
+def _eval_cmd(
+    command: str,
+    *,
+    hard: Any = _NO_SECURITY_CONFIG,
+    workspace: str | None = None,
+):
     """Evaluate a command; `hard` omitted means no SecurityConfig is wired."""
     ev = WorkspaceToolOperationSecurity()
     security = None if hard is _NO_SECURITY_CONFIG else SecurityConfig(hard_deny_severities=hard)
@@ -48,7 +53,7 @@ def _eval_cmd(command: str, *, hard: Any = _NO_SECURITY_CONFIG):
             operation_kind="shell_execute",
             command=command,
         ),
-        OperationSecurityContext(workspace=None, security_config=security),
+        OperationSecurityContext(workspace=workspace, security_config=security),
     )
 
 
@@ -323,3 +328,80 @@ class TestEnforcementAllowWithAudit:
             ctx,
         )
         assert decision.verdict == "deny"
+
+
+class TestWorkspaceScopedRmRelaxation:
+    """rm targeting paths that resolve inside the workspace is downgraded."""
+
+    def test_rm_rf_in_workspace_downgrades_to_medium(self, tmp_path: Path) -> None:
+        ws = tmp_path / "repo"
+        (ws / "build").mkdir(parents=True)
+        decision = _eval_cmd(f"rm -rf {ws}/build", workspace=str(ws))
+        assert decision.verdict == "risk_hint"
+        assert decision.rule_id == "command.dangerous.rm_workspace_scoped"
+        assert decision.severity == "medium"
+
+    def test_rm_root_in_workspace_downgrades_to_medium(self, tmp_path: Path) -> None:
+        # A workspace nested under a system-adjacent path (e.g. /var/ws)
+        # trips rm_root on ``rm -rf /var/ws/dist``. When the target resolves
+        # inside the workspace, it downgrades to medium instead of denying.
+        ws = tmp_path / "var" / "ws"
+        (ws / "dist").mkdir(parents=True)
+        decision = _eval_cmd(f"rm -rf {ws}/dist", workspace=str(ws))
+        assert decision.verdict == "risk_hint"
+        assert decision.rule_id == "command.dangerous.rm_workspace_scoped"
+        assert decision.severity == "medium"
+
+    def test_rm_rf_outside_workspace_stays_high(self, tmp_path: Path) -> None:
+        ws = tmp_path / "repo"
+        ws.mkdir(parents=True)
+        outside = tmp_path / "other"
+        outside.mkdir()
+        decision = _eval_cmd(f"rm -rf {outside}", workspace=str(ws))
+        assert decision.verdict == "risk_hint"
+        assert decision.rule_id == "command.dangerous.rm_rf"
+        assert decision.severity == "high"
+
+    def test_rm_root_bare_root_never_relaxed(self, tmp_path: Path) -> None:
+        # Bare root can never resolve inside a workspace — stays critical.
+        decision = _eval_cmd("rm -rf /", workspace=str(tmp_path))
+        assert decision.verdict == "deny"
+        assert decision.rule_id == "command.dangerous.rm_root"
+        assert decision.severity == "critical"
+
+    def test_rm_root_system_dir_never_relaxed(self, tmp_path: Path) -> None:
+        # /etc is a real system directory — never inside a workspace.
+        decision = _eval_cmd("rm -rf /etc", workspace=str(tmp_path))
+        assert decision.verdict == "deny"
+        assert decision.rule_id == "command.dangerous.rm_root"
+        assert decision.severity == "critical"
+
+    def test_sudo_rm_rf_never_relaxed_even_in_workspace(self, tmp_path: Path) -> None:
+        # sudo_rm_rf is excluded from workspace relaxation — privilege
+        # escalation is never auto-downgraded regardless of target path.
+        ws = tmp_path / "repo"
+        (ws / "build").mkdir(parents=True)
+        decision = _eval_cmd(f"sudo rm -rf {ws}/build", workspace=str(ws))
+        assert decision.verdict == "deny"
+        assert decision.rule_id == "command.dangerous.sudo_rm_rf"
+        assert decision.severity == "critical"
+
+    def test_compound_rm_all_in_workspace_relaxes(self, tmp_path: Path) -> None:
+        ws = tmp_path / "repo"
+        (ws / "build").mkdir(parents=True)
+        (ws / "dist").mkdir(parents=True)
+        decision = _eval_cmd(f"rm -rf {ws}/build {ws}/dist", workspace=str(ws))
+        assert decision.verdict == "risk_hint"
+        assert decision.rule_id == "command.dangerous.rm_workspace_scoped"
+        assert decision.severity == "medium"
+
+    def test_compound_rm_mixed_targets_stays_high(self, tmp_path: Path) -> None:
+        # If any target is outside the workspace, do not relax.
+        ws = tmp_path / "repo"
+        (ws / "build").mkdir(parents=True)
+        outside = tmp_path / "other"
+        outside.mkdir()
+        decision = _eval_cmd(f"rm -rf {ws}/build {outside}", workspace=str(ws))
+        assert decision.verdict == "risk_hint"
+        assert decision.rule_id == "command.dangerous.rm_rf"
+        assert decision.severity == "high"

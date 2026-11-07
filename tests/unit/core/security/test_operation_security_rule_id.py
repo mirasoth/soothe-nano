@@ -5,8 +5,16 @@ from __future__ import annotations
 from soothe_nano.security.operation_guard import dangerous_command_rule_id
 
 
-def test_rm_rf_root_matches_rm_root() -> None:
-    assert dangerous_command_rule_id("rm -rf /tmp/x") == "command.dangerous.rm_root"
+def test_rm_rf_system_dir_matches_rm_root() -> None:
+    # /etc is a system directory — rm_root (critical).
+    assert dangerous_command_rule_id("rm -rf /etc") == "command.dangerous.rm_root"
+
+
+def test_rm_rf_non_system_absolute_matches_rm_rf() -> None:
+    # /tmp is NOT a system directory — falls through to rm_rf (high), not
+    # rm_root (critical). Only bare root and the enumerated system dirs
+    # (/etc, /usr, /var, …) trip rm_root.
+    assert dangerous_command_rule_id("rm -rf /tmp/x") == "command.dangerous.rm_rf"
 
 
 def test_rm_rf_no_root_matches_rm_rf() -> None:
@@ -40,8 +48,17 @@ def test_git_rm_is_not_blocked_as_destructive_rm() -> None:
 def test_standalone_rm_still_blocked_anchored() -> None:
     # Anchoring the `rm` rules to non-`git` contexts must not weaken the
     # destructive-`rm` net for standalone invocations.
-    assert dangerous_command_rule_id("rm -rf /tmp/x") == "command.dangerous.rm_root"
+    assert dangerous_command_rule_id("rm -rf /") == "command.dangerous.rm_root"
+    assert dangerous_command_rule_id("rm -rf /etc") == "command.dangerous.rm_root"
+    assert dangerous_command_rule_id("rm -rf /tmp/x") == "command.dangerous.rm_rf"
     assert dangerous_command_rule_id("rm -rf build/") == "command.dangerous.rm_rf"
     assert dangerous_command_rule_id("rm -r build/") == "command.dangerous.rm_r"
     assert dangerous_command_rule_id("cd x && rm -r bar") == "command.dangerous.rm_r"
     assert dangerous_command_rule_id('bash -c "rm -rf /"') == "command.dangerous.rm_root"
+
+
+def test_sudo_rm_rf_classified_as_sudo_rm_rf_not_rm_rf() -> None:
+    # sudo_rm_rf must precede the generic rm patterns so ``sudo rm -rf /tmp/x``
+    # is classified as the more specific critical rule, not rm_rf (high).
+    assert dangerous_command_rule_id("sudo rm -rf /tmp/x") == "command.dangerous.sudo_rm_rf"
+    assert dangerous_command_rule_id("sudo rm -rf /") == "command.dangerous.sudo_rm_rf"

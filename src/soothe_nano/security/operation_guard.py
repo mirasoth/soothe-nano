@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 _CMD_POSITION = r"(?:^|[;&|]\s*)"
 
 # (pattern, rule_id, severity). First match wins — more specific patterns
-# (rm_root, sudo_rm_rf, dd_block_device_write, chmod_root) must precede
+# (sudo_rm_rf, rm_root, dd_block_device_write, chmod_root) must precede
 # their general counterparts (rm_rf, sudo, dd, chmod -R).
 _BANNED_COMMAND_PATTERNS: tuple[tuple[str, str, RuleSeverity], ...] = (
     # --- critical: irreversible system destruction ---
@@ -48,10 +48,50 @@ _BANNED_COMMAND_PATTERNS: tuple[tuple[str, str, RuleSeverity], ...] = (
     # operation that cannot delete arbitrary filesystem paths) out of the
     # destructive-``rm`` net while still catching standalone ``rm -rf /``,
     # ``cd x && rm -r y`` and ``bash -c "rm -rf /"``.
-    (r"(?<!git\s)rm\s+-rf\s+/", "command.dangerous.rm_root", "critical"),
-    (r"(?<!git\s)rm\s+-rf\b", "command.dangerous.rm_rf", "high"),
-    (r"(?<!git\s)rm\s+-r\b", "command.dangerous.rm_r", "high"),
+    #
+    # rm_root matches bare filesystem root (``rm -rf /``) or a system-
+    # directory target (``rm -rf /etc``, ``rm -rf /usr``, …). Non-system
+    # absolute paths (``rm -rf /tmp/x``, ``rm -rf /Users/.../workspace/dist``)
+    # fall through to the rm_rf rule below — a high-severity risk_hint under
+    # the default posture, allowed with audit.
+    #
+    # Workspace-scoped relaxation: when a workspace root is configured AND every
+    # ``rm`` target resolves inside that workspace boundary, rm_root / rm_rf /
+    # rm_r all downgrade to ``rm_workspace_scoped`` (medium) — a risk_hint
+    # allowed with audit. This covers the common case of a workspace nested
+    # under a system-adjacent path (e.g. ``/var/workspace/project``) where the
+    # ``rm_root`` pattern would otherwise fire on ``/var`` even though the real
+    # target is safely inside the workspace. Bare root (``rm -rf /``) and
+    # genuine system directories (``/etc``, ``/usr``, …) never resolve inside a
+    # workspace, so they stay critical and hard-deny as before.
+    #
+    # sudo_rm_rf must precede the generic rm patterns so ``sudo rm -rf /tmp/x``
+    # is classified as the more specific critical rule, not rm_rf (high).
     (r"sudo\s+rm\s+-rf", "command.dangerous.sudo_rm_rf", "critical"),
+    # Delimiter set ``[\"'\s]`` covers whitespace, end-of-string, and shell
+    # quotes — the last so ``bash -c "rm -rf /"`` still trips rm_root (the bare
+    # root is followed by a closing quote, not whitespace).
+    (
+        r"(?<!git\s)rm\s+-rf\s+/(?:[\"'\s]|$"
+        r"|etc(?:/|[\"'\s]|$)|bin(?:/|[\"'\s]|$)|sbin(?:/|[\"'\s]|$)|usr(?:/|[\"'\s]|$)"
+        r"|lib(?:64)?(?:/|[\"'\s]|$)|dev(?:/|[\"'\s]|$)|proc(?:/|[\"'\s]|$)|sys(?:/|[\"'\s]|$)"
+        r"|root(?:/|[\"'\s]|$)|boot(?:/|[\"'\s]|$)|var(?:/|[\"'\s]|$)"
+        r"|System(?:/|[\"'\s]|$)|Library(?:/|[\"'\s]|$)|private/etc(?:/|[\"'\s]|$))",
+        "command.dangerous.rm_root",
+        "critical",
+    ),
+    (r"(?<!git\s)rm\s+-rf\b", "command.dangerous.rm_rf", "high"),
+    # ``rm -r`` (no -f) against bare root or system dirs is still critical.
+    (
+        r"(?<!git\s)rm\s+-r\s+/(?:[\"'\s]|$"
+        r"|etc(?:/|[\"'\s]|$)|bin(?:/|[\"'\s]|$)|sbin(?:/|[\"'\s]|$)|usr(?:/|[\"'\s]|$)"
+        r"|lib(?:64)?(?:/|[\"'\s]|$)|dev(?:/|[\"'\s]|$)|proc(?:/|[\"'\s]|$)|sys(?:/|[\"'\s]|$)"
+        r"|root(?:/|[\"'\s]|$)|boot(?:/|[\"'\s]|$)|var(?:/|[\"'\s]|$)"
+        r"|System(?:/|[\"'\s]|$)|Library(?:/|[\"'\s]|$)|private/etc(?:/|[\"'\s]|$))",
+        "command.dangerous.rm_root",
+        "critical",
+    ),
+    (r"(?<!git\s)rm\s+-r\b", "command.dangerous.rm_r", "high"),
     (r"mkfs(\.|$)", "command.dangerous.mkfs", "critical"),
     (r"\bdd\b[^;&|\n]*\bof=/dev/", "command.dangerous.dd_block_device_write", "critical"),
     (r"dd\s+if=", "command.dangerous.dd", "high"),
@@ -113,6 +153,27 @@ _KILL_INVOCATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ``rm`` invocation: captures the argument list so we can extract target paths
+# and decide whether they all resolve inside the workspace.
+_RM_INVOCATION_RE = re.compile(
+    r"(?:^|[;&|\n])\s*(?<!git\s)rm\b(?P<args>[^\n;&|]*)",
+    re.IGNORECASE,
+)
+
+# rm family rule ids whose severity we may relax when targets are in-workspace.
+# Includes rm_root (critical): a workspace nested under a system-adjacent path
+# (e.g. ``/var/workspace/project``) can trip rm_root on ``rm -rf /var/...`` even
+# though the real target is safely inside the workspace. When every target
+# resolves inside the boundary, we downgrade to rm_workspace_scoped (medium).
+# sudo_rm_rf is deliberately excluded — privilege escalation is never relaxed.
+_RM_RULE_IDS: frozenset[str] = frozenset(
+    {
+        "command.dangerous.rm_root",
+        "command.dangerous.rm_rf",
+        "command.dangerous.rm_r",
+    }
+)
+
 _HARD_DENY_DEFAULT: frozenset[str] = frozenset({"critical"})
 """Posture default: only critical rules hard-deny (RFC-LOOP-030).
 
@@ -121,6 +182,38 @@ all. An explicitly empty value means the opposite — no severity hard-denies
 and every rule hit becomes an audited `risk_hint` — so `None` (unset) and
 `()/[]` (opt-out) are deliberately kept distinct.
 """
+
+
+def _rm_targets_in_workspace(command: str, workspace_root: Path) -> bool:
+    """True if every ``rm`` target in ``command`` resolves inside ``workspace_root``.
+
+    Used to relax the rm_rf / rm_r rules from high to medium when the blast
+    radius is contained by the workspace boundary. Bare root, system
+    directories, and paths outside the workspace keep the original severity.
+    """
+    matches = list(_RM_INVOCATION_RE.finditer(command))
+    if not matches:
+        return False
+    ws_resolved = expand_path(str(workspace_root))
+    saw_target = False
+    for m in matches:
+        args = m.group("args") or ""
+        tokens = args.split()
+        for tok in tokens:
+            if tok.startswith("-"):
+                continue  # flag like -rf, -r, --recursive
+            if not tok:
+                continue
+            saw_target = True
+            try:
+                resolved = expand_path(tok)
+            except (OSError, ValueError):
+                return False
+            try:
+                resolved.relative_to(ws_resolved)
+            except ValueError:
+                return False
+    return saw_target
 
 
 def _hard_deny_severities(context: OperationSecurityContext) -> frozenset[str]:
@@ -179,6 +272,7 @@ _RULE_FAMILIES: tuple[frozenset[str], ...] = (
             "command.dangerous.rm_root",
             "command.dangerous.rm_rf",
             "command.dangerous.rm_r",
+            "command.dangerous.rm_workspace_scoped",
             "command.dangerous.sudo_rm_rf",
         }
     ),
@@ -439,6 +533,30 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
         hard = _hard_deny_severities(context)
         for pattern, rule_id, severity in _BANNED_COMMAND_PATTERNS:
             if re.search(pattern, command_text, re.IGNORECASE):
+                # Workspace-scoped relaxation: rm -rf / rm -r targeting paths
+                # that all resolve inside the workspace boundary downgrade to
+                # medium (a risk_hint under the default posture, allowed with
+                # audit). This covers rm_root (critical) when a workspace is
+                # nested under a system-adjacent path (e.g. ``/var/workspace/``)
+                # — the rm_root pattern matches ``/var`` but the real target
+                # resolves inside the workspace. Bare root (``rm -rf /``) and
+                # genuine system dirs never resolve inside a workspace, so they
+                # stay critical. sudo_rm_rf is excluded from _RM_RULE_IDS.
+                if rule_id in _RM_RULE_IDS and context.workspace and str(context.workspace).strip():
+                    try:
+                        ws_root = expand_path(str(context.workspace).strip())
+                    except (OSError, ValueError):
+                        ws_root = None
+                    if ws_root is not None and _rm_targets_in_workspace(command_text, ws_root):
+                        return _deny_or_hint(
+                            hard,
+                            rule_id="command.dangerous.rm_workspace_scoped",
+                            severity="medium",
+                            reason=(
+                                f"Command blocked by security rule: {pattern} "
+                                "(targets resolve inside workspace — downgraded to medium)"
+                            ),
+                        )
                 return _deny_or_hint(
                     hard,
                     rule_id=rule_id,
