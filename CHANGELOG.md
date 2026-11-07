@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.8] - 2026-11-07
+
+### Fixed
+
+- **Workspace-scoped rm relaxation**: the `rm_root` / `rm_rf` / `rm_r` rules now downgrade to `rm_workspace_scoped` (medium, risk_hint allowed with audit) when every `rm` target resolves inside the configured workspace boundary. This covers the common case of a workspace nested under a system-adjacent path (e.g. `/var/workspace/project`) where `rm -rf /var/...` would otherwise trip `rm_root` (critical, hard-deny) even though the target is safely inside the workspace. Bare root (`rm -rf /`) and genuine system directories (`/etc`, `/usr`, …) never resolve inside a workspace, so they stay critical and hard-deny as before. `sudo_rm_rf` is excluded from relaxation — privilege escalation is never auto-relaxed.
+- **Pattern ordering**: `sudo_rm_rf` (critical) now precedes the generic `rm_rf` / `rm_r` patterns so `sudo rm -rf /tmp/x` is classified as the more specific critical rule instead of falling through to `rm_rf` (high).
+- **rm_root pattern refinement**: the old installed pattern `rm\s+-rf\s+/` matched any absolute path (including `/tmp/x`) as critical. The new pattern only matches bare root (`/`) or enumerated system directories (`/etc`, `/usr`, `/var`, …). Non-system absolute paths like `/tmp/x` correctly fall through to `rm_rf` (high). Added `["']` to the delimiter set so `bash -c "rm -rf /"` still trips `rm_root`.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.7...v2.0.8
+
 ## [2.0.7] - 2026-11-06
 
 ### Fixed
