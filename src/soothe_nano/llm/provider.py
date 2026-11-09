@@ -138,6 +138,8 @@ class ChatLitellmModel(BaseChatModel):
             kw["api_key"] = self.api_key
         if self.capabilities.max_tokens is not None:
             kw["max_tokens"] = self.capabilities.max_tokens
+        if self.capabilities.stream_timeout is not None:
+            kw["stream_timeout"] = self.capabilities.stream_timeout
         # Bound tools — passed directly so litellm emits native tool_calls.
         if self.bound_tools:
             kw["tools"] = self.bound_tools
@@ -276,6 +278,11 @@ class ChatLitellmModel(BaseChatModel):
         )
         native_reasoning_parts: list[str] = []
         try:
+            logger.info(
+                "LLM stream start: model=%s endpoint=%s",
+                self.model,
+                self.api_base,
+            )
             stream = litellm.completion(messages=llm_messages, **call_kwargs)
             for chunk in stream:
                 delta = chunk.choices[0].delta
@@ -354,6 +361,11 @@ class ChatLitellmModel(BaseChatModel):
         )
         native_reasoning_parts: list[str] = []
         try:
+            logger.info(
+                "LLM stream start: model=%s endpoint=%s",
+                self.model,
+                self.api_base,
+            )
             stream = await litellm.acompletion(messages=llm_messages, **call_kwargs)
             async for chunk in stream:
                 delta = chunk.choices[0].delta

@@ -82,6 +82,9 @@ class ModelProviderConfig(BaseModel):
     """Whether to enable LangChain streaming for this provider."""
     max_tokens: int | None = None
     """Default max generation tokens for this provider (model-agnostic)."""
+    stream_timeout: float | None = Field(default=None, gt=0)
+    """Streaming read timeout (seconds): error out when the endpoint sends no
+    data for this long, instead of hanging until the litellm default (600s)."""
     model: str | None = None
     """Single model identifier sent to a classifier backend."""
     timeout_seconds: float | None = Field(default=None, gt=0)

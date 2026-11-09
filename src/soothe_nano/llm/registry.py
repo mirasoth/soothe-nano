@@ -41,6 +41,9 @@ class ProviderCapabilities:
     max_tokens: int | None = None
     """Model-agnostic default generation cap for this provider."""
 
+    stream_timeout: float | None = None
+    """Streaming read timeout (seconds) passed to litellm as stream_timeout."""
+
 
 @dataclass(frozen=True)
 class ResolvedProvider:
@@ -139,6 +142,7 @@ class ProviderRegistry:
             streaming=provider.streaming,
             hide_thinking_tokens=True,
             max_tokens=provider.max_tokens,
+            stream_timeout=provider.stream_timeout,
         )
 
     @staticmethod

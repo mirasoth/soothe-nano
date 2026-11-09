@@ -3,18 +3,21 @@ MultiModelChatModel failover, LLMFactory multi-spec wrapping)."""
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator, Iterator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
-from soothe_nano.config.models import parse_model_specs
+from soothe_nano.config.models import ModelProviderConfig, parse_model_specs
 from soothe_nano.config.settings import SootheConfig
 from soothe_nano.llm.factory import LLMFactory
 from soothe_nano.llm.provider import ChatLitellmModel, MultiModelChatModel
-from soothe_nano.llm.registry import ProviderCapabilities
+from soothe_nano.llm.registry import ProviderCapabilities, ProviderRegistry
 
 # ---------------------------------------------------------------------------
 # parse_model_specs
@@ -672,3 +675,75 @@ class TestMultiModelEmptyResponseFailover:
             result = asyncio.run(wrapper._agenerate([HumanMessage(content="hi")]))
         assert not wrapper._circuit._failures
         assert result.generations[0].message.tool_calls
+
+
+# ---------------------------------------------------------------------------
+# stream_timeout wiring + endpoint logging
+# ---------------------------------------------------------------------------
+
+
+class TestStreamTimeoutWiring:
+    """Tests for capabilities.stream_timeout flowing into litellm kwargs."""
+
+    def test_litellm_kwargs_passes_capability_stream_timeout(self) -> None:
+        model = ChatLitellmModel(
+            model="ds1:glm-5.2",
+            capabilities=ProviderCapabilities(stream_timeout=90.0),
+        )
+        assert model._litellm_kwargs(stream=True)["stream_timeout"] == 90.0
+
+    def test_litellm_kwargs_omits_stream_timeout_by_default(self) -> None:
+        model = _make_chat_litellm_model("ds1:glm-5.2")
+        assert "stream_timeout" not in model._litellm_kwargs(stream=True)
+
+    def test_provider_config_stream_timeout_resolves_to_capabilities(self) -> None:
+        provider = ModelProviderConfig(
+            name="ds1",
+            api_base_url="https://api.example.com/v1",
+            stream_timeout=120.0,
+        )
+        registry = ProviderRegistry(providers=[provider])
+        assert registry.provider_capabilities("ds1").stream_timeout == 120.0
+
+
+class TestStreamStartEndpointLog:
+    """Tests for the stream-start endpoint log line."""
+
+    @staticmethod
+    def _model_with_endpoint() -> ChatLitellmModel:
+        return ChatLitellmModel(
+            model="ds1:glm-5.2",
+            api_base="https://api.example.com/v1",
+            capabilities=ProviderCapabilities(),
+        )
+
+    def test_astream_logs_model_and_endpoint(self, caplog: pytest.LogCaptureFixture) -> None:
+        model = self._model_with_endpoint()
+
+        async def _fake_stream(**kwargs: Any) -> AsyncIterator[MagicMock]:
+            async def _gen() -> AsyncIterator[MagicMock]:
+                delta = MagicMock()
+                delta.content = "hello"
+                delta.tool_calls = None
+                delta.reasoning_content = None
+                delta.reasoning = None
+                chunk = MagicMock()
+                chunk.choices = [MagicMock(delta=delta)]
+                yield chunk
+
+            return _gen()
+
+        async def _collect() -> list[ChatGenerationChunk]:
+            return [chunk async for chunk in model._astream([HumanMessage(content="hi")])]
+
+        with (
+            caplog.at_level(logging.INFO, logger="soothe_nano.llm.provider"),
+            patch("soothe_nano.llm.provider.litellm.acompletion", side_effect=_fake_stream),
+        ):
+            chunks = asyncio.run(_collect())
+
+        assert "hello" in "".join(c.message.content for c in chunks)
+        start = [r for r in caplog.records if "LLM stream start" in r.message]
+        assert len(start) == 1
+        assert "ds1:glm-5.2" in start[0].getMessage()
+        assert "https://api.example.com/v1" in start[0].getMessage()
