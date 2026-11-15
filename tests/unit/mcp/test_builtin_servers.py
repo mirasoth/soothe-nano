@@ -130,6 +130,14 @@ def test_register_builtin_mcp_replace() -> None:
         unregister()
 
 
+def test_postgres_builtin_passes_dsn_positionally() -> None:
+    """The npm server needs the DSN as an argument, not an env var (regression guard)."""
+    server = get_builtin_mcp_server("postgres")
+    assert server is not None
+    assert server.args[-1] == "${POSTGRES_CONNECTION_STRING}"
+    assert not server.env, "the npm server ignores env vars; DSN must be positional"
+
+
 def test_register_mcp_alone_does_not_connect() -> None:
     from soothe_nano.config.models import MCPServerConfig, MCPTransport
     from soothe_nano.mcp.mcp_config import register_builtin_mcp_server

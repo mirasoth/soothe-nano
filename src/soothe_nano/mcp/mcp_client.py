@@ -63,9 +63,10 @@ async def create_session(connection: dict[str, Any]) -> Any:
     if transport == "stdio":
         env = params.get("env")
         resolved_env = {k: _expand_env_vars(v) for k, v in env.items()} if env is not None else None
+        resolved_args = [_expand_env_vars(str(a)) for a in (params.get("args") or [])]
         server_params = StdioServerParameters(
             command=params["command"],
-            args=params.get("args") or [],
+            args=resolved_args,
             env=resolved_env,
             cwd=params.get("cwd"),
             encoding=params.get("encoding", "utf-8"),

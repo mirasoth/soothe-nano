@@ -99,9 +99,10 @@ _BUILTIN_MCP_SERVERS: tuple[MCPServerConfig, ...] = (
     MCPServerConfig(
         name="postgres",
         command="npx",
-        args=["-y", "@modelcontextprotocol/server-postgres"],
+        # The npm server takes the DSN as a positional argument (it does not
+        # read POSTGRES_CONNECTION_STRING); ${VAR} in args is expanded at connect time.
+        args=["-y", "@modelcontextprotocol/server-postgres", "${POSTGRES_CONNECTION_STRING}"],
         transport=MCPTransport.STDIO,
-        env={"POSTGRES_CONNECTION_STRING": "${POSTGRES_CONNECTION_STRING}"},
         defer=True,
     ),
     MCPServerConfig(

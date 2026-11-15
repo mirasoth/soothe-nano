@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **postgres builtin MCP config was unlaunchable**: `@modelcontextprotocol/server-postgres` requires the DSN as a positional argument (it does not read `POSTGRES_CONNECTION_STRING`), so the builtin always exited with "Please provide a database URL". The catalog entry now passes `${POSTGRES_CONNECTION_STRING}` as an argument, and the internal MCP client expands `${VAR}` references in stdio `args` (as it already did for `env` values).
+
+### Added
+
+- **Builtin MCP server integration tests** (`tests/integration/test_mcp_builtin_servers_e2e.py`, `--run-integration`): real end-to-end connection tests for the playwright, chrome-devtools, and postgres catalog configs — config → stdio spawn → initialize → capability fetch → clean shutdown, plus `mcp_builtins` config resolution and a websocket fail-fast check.
+- **browser-use 1.x end-to-end apps** (`examples/browser_use_e2e/`): a deterministic local test site plus a 14-scenario harness covering browser lifecycle, agent runs, structured output, custom tools, sensitive-data redaction, domain restrictions, follow-up runs, max-steps cutoff, context compaction, downloads, and profile persistence; cloud/cdp/web-search scenarios skip without keys. Integration gate in `tests/integration/test_browser_use_e2e.py`.
+
 ### Changed
 
 - **browser-use upgraded to 1.x**: the `browser_use` subagent now runs on browser-use 1.x (Pydantic-AI engine). `Browser("chromium", ...)` replaces the removed `args`/0.x `BrowserSession` lifecycle (`agent.run(max_steps=...)` now manages start/stop itself), run errors surface through the result status, and the per-step `soothe.subagent.browser_use.step.completed` wire event was removed with the 0.x step loop (started/completed events remain). The 0.x-only `disable_extensions`, `browser_start_timeout`, and `extensions_dir` config knobs were dropped, along with the `action_format` module (1.x agents write Python, not step actions).
