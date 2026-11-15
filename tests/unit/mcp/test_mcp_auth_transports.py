@@ -14,9 +14,9 @@ import os
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import langchain_mcp_adapters.client  # noqa: F401 — load submodule for patch()
 import pytest
 
+import soothe_nano.mcp.mcp_client  # noqa: F401 — load module for patch()
 from soothe_nano.config.models import MCPAuthHeaders, MCPServerConfig, MCPTransport
 from soothe_nano.mcp.mcp_config import interpolate_auth_headers, make_connection_spec
 from soothe_nano.mcp.mcp_registry import MCPRegistry
@@ -193,7 +193,7 @@ class TestMCPRegistryAuthIntegration:
 
         registry = MCPRegistry(servers=[server], secret_resolver=_secret_resolver)
 
-        # Mock langchain_mcp_adapters.MultiServerMCPClient to capture connection spec
+        # Mock the internal MultiServerMCPClient to capture connection spec
         mock_client = MagicMock()
         mock_session = AsyncMock()
 
@@ -209,7 +209,7 @@ class TestMCPRegistryAuthIntegration:
 
         mock_client.session = mock_session_context
 
-        with patch("langchain_mcp_adapters.client.MultiServerMCPClient", return_value=mock_client):
+        with patch("soothe_nano.mcp.mcp_client.MultiServerMCPClient", return_value=mock_client):
             await registry.initialize()
 
             # Verify connection spec was created with resolved headers
@@ -252,7 +252,7 @@ class TestMCPRegistryAuthIntegration:
 
         mock_client.session = mock_session_context
 
-        with patch("langchain_mcp_adapters.client.MultiServerMCPClient", return_value=mock_client):
+        with patch("soothe_nano.mcp.mcp_client.MultiServerMCPClient", return_value=mock_client):
             await registry.initialize()
 
             connections = mock_client.call_args_list[0][0][0] if mock_client.call_args_list else {}
@@ -293,7 +293,7 @@ class TestMCPRegistryAuthIntegration:
 
         mock_client.session = mock_session_context
 
-        with patch("langchain_mcp_adapters.client.MultiServerMCPClient", return_value=mock_client):
+        with patch("soothe_nano.mcp.mcp_client.MultiServerMCPClient", return_value=mock_client):
             await registry.initialize()
 
             connections = mock_client.call_args_list[0][0][0] if mock_client.call_args_list else {}
@@ -337,7 +337,7 @@ class TestMCPRegistryAuthIntegration:
 
         mock_client.session = mock_session_context
 
-        with patch("langchain_mcp_adapters.client.MultiServerMCPClient", return_value=mock_client):
+        with patch("soothe_nano.mcp.mcp_client.MultiServerMCPClient", return_value=mock_client):
             await registry.initialize()
 
             connections = mock_client.call_args_list[0][0][0] if mock_client.call_args_list else {}
@@ -400,7 +400,7 @@ class TestMCPRegistryAuthIntegration:
 
         mock_client.session = mock_session_context
 
-        with patch("langchain_mcp_adapters.client.MultiServerMCPClient", return_value=mock_client):
+        with patch("soothe_nano.mcp.mcp_client.MultiServerMCPClient", return_value=mock_client):
             await registry.initialize()
 
             connections = mock_client.call_args_list[0][0][0] if mock_client.call_args_list else {}

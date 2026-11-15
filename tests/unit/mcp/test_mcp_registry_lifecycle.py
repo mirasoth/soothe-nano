@@ -2,14 +2,16 @@
 
 Drives the full registry lifecycle — initialize → fetch capabilities →
 invoke tool → read resource → shutdown — against an in-process mock of
-``langchain_mcp_adapters.MultiServerMCPClient`` and a fake session. Covers
-``MCPRegistry`` public methods and the ``mcp_registry_support`` functions
-(``fetch_tools_and_descriptors``, ``fetch_prompts``, ``fetch_resources``,
-``invoke_tool``, ``read_resource``, cleanup) that issue #22 regressed.
+the internal ``MultiServerMCPClient`` (raw mcp SDK) and a fake session.
+Covers ``MCPRegistry`` public methods and the ``mcp_registry_support``
+functions (``fetch_tools_and_descriptors``, ``fetch_prompts``,
+``fetch_resources``, ``invoke_tool``, ``read_resource``, cleanup) that
+issue #22 regressed.
 """
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 from unittest.mock import patch
 
@@ -51,12 +53,22 @@ class _FakeResource:
         self.uri = uri
         self.name = name
         self.description = description
-        self.mimeType = mime_type
+        self.mime_type = mime_type
 
 
-class _FakeBlob:
-    def __init__(self, data: bytes | str) -> None:
-        self.data = data
+class _FakeResourceContents:
+    """Mimics mcp 2.x TextResourceContents / BlobResourceContents."""
+
+    def __init__(self, *, text: str | None = None, blob: str | None = None) -> None:
+        self.text = text
+        self.blob = blob
+
+
+class _FakeListResult:
+    """Mimics mcp 2.x list result models (fields, not the bare list)."""
+
+    def __init__(self, items: list, field: str) -> None:
+        setattr(self, field, items)
 
 
 class _FakeSession:
@@ -67,11 +79,11 @@ class _FakeSession:
         self._resources = resources
         self.closed = False
 
-    async def list_prompts(self) -> list[_FakePrompt]:
-        return self._prompts
+    async def list_prompts(self) -> _FakeListResult:
+        return _FakeListResult(self._prompts, "prompts")
 
-    async def list_resources(self) -> list[_FakeResource]:
-        return self._resources
+    async def list_resources(self) -> _FakeListResult:
+        return _FakeListResult(self._resources, "resources")
 
     async def close(self) -> None:
         self.closed = True
@@ -103,7 +115,7 @@ class MockMCPService:
         self.connections_arg: dict | None = None
         self.tool_name_prefix_arg: Any = None
         self.closed = False
-        self.resource_blobs: dict[tuple[str, str], _FakeBlob] = {}
+        self.resource_blobs: dict[tuple[str, str], _FakeResourceContents] = {}
         self.sessions: dict[str, _FakeSession] = {}
 
     def construct(self, connections: dict, tool_name_prefix: bool = False) -> MockMCPService:
@@ -112,8 +124,8 @@ class MockMCPService:
         self.tool_name_prefix_arg = tool_name_prefix
         return self
 
-    def set_resource_blob(self, server: str, uri: str, blob: _FakeBlob) -> None:
-        self.resource_blobs[(server, uri)] = blob
+    def set_resource_contents(self, server: str, uri: str, contents: _FakeResourceContents) -> None:
+        self.resource_blobs[(server, uri)] = contents
 
     def session(self, name: str, auto_initialize: bool = True) -> _FakeSessionContext:
         data = self._server_data[name]
@@ -125,9 +137,9 @@ class MockMCPService:
         """0.3.x-style async get_tools — returns a coroutine that must be awaited."""
         return list(self._server_data[server_name]["tools"])
 
-    async def get_resources(self, *, server_name: str, uris: str) -> list[_FakeBlob]:
-        blob = self.resource_blobs.get((server_name, uris))
-        return [blob] if blob is not None else []
+    async def get_resources(self, *, server_name: str, uris: str) -> list[_FakeResourceContents]:
+        contents = self.resource_blobs.get((server_name, uris))
+        return [contents] if contents is not None else []
 
     async def __aexit__(self, *args: Any) -> None:
         self.closed = True
@@ -177,7 +189,7 @@ def mock_service() -> MockMCPService:
 
 def _patch_client(service: MockMCPService):
     return patch(
-        "langchain_mcp_adapters.client.MultiServerMCPClient",
+        "soothe_nano.mcp.mcp_client.MultiServerMCPClient",
         side_effect=service.construct,
     )
 
@@ -253,11 +265,17 @@ async def test_read_resource_decodes_bytes_and_str(mock_service: MockMCPService)
     with _patch_client(mock_service):
         await registry.initialize()
 
-    mock_service.set_resource_blob("tasks", "task://1", _FakeBlob(b"hello bytes"))
+    mock_service.set_resource_contents(
+        "tasks",
+        "task://1",
+        _FakeResourceContents(blob=base64.b64encode(b"hello bytes").decode("ascii")),
+    )
     content = await registry.read_resource("tasks", "task://1")
     assert content == "hello bytes"
 
-    mock_service.set_resource_blob("tasks", "task://1", _FakeBlob("plain string"))
+    mock_service.set_resource_contents(
+        "tasks", "task://1", _FakeResourceContents(text="plain string")
+    )
     content = await registry.read_resource("tasks", "task://1")
     assert content == "plain string"
 

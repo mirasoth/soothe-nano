@@ -180,12 +180,6 @@ def get_browser_user_data_dir(profile_name: str = "default") -> Path:
     return _ensure_dir_with_backend(user_data_dir)
 
 
-def get_browser_extensions_dir() -> Path:
-    """Get browser extensions directory."""
-    extensions_dir = get_browser_runtime_dir() / "extensions"
-    return _ensure_dir_with_backend(extensions_dir)
-
-
 def cleanup_browser_temp_files(session_id: str | None = None) -> None:
     """Clean up temporary browser files from completed sessions.
 

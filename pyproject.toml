@@ -38,8 +38,8 @@ dependencies = [
     "langchain>=1.4.0,<2.0.0",
     "langchain-community>=0.4.0,<1.0.0",
     "langchain-core>=1.6.0,<2.0.0",
-    "langchain-mcp-adapters>=0.3.0,<0.4.0",
-    "mcp>=1.24.0,<2.0.0",
+    "mcp>=2.3.0,<3.0.0",
+    "httpx2>=2.10.0",
     "langchain-openai>=1.0.0,<2.0.0",
     "langchain-quickjs>=0.3.0,<1.0.0",
     "langgraph>=1.2.14,<2.0.0",
@@ -50,7 +50,10 @@ dependencies = [
     "langchain-tavily>=0.2.18",
     "tarzi>=0.2.3,<0.3.0",
     "deepxiv-sdk>=0.2.5",
-    "browser-use>=0.11.0,<0.13.0",
+    "browser-use>=1.0.0,<2.0.0",
+    # browser-use 1.x pins google-genai to 2.x; langchain-google-genai 4.5+ needs
+    # google-genai>=3.2 (via soothe-deepagents>=4.2.7). Cap keeps pip resolvable.
+    "langchain-google-genai>=4.2.7,<4.5.0",
     "pyautogui>=0.9.54",
     "psycopg[binary,pool]>=3.2.0,<4.0.0",
     "pandas>=2.0.0",

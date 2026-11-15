@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import fnmatch
 import logging
 from datetime import UTC, datetime
@@ -32,14 +33,8 @@ async def fetch_tools_and_descriptors(
     server_name: str,
     server_cfg: MCPServerConfig,
 ) -> tuple[list[BaseTool], list[MCPToolDescriptor]]:
-    """Fetch tools from a server, applying filter and name mangling.
-
-    Awaits ``client.get_tools`` when it returns a coroutine (langchain-mcp-adapters
-    0.3.x) and uses the value directly when sync (0.2.x).
-    """
-    tools = client.get_tools(server_name=server_name)
-    if asyncio.iscoroutine(tools):
-        tools = await tools
+    """Fetch tools from a server, applying filter and name mangling."""
+    tools = await client.get_tools(server_name=server_name)
     if server_cfg.tool_filter:
         filtered: list[BaseTool] = []
         for tool in tools:
@@ -70,14 +65,18 @@ async def fetch_tools_and_descriptors(
 async def fetch_prompts(session: Any, *, server_name: str) -> list[dict]:
     """Fetch prompt descriptors from a session."""
     try:
-        prompts = await session.list_prompts()
+        result = await session.list_prompts()
     except AttributeError:
         return []
 
-    result: list[dict] = []
-    for prompt in prompts:
+    result_prompts = getattr(result, "prompts", None)
+    if result_prompts is None:
+        return []
+
+    result_list: list[dict] = []
+    for prompt in result_prompts:
         bare_name = prompt.name if hasattr(prompt, "name") else str(prompt)
-        result.append(
+        result_list.append(
             {
                 "name": build_mcp_tool_name(server_name, bare_name),
                 "bare_name": bare_name,
@@ -85,28 +84,32 @@ async def fetch_prompts(session: Any, *, server_name: str) -> list[dict]:
                 "server": server_name,
             }
         )
-    return result
+    return result_list
 
 
 async def fetch_resources(session: Any, *, server_name: str) -> list[dict]:
     """Fetch resource descriptors from a session."""
     try:
-        resources = await session.list_resources()
+        result = await session.list_resources()
     except AttributeError:
         return []
 
-    result: list[dict] = []
-    for resource in resources:
-        result.append(
+    result_resources = getattr(result, "resources", None)
+    if result_resources is None:
+        return []
+
+    descriptor_list: list[dict] = []
+    for resource in result_resources:
+        descriptor_list.append(
             {
                 "uri": resource.uri if hasattr(resource, "uri") else str(resource),
                 "name": resource.name if hasattr(resource, "name") else None,
                 "description": resource.description if hasattr(resource, "description") else None,
                 "server": server_name,
-                "mime_type": resource.mimeType if hasattr(resource, "mimeType") else None,
+                "mime_type": resource.mime_type if hasattr(resource, "mime_type") else None,
             }
         )
-    return result
+    return descriptor_list
 
 
 async def cleanup_stdio_connection(registry: MCPRegistry, name: str, deadline: float) -> None:
@@ -180,15 +183,20 @@ async def read_resource(registry: MCPRegistry, server: str, uri: str) -> str:
 
     start_time = datetime.now(UTC)
     try:
-        blobs = await registry._client.get_resources(server_name=server, uris=uri)
-        if not blobs:
+        contents = await registry._client.get_resources(server_name=server, uris=uri)
+        if not contents:
             raise ValueError(f"Resource {uri} not found on server {server}")
 
-        blob = blobs[0]
-        if hasattr(blob, "data"):
-            content = blob.data.decode("utf-8") if isinstance(blob.data, bytes) else str(blob.data)
+        item = contents[0]
+        text = getattr(item, "text", None)
+        if isinstance(text, str):
+            content = text
         else:
-            content = str(blob)
+            blob = getattr(item, "blob", None)
+            if isinstance(blob, str):
+                content = base64.b64decode(blob).decode("utf-8", errors="replace")
+            else:
+                content = str(item)
 
         latency_ms = (datetime.now(UTC) - start_time).total_seconds() * 1000
         emit_resource_read(server, uri, len(content), latency_ms)

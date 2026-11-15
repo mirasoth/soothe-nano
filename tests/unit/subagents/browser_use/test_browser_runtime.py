@@ -11,7 +11,6 @@ from soothe_nano.utils.browser_cdp import cleanup_stale_chrome
 from soothe_nano.utils.runtime import (
     cleanup_browser_temp_files,
     get_browser_downloads_dir,
-    get_browser_extensions_dir,
     get_browser_runtime_dir,
     get_browser_user_data_dir,
 )
@@ -55,14 +54,6 @@ def test_get_browser_user_data_dir() -> None:
         assert custom_dir.exists()
 
 
-def test_get_browser_extensions_dir() -> None:
-    """Test getting browser extensions directory."""
-    with _isolated_virtual_home():
-        extensions_dir = get_browser_extensions_dir()
-        assert extensions_dir.name == "extensions"
-        assert extensions_dir.exists()
-
-
 def test_cleanup_browser_temp_files() -> None:
     """Test cleaning up temporary browser files."""
     with _isolated_virtual_home():
@@ -83,9 +74,7 @@ def test_browser_use_subagent_config_defaults() -> None:
     assert config.runtime_dir == ""
     assert config.downloads_dir == ""
     assert config.user_data_dir == ""
-    assert config.extensions_dir == ""
     assert config.cleanup_on_exit is True
-    assert config.disable_extensions is True
     assert config.disable_cloud is True
     assert config.disable_telemetry is True
     assert config.synthesis_role == "default"
@@ -97,12 +86,12 @@ def test_browser_use_config_from_dict() -> None:
     config_dict = {
         "runtime_dir": "/custom/browser",
         "cleanup_on_exit": False,
-        "disable_extensions": False,
+        "disable_cloud": False,
     }
     browser_config = BrowserUseSubagentConfig(**config_dict)
     assert browser_config.runtime_dir == "/custom/browser"
     assert browser_config.cleanup_on_exit is False
-    assert browser_config.disable_extensions is False
+    assert browser_config.disable_cloud is False
 
 
 def test_runtime_directory_structure() -> None:
@@ -111,13 +100,11 @@ def test_runtime_directory_structure() -> None:
         runtime_dir = get_browser_runtime_dir()
         downloads_dir = get_browser_downloads_dir()
         user_data_dir = get_browser_user_data_dir()
-        extensions_dir = get_browser_extensions_dir()
 
         assert downloads_dir.parent == runtime_dir
         assert user_data_dir.parent.parent == runtime_dir
-        assert extensions_dir.parent == runtime_dir
 
-        for directory in [runtime_dir, downloads_dir, user_data_dir, extensions_dir]:
+        for directory in [runtime_dir, downloads_dir, user_data_dir]:
             assert directory.exists(), f"Directory {directory} should exist"
             assert directory.is_dir(), f"{directory} should be a directory"
 

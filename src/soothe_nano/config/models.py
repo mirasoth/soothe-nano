@@ -378,8 +378,9 @@ class MCPAuthHeaders(BaseModel):
 class MCPServerConfig(BaseModel):
     """Configuration for a single MCP server.
 
-    Supports four transports via MCPTransport enum. Compatible with
-    `langchain_mcp_adapters` connection types.
+    Supports four transports via MCPTransport enum. Connection specs mirror
+    the internal `mcp_client` module (stdio, sse, streamable_http; websocket
+    is config-accepted but has no mcp 2.x client).
 
     Args:
         name: Required unique server identifier.

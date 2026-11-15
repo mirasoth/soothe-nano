@@ -1,10 +1,10 @@
 """BrowserUse subagent — web browser automation specialist.
 
-Single-node LangGraph driving a browser-use loop for page navigation, element
-interaction, form filling, content extraction, and screenshots. A structured
-LLM call runs a post-run result quality gate. Wire events
-(started/step/completed) are emitted via ``emit_subagent_wire_event``. Uses
-only soothe-sdk (no daemon dependency).
+Single-node LangGraph driving a browser-use 1.x agent run for page navigation,
+element interaction, form filling, and content extraction. A structured LLM call
+runs a post-run result quality gate. Wire events (started/completed) are
+emitted via ``emit_subagent_wire_event``. Uses only soothe-sdk (no daemon
+dependency).
 """
 
 from __future__ import annotations
@@ -23,19 +23,16 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 from soothe_nano.subagents.browser_use._preview import preview_first
-from soothe_nano.subagents.browser_use.action_format import summarize_browser_step_action
 from soothe_nano.subagents.browser_use.config_model import BrowserUseSubagentConfig
 from soothe_nano.subagents.browser_use.display_summary import browser_use_result_summary_for_display
 from soothe_nano.subagents.browser_use.events import (
     BrowserUseCompletedEvent,
     BrowserUseStartedEvent,
-    BrowserUseStepCompletedEvent,
 )
 from soothe_nano.utils.browser_cdp import cleanup_stale_chrome
 from soothe_nano.utils.formatting import format_cli_error
 from soothe_nano.utils.runtime import (
     cleanup_browser_temp_files,
-    get_browser_extensions_dir,
     get_browser_runtime_dir,
     get_browser_user_data_dir,
 )
@@ -44,9 +41,7 @@ from soothe_nano.utils.subagent_emit import emit_subagent_wire_event
 logger = logging.getLogger(__name__)
 
 _NO_EXTRACTED_CONTENT = "BrowserUse task completed (no extracted content.)"
-_MAX_HISTORY_DIGEST_STEPS = 12
-# Matches browser_use's own TIMEOUT_AgentEventBusStop default.
-_AGENT_EVENTBUS_STOP_TIMEOUT_S = 3.0
+_MAX_HISTORY_DIGEST_MESSAGES = 24
 
 
 class _BrowserUseSynthesisDecision(BaseModel):
@@ -125,61 +120,50 @@ def _resolve_browser_llm_credentials(*, soothe_config: Any) -> tuple[str, str | 
     return model_name, kwargs.get("base_url"), kwargs.get("api_key")
 
 
-def _browser_history_had_no_progress(history: Any) -> bool:
-    """Return True when the browser agent never navigated or acted."""
-    entries = getattr(history, "history", None) or []
-    if not entries:
-        return True
-    for entry in entries:
-        state = getattr(entry, "state", None)
-        if state is not None:
-            url = str(getattr(state, "url", "") or "")
-            if url and url not in {"about:blank", "chrome://newtab/", ""}:
-                return False
-        model_output = getattr(entry, "model_output", None)
-        if model_output is not None:
-            action = getattr(model_output, "action", None)
-            if action:
-                return False
-    return True
+def _browser_result_had_no_progress(run_result: Any) -> bool:
+    """Return True when the browser run made no model requests at all."""
+    return int(getattr(run_result, "steps", 0) or 0) == 0
 
 
 def _format_browser_no_progress_error(*, model_name: str, steps: int) -> str:
     return (
-        "BrowserUse failed: the browser agent ran "
-        f"{steps} step(s) without navigating away from a blank page or "
-        "extracting content. "
+        "BrowserUse failed: the browser agent completed "
+        f"{steps} step(s) without extracting content. "
         f"Model: {model_name}. "
         "Check subagents.browser_use.model_role and provider API credentials."
     )
 
 
-def _history_digest_for_synthesis(history: Any) -> str:
-    """Return a concise, structured browser trajectory summary for synthesis prompts."""
-    entries = list(getattr(history, "history", None) or [])
-    if not entries:
-        return "(no browser step history)"
+def _message_part_text(part: Any) -> str:
+    """Best-effort readable text for one pydantic-ai message part."""
+    content = getattr(part, "content", None)
+    if isinstance(content, str) and content.strip():
+        return content
+    tool_name = getattr(part, "tool_name", None)
+    if tool_name:
+        args = getattr(part, "args", None)
+        return f"{tool_name}({args})" if args else f"{tool_name}()"
+    return ""
+
+
+def _history_digest_for_synthesis(run_result: Any) -> str:
+    """Return a concise browser trajectory digest (message transcript) for synthesis prompts."""
+    messages = list(getattr(run_result, "messages", None) or [])
+    if not messages:
+        return "(no browser message history)"
     lines: list[str] = []
-    for idx, entry in enumerate(entries[:_MAX_HISTORY_DIGEST_STEPS], start=1):
-        state = getattr(entry, "state", None)
-        url = preview_first(str(getattr(state, "url", "") or ""), 140)
-        title = preview_first(str(getattr(state, "title", "") or ""), 60)
-        tool_name = "Step"
-        action_preview = ""
-        model_output = getattr(entry, "model_output", None)
-        if model_output is not None:
-            action = getattr(model_output, "action", None)
-            if action is not None:
-                tool_name, action_preview = summarize_browser_step_action(action)
-        if not action_preview and url:
-            action_preview = url
-        line = (
-            f"{idx}. tool={tool_name}; action={action_preview or '(none)'}; "
-            f"url={url or '(none)'}; title={title or '(none)'}"
-        )
+    for idx, message in enumerate(messages[:_MAX_HISTORY_DIGEST_MESSAGES], start=1):
+        role = type(message).__name__
+        parts = getattr(message, "parts", None) or []
+        texts = [text for text in (_message_part_text(part) for part in parts) if text]
+        if not texts:
+            continue
+        line = f"{idx}. {role}: {preview_first(' '.join(texts), 200)}"
         lines.append(line)
-    if len(entries) > _MAX_HISTORY_DIGEST_STEPS:
-        lines.append(f"... ({len(entries) - _MAX_HISTORY_DIGEST_STEPS} more steps)")
+    if len(messages) > _MAX_HISTORY_DIGEST_MESSAGES:
+        lines.append(f"... ({len(messages) - _MAX_HISTORY_DIGEST_MESSAGES} more messages)")
+    if not lines:
+        return "(no readable browser message history)"
     return "\n".join(lines)
 
 
@@ -366,19 +350,10 @@ class _BrowserUseState(TypedDict):
 
 
 def _suppress_external_browser_loggers() -> None:
-    """Mute noisy third-party browser-use loggers."""
-    noisy_loggers = (
-        "browser_use",
-        "bubus",
-        "cdp_use",
-        "Agent",
-        "BrowserSession",
-        "tools",
-    )
-    for name in noisy_loggers:
-        ext_logger = logging.getLogger(name)
-        ext_logger.setLevel(logging.CRITICAL)
-        ext_logger.propagate = False
+    """Mute the noisy third-party browser-use logger."""
+    ext_logger = logging.getLogger("browser_use")
+    ext_logger.setLevel(logging.CRITICAL)
+    ext_logger.propagate = False
 
 
 class _SuppressOutput:
@@ -394,25 +369,6 @@ class _SuppressOutput:
         os.dup2(self._original_stdout, 1)
         os.close(self._devnull)
         os.close(self._original_stdout)
-
-
-async def _stop_browser_agent_eventbus(agent: Any, *, run_id: str) -> None:
-    """Shut down a browser ``Agent``'s own event bus.
-
-    ``Agent.run()`` normally does this on the way out, but we drive the agent
-    through a manual ``step()`` loop and never call it. A bus left running keeps
-    an ``asyncio`` task polling every 0.1s that also refuses cancellation, which
-    is enough to stop the calling process from ever exiting.
-    """
-    eventbus = getattr(agent, "eventbus", None)
-    if eventbus is None:
-        return
-    try:
-        await eventbus.stop(clear=True, timeout=_AGENT_EVENTBUS_STOP_TIMEOUT_S)
-    except Exception:
-        _log_browser_event("eventbus_stop_failed", run_id=run_id)
-    else:
-        _log_browser_event("eventbus_stop", run_id=run_id)
 
 
 def _build_browser_use_graph(
@@ -440,26 +396,17 @@ def _build_browser_use_graph(
     resolved_max_steps = max_steps if max_steps is not None else browser_config.max_steps
 
     async def _run_browser_use_async(state: _BrowserUseState | dict[str, Any]) -> dict[str, Any]:
-        if browser_config.disable_extensions:
-            os.environ["BROWSER_USE_DISABLE_EXTENSIONS"] = "1"
-
         if browser_config.disable_cloud:
-            os.environ["BROWSER_USE_CLOUD_SYNC"] = "false"
             os.environ.pop("BROWSER_USE_API_KEY", None)
 
         if browser_config.disable_telemetry:
             os.environ["ANONYMIZED_TELEMETRY"] = "false"
 
-        os.environ.setdefault("BROWSER_USE_LOGGING_LEVEL", "result")
-
-        start_timeout = str(browser_config.browser_start_timeout)
-        os.environ.setdefault("TIMEOUT_BrowserStartEvent", start_timeout)
-        os.environ.setdefault("TIMEOUT_BrowserLaunchEvent", start_timeout)
+        os.environ.setdefault("BROWSER_USE_LOGGING_LEVEL", "warning")
 
         import uuid
 
         browser_runtime_dir = browser_config.runtime_dir or str(get_browser_runtime_dir())
-        browser_extensions_dir = browser_config.extensions_dir or str(get_browser_extensions_dir())
         run_id = uuid.uuid4().hex[:8]
 
         ephemeral_profile_dir: str | None = None
@@ -478,8 +425,6 @@ def _build_browser_use_graph(
             browser_user_data_dir = str(get_browser_user_data_dir())
 
         os.environ["BROWSER_USE_CONFIG_DIR"] = browser_runtime_dir
-        os.environ["BROWSER_USE_PROFILES_DIR"] = browser_user_data_dir
-        os.environ["BROWSER_USE_EXTENSIONS_DIR"] = browser_extensions_dir
 
         _suppress_external_browser_loggers()
         output_suppressor = _SuppressOutput()
@@ -487,7 +432,6 @@ def _build_browser_use_graph(
         run_t0 = time.perf_counter()
         result = _NO_EXTRACTED_CONTENT
         run_success = True
-        agent: Any = None
 
         try:
             with output_suppressor:
@@ -566,13 +510,14 @@ def _build_browser_use_graph(
                         )
                         await asyncio.sleep(1)
 
-                extra_args = [f"--user-data-dir={browser_user_data_dir}"]
-                browser_instance = Browser(
-                    headless=headless if not cdp_url else False,
-                    cdp_url=cdp_url,
-                    args=extra_args,
-                    user_data_dir=browser_user_data_dir,
-                )
+                if cdp_url:
+                    browser_instance = Browser(cdp_url=cdp_url)
+                else:
+                    browser_instance = Browser(
+                        "chromium",
+                        headless=headless,
+                        user_data_dir=browser_user_data_dir,
+                    )
                 _log_browser_event(
                     "browser_ready",
                     run_id=run_id,
@@ -581,57 +526,6 @@ def _build_browser_use_graph(
                     user_data_dir=preview_first(str(browser_user_data_dir), 120),
                 )
 
-                last_step_wall = time.perf_counter()
-
-                async def on_step_end(agent: Any) -> None:
-                    nonlocal last_step_wall
-                    step_num = agent.state.n_steps
-                    last = agent.history.history[-1] if agent.history.history else None
-                    tool_name = "Step"
-                    action_desc = ""
-                    page_title = ""
-                    url = None
-                    if last:
-                        if hasattr(last, "model_output") and last.model_output:
-                            action = getattr(last.model_output, "action", None)
-                            if action is not None:
-                                tool_name, action_desc = summarize_browser_step_action(action)
-                        if hasattr(last, "state"):
-                            url = getattr(last.state, "url", None)
-                            page_title = preview_first(getattr(last.state, "title", ""), 60)
-                    if not action_desc and url:
-                        action_desc = preview_first(str(url), 100)
-                        if tool_name == "Step":
-                            tool_name = "Navigate"
-                    now = time.perf_counter()
-                    wall_since_prev = now - last_step_wall
-                    last_step_wall = now
-                    _log_browser_event(
-                        "step",
-                        run_id=run_id,
-                        step=step_num,
-                        dt_s=round(wall_since_prev, 2),
-                        elapsed_s=round(now - run_t0, 1),
-                        url=url or "",
-                        title=page_title,
-                        action=action_desc or "(none)",
-                        tool=tool_name,
-                        done=agent.history.is_done(),
-                        history_len=len(agent.history.history) if agent.history.history else 0,
-                    )
-                    emit_subagent_wire_event(
-                        BrowserUseStepCompletedEvent(
-                            step_index=int(step_num),
-                            tool_name=tool_name,
-                            url=str(url or ""),
-                            title=str(page_title),
-                            action_preview=str(action_desc or "")[:120],
-                            status="done",
-                            duration_ms=int(wall_since_prev * 1000),
-                        ).to_dict(),
-                        logger,
-                    )
-
                 agent = BrowserAgent(
                     task=task,
                     llm=llm,
@@ -639,50 +533,34 @@ def _build_browser_use_graph(
                     use_vision=use_vision,
                 )
 
-                _log_browser_event("session_start_begin", run_id=run_id)
-                sess_t0 = time.perf_counter()
-                await agent.browser_session.start()
                 _log_browser_event(
-                    "session_start_end",
+                    "agent_run_begin",
                     run_id=run_id,
-                    dt_s=round(time.perf_counter() - sess_t0, 2),
+                    max_steps=resolved_max_steps,
+                )
+                run_result = await agent.run(max_steps=resolved_max_steps)
+                _log_browser_event(
+                    "agent_run_end",
+                    run_id=run_id,
+                    dt_s=round(time.perf_counter() - run_t0, 1),
+                    status=getattr(run_result, "status", ""),
                 )
 
-                for step_idx in range(resolved_max_steps):
-                    try:
-                        iter_t0 = time.perf_counter()
-                        _log_browser_event(
-                            "step_begin",
-                            run_id=run_id,
-                            step=step_idx + 1,
-                            max_steps=resolved_max_steps,
-                            elapsed_s=round(iter_t0 - run_t0, 1),
-                        )
-                        await agent.step()
-                        _log_browser_event(
-                            "step_end",
-                            run_id=run_id,
-                            step=step_idx + 1,
-                            dt_s=round(time.perf_counter() - iter_t0, 2),
-                        )
-                        await on_step_end(agent)
-                        if agent.history.is_done():
-                            _log_browser_event(
-                                "run_done",
-                                run_id=run_id,
-                                step=step_idx + 1,
-                            )
-                            break
-                    except Exception:
-                        logger.exception("browser_use event=step_failed run_id=%s", run_id)
-                        raise
-
-                history = agent.history
-                steps_executed = len(history.history) if history.history else 0
-                extracted = history.final_result()
-                if extracted:
+                steps_executed = int(getattr(run_result, "steps", 0) or 0)
+                run_error = getattr(run_result, "error", None)
+                extracted = run_result.final_result()
+                if run_error:
+                    result = f"BrowserUse failed: {run_error}"
+                    run_success = False
+                    logger.error(
+                        "browser_use event=run_error run_id=%s steps=%d error=%s",
+                        run_id,
+                        steps_executed,
+                        preview_first(str(run_error), 300),
+                    )
+                elif extracted:
                     result = str(extracted)
-                elif _browser_history_had_no_progress(history):
+                elif _browser_result_had_no_progress(run_result):
                     result = _format_browser_no_progress_error(
                         model_name=model_name,
                         steps=steps_executed,
@@ -704,7 +582,7 @@ def _build_browser_use_graph(
                         model_name,
                     )
                 raw_result = str(result)
-                history_digest = _history_digest_for_synthesis(history)
+                history_digest = _history_digest_for_synthesis(run_result)
                 synthesis_decision = await _synthesize_browser_use_result(
                     task=str(task or ""),
                     raw_result=raw_result,
@@ -742,12 +620,6 @@ def _build_browser_use_graph(
                     logger,
                 )
 
-                try:
-                    _log_browser_event("session_stop_begin", run_id=run_id)
-                    await agent.browser_session.stop()
-                except Exception:
-                    _log_browser_event("session_stop_skip", run_id=run_id, reason="already stopped")
-
                 if browser_config.cleanup_on_exit:
                     cleanup_browser_temp_files()
                     _log_browser_event("temp_cleanup", run_id=run_id)
@@ -767,8 +639,6 @@ def _build_browser_use_graph(
                 logger,
             )
         finally:
-            await _stop_browser_agent_eventbus(agent, run_id=run_id)
-
             if ephemeral_profile_dir:
                 import shutil
 
