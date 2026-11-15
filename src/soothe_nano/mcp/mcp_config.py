@@ -32,7 +32,7 @@ def make_connection_spec(
     server: MCPServerConfig,
     workspace: str | None = None,
 ) -> dict[str, Any]:
-    """Map MCPServerConfig to langchain_mcp_adapters connection dict."""
+    """Map MCPServerConfig to the internal mcp_client connection spec format."""
     transport = server.transport
 
     if transport == MCPTransport.STDIO:

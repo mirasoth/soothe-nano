@@ -67,33 +67,24 @@ def test_browser_use_subagent_default_directories() -> None:
         with patch("soothe_nano.utils.runtime.get_browser_runtime_dir") as mock_runtime:
             with patch("soothe_nano.utils.runtime.get_browser_downloads_dir") as mock_downloads:
                 with patch("soothe_nano.utils.runtime.get_browser_user_data_dir") as mock_user_data:
-                    with patch(
-                        "soothe_nano.utils.runtime.get_browser_extensions_dir"
-                    ) as mock_extensions:
-                        # Mock the runtime directory functions
-                        mock_runtime.return_value = Path(tmpdir) / "agents" / "browser"
-                        mock_downloads.return_value = (
-                            Path(tmpdir) / "agents" / "browser" / "downloads"
-                        )
-                        mock_user_data.return_value = (
-                            Path(tmpdir) / "agents" / "browser" / "profiles" / "default"
-                        )
-                        mock_extensions.return_value = (
-                            Path(tmpdir) / "agents" / "browser" / "extensions"
-                        )
+                    # Mock the runtime directory functions
+                    mock_runtime.return_value = Path(tmpdir) / "agents" / "browser"
+                    mock_downloads.return_value = Path(tmpdir) / "agents" / "browser" / "downloads"
+                    mock_user_data.return_value = (
+                        Path(tmpdir) / "agents" / "browser" / "profiles" / "default"
+                    )
 
-                        # Create subagent with defaults
-                        subagent = create_browser_use_subagent(soothe_config=SootheConfig())
+                    # Create subagent with defaults
+                    subagent = create_browser_use_subagent(soothe_config=SootheConfig())
 
-                        # Verify subagent was created
-                        assert subagent is not None
-                        assert subagent["name"] == "browser_use"
+                    # Verify subagent was created
+                    assert subagent is not None
+                    assert subagent["name"] == "browser_use"
 
 
 def test_browser_use_subagent_config_from_soothe_config() -> None:
     """Test that browser_use subagent can be created from SootheConfig."""
     browser_config = BrowserUseSubagentConfig(
-        disable_extensions=True,
         disable_cloud=True,
         disable_telemetry=True,
         cleanup_on_exit=True,

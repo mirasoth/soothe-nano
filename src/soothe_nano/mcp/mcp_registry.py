@@ -37,7 +37,7 @@ REMOTE_BATCH_SIZE = 20
 
 
 class MCPRegistry:
-    """Connection manager wrapping MultiServerMCPClient."""
+    """Connection manager wrapping the internal MultiServerMCPClient (raw mcp SDK)."""
 
     def __init__(
         self,
@@ -89,11 +89,11 @@ class MCPRegistry:
             self._defer[server.name] = server.defer
 
         try:
-            from langchain_mcp_adapters.client import MultiServerMCPClient
+            from soothe_nano.mcp.mcp_client import MultiServerMCPClient
 
             self._client = MultiServerMCPClient(connections, tool_name_prefix=False)
         except ImportError as error:
-            logger.error("[MCP] Failed to import langchain_mcp_adapters: %s", error)
+            logger.error("[MCP] Failed to import mcp SDK: %s", error)
             for server in enabled:
                 emit_server_connect_failed(
                     server.name,

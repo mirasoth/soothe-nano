@@ -24,7 +24,7 @@ def test_emit_progress_uses_wire_bridge_exclusively() -> None:
     try:
         assert get_wire_bridge() is _sink
         emit_progress(
-            {"type": "soothe.subagent.browser_use.step.completed", "tool_name": "Navigate"},
+            {"type": "soothe.subagent.browser_use.completed", "tool_name": "Navigate"},
             logging.getLogger("test.progress"),
         )
     finally:
@@ -49,7 +49,7 @@ def test_emit_progress_uses_loop_bridge_when_context_missing() -> None:
             async def _emit_from_fresh_context() -> None:
                 emit_progress(
                     {
-                        "type": "soothe.subagent.browser_use.step.completed",
+                        "type": "soothe.subagent.browser_use.completed",
                         "tool_name": "Click",
                     },
                     logging.getLogger("test.progress.context-loss"),

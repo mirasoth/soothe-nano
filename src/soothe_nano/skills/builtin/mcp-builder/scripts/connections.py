@@ -4,10 +4,7 @@ from abc import ABC, abstractmethod
 from contextlib import AsyncExitStack
 from typing import Any
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.sse import sse_client
-from mcp.client.stdio import stdio_client
-from mcp.client.streamable_http import streamablehttp_client
+from soothe_nano.mcp.mcp_client import create_session
 
 
 class MCPConnection(ABC):
@@ -18,8 +15,8 @@ class MCPConnection(ABC):
         self._stack = None
 
     @abstractmethod
-    def _create_context(self):
-        """Create the connection context based on connection type."""
+    def _spec(self) -> dict[str, Any]:
+        """Connection spec for mcp_client.create_session (mcp 2.x)."""
 
     async def __aenter__(self):
         """Initialize MCP server connection."""
@@ -27,17 +24,7 @@ class MCPConnection(ABC):
         await self._stack.__aenter__()
 
         try:
-            ctx = self._create_context()
-            result = await self._stack.enter_async_context(ctx)
-
-            if len(result) == 2:
-                read, write = result
-            elif len(result) == 3:
-                read, write, _ = result
-            else:
-                raise ValueError(f"Unexpected context result: {result}")
-
-            session_ctx = ClientSession(read, write)
+            session_ctx = create_session(self._spec())
             self.session = await self._stack.enter_async_context(session_ctx)
             await self.session.initialize()
             return self
@@ -59,7 +46,7 @@ class MCPConnection(ABC):
             {
                 "name": tool.name,
                 "description": tool.description,
-                "input_schema": tool.inputSchema,
+                "input_schema": tool.input_schema,
             }
             for tool in response.tools
         ]
@@ -79,10 +66,13 @@ class MCPConnectionStdio(MCPConnection):
         self.args = args or []
         self.env = env
 
-    def _create_context(self):
-        return stdio_client(
-            StdioServerParameters(command=self.command, args=self.args, env=self.env)
-        )
+    def _spec(self) -> dict[str, Any]:
+        return {
+            "transport": "stdio",
+            "command": self.command,
+            "args": self.args,
+            "env": self.env,
+        }
 
 
 class MCPConnectionSSE(MCPConnection):
@@ -93,8 +83,8 @@ class MCPConnectionSSE(MCPConnection):
         self.url = url
         self.headers = headers or {}
 
-    def _create_context(self):
-        return sse_client(url=self.url, headers=self.headers)
+    def _spec(self) -> dict[str, Any]:
+        return {"transport": "sse", "url": self.url, "headers": self.headers}
 
 
 class MCPConnectionHTTP(MCPConnection):
@@ -105,8 +95,8 @@ class MCPConnectionHTTP(MCPConnection):
         self.url = url
         self.headers = headers or {}
 
-    def _create_context(self):
-        return streamablehttp_client(url=self.url, headers=self.headers)
+    def _spec(self) -> dict[str, Any]:
+        return {"transport": "streamable_http", "url": self.url, "headers": self.headers}
 
 
 def create_connection(

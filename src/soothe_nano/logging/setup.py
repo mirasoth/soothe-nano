@@ -247,8 +247,6 @@ def _suppress_noisy_third_party() -> None:
         "langsmith",
         "langfuse",
         "browser_use",
-        "bubus",
-        "cdp_use",
         "websockets",
         "requests",
         "LiteLLM",

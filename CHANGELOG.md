@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **browser-use upgraded to 1.x**: the `browser_use` subagent now runs on browser-use 1.x (Pydantic-AI engine). `Browser("chromium", ...)` replaces the removed `args`/0.x `BrowserSession` lifecycle (`agent.run(max_steps=...)` now manages start/stop itself), run errors surface through the result status, and the per-step `soothe.subagent.browser_use.step.completed` wire event was removed with the 0.x step loop (started/completed events remain). The 0.x-only `disable_extensions`, `browser_start_timeout`, and `extensions_dir` config knobs were dropped, along with the `action_format` module (1.x agents write Python, not step actions).
+- **MCP stack on mcp 2.x**: replaced the `langchain-mcp-adapters` dependency (pinned to `mcp<2.0.0`, incompatible with browser-use 1.x which requires `mcp==2.3.0`) with an internal `soothe_nano.mcp.mcp_client` — a `MultiServerMCPClient` over the raw mcp 2.x SDK exposing the same `session()`/`get_tools()`/`get_resources()` surface, LangChain `StructuredTool` conversion (fresh session per call, as before), and paginated tool listing. Fixes prompt/resource listing against mcp 2.x result models and decodes `TextResourceContents`/`BlobResourceContents` natively. The `websocket` MCP transport now fails fast at connect time (removed in mcp 2.x).
+- **Dependency pins for clean pip installs**: `browser-use>=1.0.0,<2.0.0` plus an explicit `langchain-google-genai>=4.2.7,<4.5.0` cap (4.5+ needs `google-genai>=3.2` while browser-use 1.x pins `google-genai==2.34.0`), and `mcp>=2.3.0,<3.0.0` with `httpx2`. Plain `pip install soothe-nano` now resolves without the google-genai conflict error.
+
 ## [2.0.8] - 2026-11-07
 
 ### Fixed

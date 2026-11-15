@@ -35,7 +35,6 @@ class TestBrowserUseSubagent:
         from soothe_nano.subagents.browser_use.config_model import BrowserUseSubagentConfig
 
         browser_config = BrowserUseSubagentConfig(
-            disable_extensions=False,
             disable_cloud=False,
             disable_telemetry=False,
         )

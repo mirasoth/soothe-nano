@@ -1,7 +1,7 @@
 """MCP Management package.
 
 Provides per-agent MCP subsystem with:
-- Per-server connection sharing via langchain_mcp_adapters.MultiServerMCPClient
+- Per-server connection sharing via the internal MultiServerMCPClient (raw mcp SDK)
 - Progressive tool surfacing via MCPActivationMiddleware
 - MCP prompts as slash commands (mcp__<server>__<prompt>)
 - MCP resources as @server:uri attachments

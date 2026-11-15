@@ -27,13 +27,10 @@ class BrowserUseSubagentConfig(BaseModel):
     runtime_dir: str = ""
     downloads_dir: str = ""
     user_data_dir: str = ""
-    extensions_dir: str = ""
     cleanup_on_exit: bool = True
-    disable_extensions: bool = True
     disable_cloud: bool = True
     disable_telemetry: bool = True
     enable_existing_browser: bool = True
-    browser_start_timeout: int = 90
     profile_mode: Literal["persistent", "ephemeral"] = "ephemeral"
     synthesis_role: str = Field(
         default="default",
