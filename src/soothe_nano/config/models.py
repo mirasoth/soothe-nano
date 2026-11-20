@@ -565,9 +565,36 @@ class ToolsConfig(BaseModel):
 
 
 class SandboxConfig(BaseModel):
-    """Sandbox-mode tool placement policy (active only with a sandbox backend).
+    """Sandbox-mode tool placement policy and ArcBox lifecycle configuration.
+
+    When ``enabled`` is true, the agent build creates an :class:`ArcBoxBackend`
+    that manages its own sandbox lifecycle (create/kill) via the arcbox SDK,
+    so the consuming integration (e.g. flowjet) does not need to call the
+    arcbox SDK directly — it only passes the config.
 
     Args:
+        enabled: Whether to run tool calls in an ArcBox microVM sandbox.
+            When ``False`` (default), tools run host-side and all lifecycle
+            fields are ignored.
+        image: Guest image reference; must ship python3 + POSIX coreutils.
+            Required when ``enabled`` is true.
+        vcpus: Per-sandbox vCPU allocation.
+        mem_mib: Per-sandbox memory in MiB.
+        network: Guest network egress. ``False`` (default) isolates the guest.
+        workspace_root: Guest path used as the default command cwd.
+        default_timeout: Fallback ``execute`` timeout in seconds.
+        connect_timeout: Seconds to wait for the first ``connect``.
+        idle_timeout_seconds: Guest idle reaper timeout.
+        min_free_bytes: Refuse turns when guest free space is below this
+            (bytes). ``0`` disables the probe. With native rootfs headroom
+            (``rootfs_headroom_mib``), the watermark is satisfied at birth
+            for typical images.
+        rootfs_headroom_mib: Headroom (MiB) the ArcBox rootfs formatter adds
+            to a template's content size, sizing real free space into the
+            ext4 image. Replaces the guest-image pad-file workaround. This
+            field is informational for nano (the daemon's ``vmm.toml`` is the
+            source of truth); it documents the expected headroom so the
+            watermark can be validated.
         on_deny: Action for tools whose placement resolves to ``deny``
             (registry miss with no declaration). "raise" (default,
             fail-closed) aborts the build; "drop" removes them with a warning.
@@ -588,10 +615,29 @@ class SandboxConfig(BaseModel):
             overrides without a separate config section.
     """
 
+    enabled: bool = Field(default=False)
+    image: str | None = Field(default=None)
+    vcpus: int = Field(default=2, ge=1)
+    mem_mib: int = Field(default=2048, ge=128)
+    network: bool = Field(default=False)
+    workspace_root: str = Field(default="/workspace")
+    default_timeout: int = Field(default=120, ge=1)
+    connect_timeout: float = Field(default=60.0, ge=1.0)
+    idle_timeout_seconds: float = Field(default=300.0, ge=1.0)
+    min_free_bytes: int = Field(default=0, ge=0)
+    rootfs_headroom_mib: int = Field(default=3072, ge=0)
     on_deny: Literal["raise", "drop"] = Field(default="raise")
     placement_overrides: dict[str, str] = Field(default_factory=dict)
     max_shuttle_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
     max_sandboxes: int | None = Field(default=8, ge=0)
+
+    @model_validator(mode="after")
+    def _validate_enabled_requires_image(self) -> SandboxConfig:
+        """``enabled=true`` requires a non-empty ``image``."""
+        if self.enabled and not (self.image and self.image.strip()):
+            msg = "sandbox.enabled=true requires sandbox.image (the guest image reference)"
+            raise ValueError(msg)
+        return self
 
 
 class SqliteRuntimeConfig(BaseModel):

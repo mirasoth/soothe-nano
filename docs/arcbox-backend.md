@@ -70,6 +70,38 @@ the sandbox default by design — only the four absolute prefixes route home.
 
 ## 3. Quick start
 
+### 3a. Config-driven (self-managed lifecycle) — recommended
+
+```yaml
+# nano.yml
+sandbox:
+  enabled: true
+  image: registry.cn-hangzhou.aliyuncs.com/lacogito/soothe-nano-vm-prod
+  vcpus: 2
+  mem_mib: 2048
+  workspace_root: /workspace
+  default_timeout: 120
+```
+
+```python
+from soothe_nano import create_nano_agent
+from soothe_nano.config import SootheConfig
+
+# The builder creates an ArcBoxBackend from sandbox config automatically;
+# the sandbox is created lazily on first execute and destroyed on agent
+# shutdown. No arcbox SDK calls required in the consuming integration.
+agent = create_nano_agent(SootheConfig())
+```
+
+- When `sandbox.enabled=true` and no explicit `backend` is passed, the builder
+  calls `ArcBoxBackend.from_config(...)` internally.
+- The sandbox is created with `wait_until_ready=True` and an idle timeout so the
+  daemon reaps it if the owning process dies.
+- Call `agent.backend.close()` (or the backend's `close()`) to destroy the
+  sandbox explicitly.
+
+### 3b. External lifecycle (caller-managed)
+
 ```python
 from soothe_nano import create_nano_agent
 from soothe_nano.config import SootheConfig

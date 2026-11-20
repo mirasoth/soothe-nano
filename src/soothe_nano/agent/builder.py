@@ -128,7 +128,14 @@ class AgentBuilder:
 
         # Backend resolution must precede tool resolution: a sandbox backend
         # rebinds the shell tool group and rewrites the FS surface below.
-        resolved_backend = backend or self._initialize_backend(resolved_policy)
+        # When sandbox.enabled is set in config and no explicit backend is
+        # passed, the builder creates an ArcBoxBackend that manages its own
+        # sandbox lifecycle — the consuming integration does not need to call
+        # the arcbox SDK directly.
+        if backend is None and self._config.sandbox.enabled:
+            resolved_backend = self._create_sandbox_backend(resolved_policy)
+        else:
+            resolved_backend = backend or self._initialize_backend(resolved_policy)
         sandbox_backend = self._extract_sandbox_backend(resolved_backend)
         if sandbox_backend is not None:
             resolved_backend = self._wrap_sandbox_backend(
@@ -551,6 +558,47 @@ class AgentBuilder:
             config=self._config,
             policy=policy,
         )
+
+    def _create_sandbox_backend(
+        self,
+        policy: PolicyProtocol | None,
+    ) -> BackendProtocol:
+        """Create an ArcBoxBackend from ``config.sandbox`` lifecycle settings.
+
+        When ``sandbox.enabled`` is true and no explicit backend was passed,
+        the builder creates a self-managing ArcBoxBackend: it creates a
+        sandbox via the arcbox SDK on first use (or at build time), connects
+        to it, and destroys it on agent shutdown. The consuming integration
+        (e.g. flowjet) only needs to set ``sandbox:`` in its config — no
+        direct arcbox SDK calls required.
+
+        Falls back to the host backend when the arcbox SDK is not installed,
+        with a warning, so a misconfigured environment degrades gracefully
+        rather than crashing the build.
+        """
+        from soothe_nano.sandbox import ArcBoxBackend, ArcBoxError
+
+        sb = self._config.sandbox
+        try:
+            backend = ArcBoxBackend.from_config(
+                image=sb.image or "",
+                vcpus=sb.vcpus,
+                mem_mib=sb.mem_mib,
+                network=sb.network,
+                workspace_root=sb.workspace_root,
+                default_timeout=sb.default_timeout,
+                connect_timeout=sb.connect_timeout,
+                idle_timeout_seconds=sb.idle_timeout_seconds,
+                min_free_bytes=sb.min_free_bytes,
+            )
+        except ArcBoxError as exc:
+            logger.warning(
+                "ArcBox sandbox backend unavailable (%s); falling back to host "
+                "execution. Install the arcbox SDK or set sandbox.enabled=false.",
+                exc,
+            )
+            return self._initialize_backend(policy)
+        return backend
 
     @staticmethod
     def _extract_sandbox_backend(backend: Any) -> Any:

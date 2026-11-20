@@ -142,7 +142,8 @@ class _SdkArcBoxClient:
     """``ArcBoxClient`` implementation over the real arcbox SDK (0.1.x).
 
     The sandbox must already exist; this client only connects to it by id.
-    Lifecycle (create/kill) belongs to the caller, per docs/arcbox-backend.md §10.
+    Lifecycle (create/kill) belongs to the caller, per docs/arcbox-backend.md §10,
+    unless a ``_SandboxManager`` is used (self-managed mode).
     """
 
     def __init__(
@@ -161,6 +162,12 @@ class _SdkArcBoxClient:
         self._connect_timeout = connect_timeout
         self._client: Any = None
         self._sandbox: Any = None
+
+    def set_sandbox_id(self, sandbox_id: str) -> None:
+        """Update the sandbox id (used after a manager creates the sandbox)."""
+        if sandbox_id and sandbox_id != self._sandbox_id:
+            self._sandbox_id = sandbox_id
+            self._sandbox = None  # force reconnect with the new id
 
     def _ensure_sandbox(self) -> Any:
         if self._sandbox is not None:
@@ -269,16 +276,131 @@ def _merge_output(stdout: str, stderr: str) -> str:
     return stdout or stderr
 
 
-class ArcBoxBackend(BaseSandbox):
-    """Backend bound to an existing ArcBox sandbox.
+class _SandboxManager:
+    """Create and own an ArcBox sandbox via the arcbox SDK.
 
-    The caller (e.g. a session layer) creates and owns the sandbox and
-    injects its id; this backend never creates or destroys VMs. Only the
-    four ``BaseSandbox`` abstract members are implemented — all file
+    Encapsulates the sandbox lifecycle (create → connect → kill) so the
+    ``ArcBoxBackend`` can be self-managing: the consuming integration sets
+    ``sandbox:`` in its config and never calls the arcbox SDK directly.
+
+    The sandbox is created lazily on first ``ensure_sandbox()`` and destroyed
+    on ``close()``. All SDK interaction runs on the background bridge loop.
+    """
+
+    def __init__(
+        self,
+        *,
+        image: str,
+        vcpus: int = 2,
+        mem_mib: int = 2048,
+        network: bool = False,
+        workspace_root: str = "/workspace",
+        connect_timeout: float = 60.0,
+        idle_timeout_seconds: float = 300.0,
+        api_url: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
+        self._image = image
+        self._vcpus = vcpus
+        self._mem_mib = mem_mib
+        self._network = network
+        self._workspace_root = workspace_root
+        self._connect_timeout = connect_timeout
+        self._idle_timeout_seconds = idle_timeout_seconds
+        self._api_url = api_url
+        self._api_key = api_key
+        self._sandbox_id: str | None = None
+        self._client: Any = None
+
+    def ensure_sandbox(self) -> str:
+        """Create the sandbox if needed and return its id.
+
+        Lazily creates a sandbox via the arcbox SDK on first call; subsequent
+        calls return the same id. The sandbox is created with
+        ``wait_until_ready=True`` and an idle timeout so the daemon reaps it
+        if the owning process dies.
+        """
+        if self._sandbox_id is not None:
+            return self._sandbox_id
+        try:
+            import arcbox  # noqa: PLC0415 -- optional dependency, lazy by design
+        except ImportError as exc:
+            raise ArcBoxError(
+                "The arcbox SDK is not available. It ships as a core dependency "
+                "of soothe-nano (arcbox>=0.1.0); reinstall the package or set "
+                "sandbox.enabled=false to run tools host-side."
+            ) from exc
+
+        conn_kwargs: dict[str, Any] = {}
+        if self._api_url:
+            conn_kwargs["api_url"] = self._api_url
+        if self._api_key:
+            conn_kwargs["api_key"] = self._api_key
+        connection = arcbox.Connection(**conn_kwargs) if conn_kwargs else None
+        self._client = arcbox.AsyncArcBox(connection)
+        self._sandbox_id = _call_sync(
+            self._create_and_wait(),
+            timeout=self._connect_timeout + _BRIDGE_GRACE_SECONDS,
+        )
+        return self._sandbox_id
+
+    async def _create_and_wait(self) -> str:
+        """Create a sandbox on the bridge loop and return its id."""
+        assert self._client is not None
+        sandbox = await self._client.create(
+            template=self._image,
+            vcpus=self._vcpus,
+            memory_mib=self._mem_mib,
+            network=self._network,
+            wait_until_ready=True,
+            idle_timeout=self._idle_timeout_seconds,
+            on_idle="kill",
+        )
+        return sandbox.id
+
+    def close(self) -> None:
+        """Kill the sandbox if one was created (best effort)."""
+        if self._sandbox_id is None or self._client is None:
+            return
+        try:
+            _call_sync(self._kill_sandbox(), timeout=_BRIDGE_GRACE_SECONDS)
+        except Exception:  # noqa: BLE001 -- close is best effort
+            logger.debug("ArcBox sandbox kill failed on close", exc_info=True)
+        finally:
+            self._sandbox_id = None
+            try:
+                _call_sync(self._client.aclose(), timeout=_BRIDGE_GRACE_SECONDS)
+            except Exception:  # noqa: BLE001
+                pass
+            self._client = None
+
+    async def _kill_sandbox(self) -> None:
+        assert self._client is not None and self._sandbox_id is not None
+        sandbox = await self._client.connect(self._sandbox_id, timeout=self._connect_timeout)
+        await sandbox.kill()
+
+
+class ArcBoxBackend(BaseSandbox):
+    """Backend bound to an ArcBox sandbox.
+
+    Two construction modes:
+
+    1. **External lifecycle** — the caller creates and owns the sandbox and
+       injects its id via ``sandbox_id``. This backend never creates or
+       destroys VMs. Use this when a session layer (e.g. flowjet) manages the
+       sandbox pool.
+
+    2. **Self-managed lifecycle** — use :meth:`from_config` to create a
+       backend that manages its own sandbox via the arcbox SDK. The sandbox is
+       created lazily on first ``execute`` and destroyed on :meth:`close`.
+       The consuming integration only sets ``sandbox:`` in its config — no
+       direct arcbox SDK calls required.
+
+    Only the four ``BaseSandbox`` abstract members are implemented — all file
     operations are derived from guest-side ``execute``.
 
     Args:
-        sandbox_id: Id of an existing, ready ArcBox sandbox.
+        sandbox_id: Id of an existing, ready ArcBox sandbox (external mode).
         client: Optional ``ArcBoxClient`` (inject a fake for tests);
             defaults to the real arcbox SDK adapter.
         workspace_root: Guest path used as the default command cwd.
@@ -290,6 +412,9 @@ class ArcBoxBackend(BaseSandbox):
         enable_capture_offload: Opt in to ``BaseSandbox`` output offload
             once the guest image is verified to ship POSIX shell +
             coreutils; ``None`` keeps the class default (off).
+        manager: Optional ``_SandboxManager`` for self-managed lifecycle.
+            When set, the backend creates the sandbox lazily on first
+            ``execute`` and destroys it on :meth:`close`.
     """
 
     def __init__(
@@ -304,13 +429,15 @@ class ArcBoxBackend(BaseSandbox):
         socket_path: str | None = None,
         connect_timeout: float = 60.0,
         enable_capture_offload: bool | None = None,
+        manager: _SandboxManager | None = None,
     ) -> None:
-        if not sandbox_id:
-            msg = "ArcBoxBackend requires a non-empty sandbox_id"
+        if not sandbox_id and manager is None:
+            msg = "ArcBoxBackend requires a non-empty sandbox_id or a manager"
             raise ValueError(msg)
         self._sandbox_id = sandbox_id
         self.workspace_root = workspace_root
         self.default_timeout = default_timeout
+        self._manager = manager
         self._client = client or _SdkArcBoxClient(
             sandbox_id,
             api_url=api_url,
@@ -321,11 +448,77 @@ class ArcBoxBackend(BaseSandbox):
         if enable_capture_offload is not None:
             self.enable_capture_offload = enable_capture_offload
 
+    @classmethod
+    def from_config(
+        cls,
+        *,
+        image: str,
+        vcpus: int = 2,
+        mem_mib: int = 2048,
+        network: bool = False,
+        workspace_root: str = "/workspace",
+        default_timeout: int = 120,
+        connect_timeout: float = 60.0,
+        idle_timeout_seconds: float = 300.0,
+        min_free_bytes: int = 0,
+        api_url: str | None = None,
+        api_key: str | None = None,
+    ) -> ArcBoxBackend:
+        """Create a self-managing ArcBoxBackend from sandbox config fields.
+
+        The sandbox is created lazily on first :meth:`execute` (via the
+        embedded :class:`_SandboxManager`) and destroyed on :meth:`close`.
+        The consuming integration does not need to call the arcbox SDK
+        directly — it only sets ``sandbox:`` in its config.
+
+        Args:
+            image: Guest image reference (e.g. a catalog template or
+                ``docker:<ref>``). Must ship python3 + POSIX coreutils.
+            vcpus: Per-sandbox vCPU allocation.
+            mem_mib: Per-sandbox memory in MiB.
+            network: Guest egress (NAT through the ArcBox host).
+            workspace_root: Guest path used as the default command cwd.
+            default_timeout: Fallback ``execute`` timeout in seconds.
+            connect_timeout: Seconds to wait for sandbox creation/connect.
+            idle_timeout_seconds: Daemon-side idle reaping deadline.
+            min_free_bytes: Unused here (the ArcBox native headroom replaces
+                the old pad-file + watermark workaround); kept for API
+                compatibility with config-driven construction.
+            api_url: Optional daemon URL (env fallback ``ARCBOX_API_URL``).
+            api_key: Optional daemon credential (env fallback ``ARCBOX_API_KEY``).
+        """
+        manager = _SandboxManager(
+            image=image,
+            vcpus=vcpus,
+            mem_mib=mem_mib,
+            network=network,
+            workspace_root=workspace_root,
+            connect_timeout=connect_timeout,
+            idle_timeout_seconds=idle_timeout_seconds,
+            api_url=api_url,
+            api_key=api_key,
+        )
+        return cls(
+            sandbox_id="",
+            workspace_root=workspace_root,
+            default_timeout=default_timeout,
+            connect_timeout=connect_timeout,
+            api_url=api_url,
+            api_key=api_key,
+            manager=manager,
+        )
+
     @property
     def id(self) -> str:
+        if self._manager is not None and not self._sandbox_id:
+            self._sandbox_id = self._manager.ensure_sandbox()
         return self._sandbox_id
 
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
+        if self._manager is not None and not self._sandbox_id:
+            self._sandbox_id = self._manager.ensure_sandbox()
+            if isinstance(self._client, _SdkArcBoxClient):
+                self._client.set_sandbox_id(self._sandbox_id)
         effective = self.default_timeout if timeout is None else int(timeout)
         result = self._client.run(command, cwd=self.workspace_root, timeout=effective)
         if result.error is not None:
@@ -349,6 +542,8 @@ class ArcBoxBackend(BaseSandbox):
         can fail open — a broken probe must never block a turn. This method
         never raises.
         """
+        if self._manager is not None and not self._sandbox_id:
+            return None  # sandbox not yet created — no probe possible
         target = path or self.workspace_root
         try:
             result = self._client.run(
@@ -409,3 +604,15 @@ class ArcBoxBackend(BaseSandbox):
                 logger.debug("ArcBox download failed for %s: %s", path, exc)
                 responses.append(FileDownloadResponse(path=path, content=None, error=str(exc)))
         return responses
+
+    def close(self) -> None:
+        """Destroy the sandbox if this backend owns its lifecycle.
+
+        In self-managed mode (created via :meth:`from_config`), the embedded
+        :class:`_SandboxManager` kills the sandbox and closes the SDK client.
+        In external mode (caller-injected ``sandbox_id``), this is a no-op —
+        the caller owns the lifecycle.
+        """
+        if self._manager is not None:
+            self._manager.close()
+            self._sandbox_id = ""
