@@ -129,9 +129,9 @@ class AgentBuilder:
         # Backend resolution must precede tool resolution: a sandbox backend
         # rebinds the shell tool group and rewrites the FS surface below.
         # When sandbox.enabled is set in config and no explicit backend is
-        # passed, the builder creates an ArcBoxBackend that manages its own
-        # sandbox lifecycle — the consuming integration does not need to call
-        # the arcbox SDK directly.
+        # passed, the builder creates a sandbox backend via the
+        # SandboxBackendFactory — the consuming integration does not need to
+        # call any sandbox SDK directly.
         if backend is None and self._config.sandbox.enabled:
             resolved_backend = self._create_sandbox_backend(resolved_policy)
         else:
@@ -563,42 +563,32 @@ class AgentBuilder:
         self,
         policy: PolicyProtocol | None,
     ) -> BackendProtocol:
-        """Create an ArcBoxBackend from ``config.sandbox`` lifecycle settings.
+        """Create a sandbox backend from ``config.sandbox.backend`` settings.
 
         When ``sandbox.enabled`` is true and no explicit backend was passed,
-        the builder creates a self-managing ArcBoxBackend: it creates a
-        sandbox via the arcbox SDK on first use (or at build time), connects
-        to it, and destroys it on agent shutdown. The consuming integration
-        (e.g. flowjet) only needs to set ``sandbox:`` in its config — no
-        direct arcbox SDK calls required.
+        the builder delegates to :class:`SandboxBackendFactory`, which
+        dispatches to the registered factory for ``sandbox.backend.type``.
+        The backend manages its own lifecycle (create/kill) so the consuming
+        integration only sets ``sandbox:`` in its config — no SDK calls.
 
-        Falls back to the host backend when the arcbox SDK is not installed,
-        with a warning, so a misconfigured environment degrades gracefully
-        rather than crashing the build.
+        Falls back to the host backend when the sandbox backend is not
+        available (e.g. SDK not installed), with a warning, so a misconfigured
+        environment degrades gracefully rather than crashing the build.
         """
-        from soothe_nano.sandbox import ArcBoxBackend, ArcBoxError
+        from soothe_nano.sandbox import create_sandbox_backend
+        from soothe_nano.sandbox.arcbox import ArcBoxError
 
         sb = self._config.sandbox
+        assert sb.backend is not None  # validated by SandboxConfig
         try:
-            backend = ArcBoxBackend.from_config(
-                image=sb.image or "",
-                vcpus=sb.vcpus,
-                mem_mib=sb.mem_mib,
-                network=sb.network,
-                workspace_root=sb.workspace_root,
-                default_timeout=sb.default_timeout,
-                connect_timeout=sb.connect_timeout,
-                idle_timeout_seconds=sb.idle_timeout_seconds,
-                min_free_bytes=sb.min_free_bytes,
-            )
+            return create_sandbox_backend(sb.backend)
         except ArcBoxError as exc:
             logger.warning(
-                "ArcBox sandbox backend unavailable (%s); falling back to host "
-                "execution. Install the arcbox SDK or set sandbox.enabled=false.",
+                "Sandbox backend unavailable (%s); falling back to host "
+                "execution. Install the required SDK or set sandbox.enabled=false.",
                 exc,
             )
             return self._initialize_backend(policy)
-        return backend
 
     @staticmethod
     def _extract_sandbox_backend(backend: Any) -> Any:

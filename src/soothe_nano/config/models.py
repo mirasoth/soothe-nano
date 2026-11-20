@@ -564,20 +564,17 @@ class ToolsConfig(BaseModel):
     deepxiv: DeepxivToolsConfig = Field(default_factory=lambda: DeepxivToolsConfig(enabled=False))
 
 
-class SandboxConfig(BaseModel):
-    """Sandbox-mode tool placement policy and ArcBox lifecycle configuration.
+class ArcBoxBackendConfig(BaseModel):
+    """Configuration for the ArcBox microVM sandbox backend.
 
-    When ``enabled`` is true, the agent build creates an :class:`ArcBoxBackend`
-    that manages its own sandbox lifecycle (create/kill) via the arcbox SDK,
-    so the consuming integration (e.g. flowjet) does not need to call the
-    arcbox SDK directly — it only passes the config.
+    Passed to :meth:`ArcBoxBackend.from_config` when ``sandbox.backend.type``
+    is ``"arcbox"``. All lifecycle (create/kill) is managed internally by the
+    backend via the arcbox SDK — the consuming integration never calls the SDK.
 
     Args:
-        enabled: Whether to run tool calls in an ArcBox microVM sandbox.
-            When ``False`` (default), tools run host-side and all lifecycle
-            fields are ignored.
+        type: Discriminator — always ``"arcbox"``.
         image: Guest image reference; must ship python3 + POSIX coreutils.
-            Required when ``enabled`` is true.
+            Required.
         vcpus: Per-sandbox vCPU allocation.
         mem_mib: Per-sandbox memory in MiB.
         network: Guest network egress. ``False`` (default) isolates the guest.
@@ -590,11 +587,98 @@ class SandboxConfig(BaseModel):
             (``rootfs_headroom_mib``), the watermark is satisfied at birth
             for typical images.
         rootfs_headroom_mib: Headroom (MiB) the ArcBox rootfs formatter adds
-            to a template's content size, sizing real free space into the
-            ext4 image. Replaces the guest-image pad-file workaround. This
-            field is informational for nano (the daemon's ``vmm.toml`` is the
-            source of truth); it documents the expected headroom so the
-            watermark can be validated.
+            to a template's content size. Informational for nano (the daemon's
+            ``vmm.toml`` is the source of truth); documents the expected
+            headroom so the watermark can be validated.
+        api_url: Optional daemon URL (env fallback ``ARCBOX_API_URL``).
+        api_key: Optional daemon credential (env fallback ``ARCBOX_API_KEY``).
+        socket_path: Optional daemon Unix socket path.
+    """
+
+    type: Literal["arcbox"] = Field(default="arcbox")
+    image: str = Field(...)
+    vcpus: int = Field(default=2, ge=1)
+    mem_mib: int = Field(default=2048, ge=128)
+    network: bool = Field(default=False)
+    workspace_root: str = Field(default="/workspace")
+    default_timeout: int = Field(default=120, ge=1)
+    connect_timeout: float = Field(default=60.0, ge=1.0)
+    idle_timeout_seconds: float = Field(default=300.0, ge=1.0)
+    min_free_bytes: int = Field(default=0, ge=0)
+    rootfs_headroom_mib: int = Field(default=3072, ge=0)
+    api_url: str | None = Field(default=None)
+    api_key: str | None = Field(default=None)
+    socket_path: str | None = Field(default=None)
+
+
+class SandboxBackendConfig(BaseModel):
+    """Backend-agnostic sandbox configuration with a type discriminator.
+
+    The ``backend`` field selects which sandbox backend to use. Each backend
+    type has its own config model (e.g. :class:`ArcBoxBackendConfig`) with
+    backend-specific lifecycle parameters. New backends are added by
+    registering a config model + factory in :mod:`soothe_nano.sandbox.factory`.
+
+    Args:
+        type: Backend type discriminator (``"arcbox"``).
+        config: Backend-specific config. When ``None``, defaults are used
+            (ArcBoxBackendConfig with only ``image`` required).
+    """
+
+    type: str = Field(default="arcbox")
+    arcbox: ArcBoxBackendConfig | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _validate_config_matches_type(self) -> SandboxBackendConfig:
+        """Ensure the config sub-field matches the declared ``type``."""
+        if self.type == "arcbox":
+            if self.arcbox is None:
+                msg = "sandbox.backend.type='arcbox' requires sandbox.backend.arcbox config"
+                raise ValueError(msg)
+        elif self.type not in _SANDBOX_BACKEND_TYPES:
+            msg = (
+                f"Unknown sandbox backend type: {self.type!r}. "
+                f"Known types: {', '.join(sorted(_SANDBOX_BACKEND_TYPES))}"
+            )
+            raise ValueError(msg)
+        return self
+
+
+# Registry of known backend type names. Populated by factory registration.
+_SANDBOX_BACKEND_TYPES: set[str] = set()
+
+
+def _register_backend_type(name: str) -> None:
+    """Register a sandbox backend type name (called by the factory module)."""
+    _SANDBOX_BACKEND_TYPES.add(name)
+
+
+class SandboxConfig(BaseModel):
+    """Sandbox-mode tool placement policy and backend configuration.
+
+    When ``enabled`` is true, the agent build creates a sandbox backend from
+    ``backend`` config via :class:`SandboxBackendFactory`. The backend manages
+    its own lifecycle (create/kill) so the consuming integration (e.g.
+    flowjet) does not need to call any sandbox SDK directly — it only passes
+    the config.
+
+    **New config format** (multi-backend, breaks backward compatibility with
+    the flat ``image`` / ``vcpus`` / etc. fields)::
+
+        sandbox:
+          enabled: true
+          backend:
+            type: arcbox
+            arcbox:
+              image: registry.../soothe-nano-vm-prod
+              vcpus: 2
+              mem_mib: 2048
+
+    Args:
+        enabled: Whether to run tool calls in a sandbox. When ``False``
+            (default), tools run host-side and ``backend`` is ignored.
+        backend: Backend selection + lifecycle config. Required when
+            ``enabled`` is true.
         on_deny: Action for tools whose placement resolves to ``deny``
             (registry miss with no declaration). "raise" (default,
             fail-closed) aborts the build; "drop" removes them with a warning.
@@ -616,26 +700,17 @@ class SandboxConfig(BaseModel):
     """
 
     enabled: bool = Field(default=False)
-    image: str | None = Field(default=None)
-    vcpus: int = Field(default=2, ge=1)
-    mem_mib: int = Field(default=2048, ge=128)
-    network: bool = Field(default=False)
-    workspace_root: str = Field(default="/workspace")
-    default_timeout: int = Field(default=120, ge=1)
-    connect_timeout: float = Field(default=60.0, ge=1.0)
-    idle_timeout_seconds: float = Field(default=300.0, ge=1.0)
-    min_free_bytes: int = Field(default=0, ge=0)
-    rootfs_headroom_mib: int = Field(default=3072, ge=0)
+    backend: SandboxBackendConfig | None = Field(default=None)
     on_deny: Literal["raise", "drop"] = Field(default="raise")
     placement_overrides: dict[str, str] = Field(default_factory=dict)
     max_shuttle_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
     max_sandboxes: int | None = Field(default=8, ge=0)
 
     @model_validator(mode="after")
-    def _validate_enabled_requires_image(self) -> SandboxConfig:
-        """``enabled=true`` requires a non-empty ``image``."""
-        if self.enabled and not (self.image and self.image.strip()):
-            msg = "sandbox.enabled=true requires sandbox.image (the guest image reference)"
+    def _validate_enabled_requires_backend(self) -> SandboxConfig:
+        """``enabled=true`` requires a ``backend`` config."""
+        if self.enabled and self.backend is None:
+            msg = "sandbox.enabled=true requires sandbox.backend config"
             raise ValueError(msg)
         return self
 

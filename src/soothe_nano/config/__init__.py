@@ -12,6 +12,7 @@ from soothe_nano.config.env import (
 )
 from soothe_nano.config.models import (
     AgentConfig,
+    ArcBoxBackendConfig,
     ClassifierConfig,
     ConsoleLoggingConfig,
     CoreAgentMiddlewareConfig,
@@ -32,6 +33,7 @@ from soothe_nano.config.models import (
     ProtocolsConfig,
     QuerySource,
     RouterProfile,
+    SandboxBackendConfig,
     SandboxConfig,
     SecurityConfig,
     SqliteRuntimeConfig,
@@ -52,6 +54,7 @@ __all__ = [
     "SOOTHE_HOME",
     "_ENV_VAR_RE",
     "AgentConfig",
+    "ArcBoxBackendConfig",
     "ClassifierConfig",
     "CoreAgentMiddlewareConfig",
     "ConsoleLoggingConfig",
@@ -72,6 +75,7 @@ __all__ = [
     "PostgresPoolConfig",
     "ProtocolsConfig",
     "QuerySource",
+    "SandboxBackendConfig",
     "SandboxConfig",
     "SecurityConfig",
     "SqliteRuntimeConfig",
