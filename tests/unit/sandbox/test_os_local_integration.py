@@ -9,6 +9,7 @@ small and fast. Everything that can be faked lives in
 
 from __future__ import annotations
 
+import os
 import shlex
 import socket
 import sys
@@ -39,8 +40,26 @@ def _sandbox(tmp_path: Path, **config_kwargs: object) -> OsLocalSandbox:
     return OsLocalSandbox(cfg)
 
 
+def _in_sandbox_python() -> str:
+    """Interpreter readable from every tier's view of the filesystem.
+
+    macOS narrow reads exclude ``$HOME`` (pyenv/venv interpreters) and
+    ``/Applications``; homebrew and CommandLineTools interpreters live in
+    the allowed trees.
+    """
+    if _IS_LINUX:
+        return "/usr/bin/python3"
+    for candidate in (
+        "/opt/homebrew/bin/python3",
+        "/Library/Developer/CommandLineTools/usr/bin/python3",
+    ):
+        if os.path.exists(candidate):
+            return candidate
+    return "/usr/bin/python3"
+
+
 class TestSeatbeltIntegration:
-    """Real sandbox-exec round-trips on macOS (v1 profile: broad read, narrow write)."""
+    """Real sandbox-exec round-trips on macOS (narrow read, narrow write)."""
 
     @requires_seatbelt
     def test_write_read_inside_workspace(self, tmp_path: Path) -> None:
@@ -79,11 +98,42 @@ class TestSeatbeltIntegration:
                 "    print('BLOCKED', exc)\n"
             )
             sandbox = _sandbox(tmp_path)
-            response = sandbox.execute(f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}")
+            response = sandbox.execute(
+                f"{shlex.quote(_in_sandbox_python())} -c {shlex.quote(code)}"
+            )
             assert "CONNECTED" not in response.output
             assert "BLOCKED" in response.output
         finally:
             listener.close()
+
+    @requires_seatbelt
+    def test_read_outside_allow_set_denied(self, tmp_path: Path) -> None:
+        """Read isolation parity: a home file is unreadable inside the sandbox."""
+        sandbox = _sandbox(tmp_path)
+        probe = Path.home() / ".soothe-os-sandbox-read-probe.txt"
+        if tmp_path.is_relative_to(Path.home()) or Path.home().is_relative_to(tmp_path):
+            pytest.skip("home and workspace overlap on this host")
+        probe.write_text("host-secret")
+        try:
+            response = sandbox.execute(f"cat {shlex.quote(str(probe))}")
+            assert response.exit_code != 0, response.output
+            assert "host-secret" not in response.output
+        finally:
+            probe.unlink(missing_ok=True)
+
+    @requires_seatbelt
+    def test_system_tools_run(self, tmp_path: Path) -> None:
+        """git and a python interpreter still work under the narrowed read set."""
+        sandbox = _sandbox(tmp_path)
+        response = sandbox.execute(
+            f"cd {shlex.quote(str(tmp_path))} && git init -q . && git config user.email t@t"
+            " && git config user.name t && echo x > a && git add a && git commit -qm i"
+            " && git log --oneline | head -1"
+        )
+        assert response.exit_code == 0, response.output
+        py = sandbox.execute(f"{shlex.quote(_in_sandbox_python())} -c 'print(\"py-ok\")'")
+        assert py.exit_code == 0, py.output
+        assert "py-ok" in py.output
 
     @requires_seatbelt
     def test_env_secret_never_crosses_boundary(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import struct
 import subprocess
 import sys
@@ -29,22 +30,27 @@ class FakePopen:
     def __init__(self, argv: list[str], **kwargs: Any) -> None:
         self.argv = argv
         self.kwargs = kwargs
-        self.communicated: list[int | None] = []
+        self.stdout = io.BytesIO(b"out")
+        self.stderr = io.BytesIO(b"err")
+        # sentinel pid beyond any real pid_max: tracking/kill probes can
+        # never hit a live process group
+        self.pid = 999_999_904
+        self.waits: list[int | None] = []
         self.timeout_at: int | None = None
         self.killed = False
         self.returncode = 0
 
-    def communicate(self, timeout: int | None = None) -> tuple[str, str]:
-        self.communicated.append(timeout)
-        # Only the first, timed communicate raises — the post-kill drain
-        # (communicate with no timeout) must succeed for the 124 contract.
+    def wait(self, timeout: int | None = None) -> int:
+        self.waits.append(timeout)
+        # Only the first, timed wait raises — the post-kill wait
+        # must succeed for the 124 contract.
         if (
             timeout is not None
             and self.timeout_at is not None
-            and len(self.communicated) >= self.timeout_at
+            and len(self.waits) >= self.timeout_at
         ):
             raise subprocess.TimeoutExpired(self.argv, timeout)
-        return "out", "err"
+        return self.returncode
 
     def kill(self) -> None:  # pragma: no cover - only reached via killpg override
         self.killed = True
@@ -139,6 +145,41 @@ class TestSeatbeltProfile:
         assert f'(subpath "{tmp_path.resolve()}")' in profile
         assert '(subpath "/private/tmp/scratch")' in profile
         assert '(literal "/dev/null")' in profile
+
+    def test_reads_are_narrow_bwrap_parity(self, tmp_path: Path) -> None:
+        """Read isolation parity with the bwrap bind set (no broad reads)."""
+        session = _SeatbeltSession(tmp_path.resolve(), Path("/private/tmp/scratch"))
+        profile = session._profile
+        # no broad read allowance (a bare "(allow file-read*)" would match every path)
+        assert "(allow file-read*)" not in profile
+        for tree in os_local._SEATBELT_READ_TREES:
+            assert f'(subpath "{tree}")' in profile, tree
+        # workspace + scratch appear in the narrowed read line (derived reads need it)
+        read_line = next(
+            line for line in profile.splitlines() if line.startswith("(allow file-read*")
+        )
+        assert f'(subpath "{tmp_path.resolve()}")' in read_line
+        assert '(subpath "/private/tmp/scratch")' in read_line
+        # entropy devices readable (interpreter startup)
+        assert '(literal "/dev/urandom")' in profile
+
+    def test_metadata_roots_and_ancestors_are_literal(self, tmp_path: Path) -> None:
+        session = _SeatbeltSession(tmp_path.resolve(), Path("/private/tmp/scratch"))
+        profile = session._profile
+        metadata_line = next(
+            line for line in profile.splitlines() if line.startswith("(allow file-read-metadata")
+        )
+        for root in os_local._SEATBELT_METADATA_ROOTS:
+            assert f'(literal "{root}")' in metadata_line, root
+        # every ws/scratch ancestor gets a metadata literal (git lstats the cwd chain)
+        for ancestor in os_local._seatbelt_ancestors(str(tmp_path.resolve())):
+            assert f'(literal "{ancestor}")' in metadata_line, ancestor
+
+    def test_profile_quotes_paths(self, tmp_path: Path) -> None:
+        quoted = tmp_path / 'we"ird'
+        quoted.mkdir()
+        session = _SeatbeltSession(quoted, Path("/private/tmp/scratch"))
+        assert 'we\\"ird' in session._profile  # quote escaped, profile still parses
 
     def test_build_argv(self, tmp_path: Path) -> None:
         session = _SeatbeltSession(tmp_path.resolve(), Path("/private/tmp/scratch"))
@@ -396,6 +437,9 @@ class TestExecuteSemantics:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake: FakePopen
     ) -> OsLocalSandbox:
         monkeypatch.setattr(os_local, "_probe_bwrap", lambda: True)
+        # fake pids must never touch real process groups
+        monkeypatch.setattr(os_local, "_pgid_alive", lambda pgid: False)
+        monkeypatch.setattr(os_local, "_kill_pgid", lambda pgid: None)
 
         def _popen(argv: list[str], **kwargs: Any) -> FakePopen:
             fake.argv = argv
@@ -414,6 +458,8 @@ class TestExecuteSemantics:
         assert fake.kwargs["cwd"] == str(tmp_path.resolve())
         assert fake.kwargs["env"]["HOME"] == str(tmp_path.resolve())
         assert fake.kwargs["start_new_session"] is True
+        # binary pipes: bounded readers decode, they do not rely on text mode
+        assert "text" not in fake.kwargs
 
     def test_timeout_uses_exit_code_124_convention(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -435,7 +481,25 @@ class TestExecuteSemantics:
         fake = FakePopen([])
         backend = self._make_with_popen(monkeypatch, tmp_path, fake)
         backend.execute("true")
-        assert fake.communicated == [120]
+        assert fake.waits == [120]
+
+    def test_output_capped_with_truncation_note(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """P0: an unbounded writer is capped, killed, and flagged."""
+        monkeypatch.setattr(os_local, "_EXECUTE_CAPTURE_CAP_BYTES", 8)
+        fake = FakePopen([])
+        fake.stdout = io.BytesIO(b"x" * 20)
+        backend = self._make_with_popen(monkeypatch, tmp_path, fake)
+        kills: list[int] = []
+        monkeypatch.setattr(os_local, "_kill_pgid", lambda pgid: kills.append(pgid))
+        response = backend.execute("cat /dev/zero")
+        stdout_only = response.output.split("\n")[0]
+        assert len(stdout_only) <= 8
+        assert stdout_only == "x" * 8
+        assert "truncated" in response.output
+        assert "process group was killed" in response.output
+        assert kills == [fake.pid]  # the reader kills the group on cap
 
     def test_popen_oserror_as_error_data(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -497,3 +561,62 @@ class TestClose:
         assert not Path(scratch).exists()
         assert backend._scratch == ""
         backend.close()  # no raise
+
+    def test_close_kills_live_process_groups(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """P2: background groups that outlived their command die on close."""
+        backend = make_backend(monkeypatch, tmp_path)
+        kills: list[int] = []
+        monkeypatch.setattr(os_local, "_kill_pgid", lambda pgid: kills.append(pgid))
+        monkeypatch.setattr(os_local, "_pgid_alive", lambda pgid: True)
+        # sentinel pgids beyond any real pid_max: a leaked entry can never
+        # hit a live process group
+        pgid_a, pgid_b = 999_999_901, 999_999_902
+        backend._track_pgid(pgid_a)
+        backend._track_pgid(pgid_b)
+        assert {pgid_a, pgid_b} <= os_local._pgid_registry
+        backend.close()
+        assert sorted(kills) == [pgid_a, pgid_b]
+        assert backend._pgids == set()
+        assert pgid_a not in os_local._pgid_registry and pgid_b not in os_local._pgid_registry
+
+    def test_reap_keeps_groups_with_live_members(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """A group that still has background members stays tracked (P2)."""
+        backend = make_backend(monkeypatch, tmp_path)
+        pgid = 999_999_903
+        monkeypatch.setattr(os_local, "_pgid_alive", lambda pgid: True)
+        backend._track_pgid(pgid)
+        backend._reap_pgid(pgid)  # command exited, group still alive
+        assert pgid in backend._pgids
+        monkeypatch.setattr(os_local, "_pgid_alive", lambda pgid: False)
+        backend._reap_pgid(pgid)  # last member gone
+        assert pgid not in backend._pgids
+
+
+class TestBoundedReader:
+    def test_read_bounded_caps_and_flags(self) -> None:
+        pipe = io.BytesIO(b"x" * 100)
+        data, truncated = os_local._read_bounded(pipe, 40)
+        assert data == b"x" * 40
+        assert truncated is True
+
+    def test_read_bounded_small_stream_not_truncated(self) -> None:
+        pipe = io.BytesIO(b"hello")
+        data, truncated = os_local._read_bounded(pipe, 40)
+        assert data == b"hello"
+        assert truncated is False
+
+    def test_read_bounded_exact_cap_is_truncated(self) -> None:
+        pipe = io.BytesIO(b"x" * 40)
+        data, truncated = os_local._read_bounded(pipe, 40)
+        assert data == b"x" * 40
+        assert truncated is True
+
+    def test_capture_cap_exceeds_guest_offload_window(self) -> None:
+        """The backend cap must never clip the 10 MiB guest-side offload."""
+        from soothe_deepagents.backends import sandbox as _sd_sandbox
+
+        assert os_local._EXECUTE_CAPTURE_CAP_BYTES > _sd_sandbox._EXECUTE_CAPTURE_MAX_BYTES

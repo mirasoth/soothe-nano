@@ -53,6 +53,47 @@ OsSandboxTier = Literal["seatbelt", "bwrap", "landlock"]
 
 _BWRAP_PROBE_TIMEOUT = 5.0
 
+# Per-stream output cap for ``execute`` — a backend-level safety net for raw
+# callers (tool-layer truncation and the 10 MiB guest-side capture offload in
+# ``BaseSandbox`` handle the model-facing paths). Must stay strictly above
+# ``BaseSandbox._EXECUTE_CAPTURE_MAX_BYTES`` so offloaded reads are never
+# clipped here. When the cap is hit the process group is killed and the
+# response carries a truncation note.
+_EXECUTE_CAPTURE_CAP_BYTES = 16 * 1024 * 1024
+
+# Seatbelt read-isolation set (parity with the bwrap bind list):
+# - ``_SEATBELT_READ_TREES``: system prefixes readable in full. Everything
+#   else (other users' data under ``/Users``, ``/private/var/db``, package
+#   roots under ``/Applications``, host ``/private/tmp``, ...) is denied.
+#   ``/opt`` stands in for the Linux ``/usr/local`` bind (homebrew prefix).
+# - ``_SEATBELT_METADATA_ROOTS``: firmlink/volume roots that need
+#   ``file-read-metadata`` for path resolution (``/etc`` -> ``/private/etc``,
+#   ...). Data reads of anything outside the read trees stay denied.
+# - ``/private/var/select``: the shell-selection symlink tree macOS consults
+#   when exec'ing ``/bin/sh`` (macOS-specific, no bwrap analog).
+# - entropy devices (``/dev/urandom`` ...) are readable: interpreters read
+#   them at startup (``_Py_HashRandomization_Init``).
+_SEATBELT_METADATA_ROOTS: tuple[str, ...] = (
+    "/",
+    "/dev",
+    "/etc",
+    "/opt",
+    "/private",
+    "/tmp",
+    "/Users",
+    "/var",
+)
+_SEATBELT_READ_TREES: tuple[str, ...] = (
+    "/Library",
+    "/System",
+    "/bin",
+    "/opt",
+    "/private/etc",
+    "/private/var/select",
+    "/sbin",
+    "/usr",
+)
+
 # bwrap spawn strategy, resolved once per process (see _bwrap_spawn_prefix).
 _BWRAP_SPAWN_PREFIX: list[str] | None = None
 _bwrap_prefix_lock = threading.Lock()
@@ -397,14 +438,40 @@ def _namespace_interpreter() -> tuple[str, tuple[str, ...]]:
     return str(interp), (str(interp.parent),)
 
 
+def _seatbelt_quote(path: str) -> str:
+    """Escape a path for a Seatbelt profile string literal."""
+    return path.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _seatbelt_ancestors(path: str) -> list[str]:
+    """Ancestor directories of ``path`` that need metadata-only reads.
+
+    Tools such as git lstat the whole cwd chain at startup; every ancestor of
+    the workspace/scratch roots gets ``file-read-metadata`` (literal) so the
+    cwd chain resolves. Directory listings and file data of the ancestors
+    stay denied — only the ``lstat`` of the directory entry itself is
+    permitted. Paths are resolved first: seatbelt checks firmlink-redirected
+    paths (``/var`` -> ``/private/var``) in their resolved form.
+    """
+    resolved = str(Path(path).resolve())
+    return [
+        str(parent)
+        for parent in Path(resolved).parents
+        if str(parent) != "/" and str(parent) not in _SEATBELT_METADATA_ROOTS
+    ]
+
+
 class _SeatbeltSession:
     """macOS tier: static Seatbelt profile + `sandbox-exec` spawn.
 
-    v1 boundary: writes, network, and signals are denied outside the
-    workspace/scratch; reads and exec are broadly allowed. Narrow subpath
-    read allowances abort process startup on current macOS (dyld paths only
-    match under unrestricted reads), so read-side restriction is a documented
-    trade-off — the load-bearing boundary is write/network reach.
+    Boundary: writes, network, and signals are denied outside the
+    workspace/scratch (deny default); reads are restricted to the system
+    trees (bwrap-parity set, see ``_SEATBELT_READ_TREES``), the entropy
+    devices, and the workspace/scratch — other users' data, host temp dirs,
+    and package roots are unreadable. Path-resolution metadata (firmlink
+    roots + workspace ancestors) is allowed because git and friends lstat
+    the cwd chain; the root directory itself is listable (getcwd walks
+    ``..``), exposing top-level names only.
     """
 
     def __init__(self, workspace: Path, scratch: Path) -> None:
@@ -413,19 +480,39 @@ class _SeatbeltSession:
         self._profile = self._build_profile()
 
     def _build_profile(self) -> str:
-        ws = str(self._workspace)
-        scratch = str(self._scratch)
-        return "\n".join(
-            [
-                "(version 1)",
-                "(deny default)",
-                "(allow file-read*)",
-                "(allow process-exec)",
-                "(allow process-fork)",
-                f'(allow file-write* (subpath "{ws}") (subpath "{scratch}"))',
-                '(allow file-write-data (literal "/dev/null"))',
-            ]
+        # Seatbelt matches firmlink-redirected paths (/var -> /private/var)
+        # in their resolved form — resolve before embedding in the profile.
+        ws = str(self._workspace.resolve())
+        scratch = str(self._scratch.resolve())
+        metadata_literals = sorted(
+            set(_SEATBELT_METADATA_ROOTS)
+            | {a for path in (ws, scratch) for a in _seatbelt_ancestors(path)}
         )
+        read_trees = sorted(set(_SEATBELT_READ_TREES) | {ws, scratch})
+        lines = [
+            "(version 1)",
+            "(deny default)",
+            "(allow process-exec)",
+            "(allow process-fork)",
+            # path resolution: lstat on firmlink/volume roots and the
+            # workspace/scratch ancestor chain; data reads stay denied.
+            "(allow file-read-metadata {})".format(
+                " ".join(f'(literal "{_seatbelt_quote(p)}")' for p in metadata_literals)
+            ),
+            # getcwd walks parent directories — readdir of "/" (names only).
+            '(allow file-read-data (literal "/"))',
+            # system read trees + workspace/scratch (bwrap-parity set).
+            "(allow file-read* {})".format(
+                " ".join(f'(subpath "{_seatbelt_quote(p)}")' for p in read_trees)
+            ),
+            # entropy devices read at interpreter startup.
+            '(allow file-read-data (literal "/dev/urandom") (literal "/dev/random")'
+            ' (literal "/dev/null"))',
+            f'(allow file-write* (subpath "{_seatbelt_quote(ws)}")'
+            f' (subpath "{_seatbelt_quote(scratch)}"))',
+            '(allow file-write-data (literal "/dev/null"))',
+        ]
+        return "\n".join(lines)
 
     def build_argv(self, command: str) -> list[str]:
         return ["sandbox-exec", "-p", self._profile, "/bin/sh", "-c", command]
@@ -517,30 +604,64 @@ class _LandlockSession:
 
 
 # ---------------------------------------------------------------------------
-# Scratch cleanup registry
+# Scratch cleanup + orphan process-group registry
 # ---------------------------------------------------------------------------
 
 _scratch_registry: set[str] = set()
-_scratch_lock = threading.Lock()
+_pgid_registry: set[int] = set()
+_lifecycle_lock = threading.Lock()
 
 
 def _register_scratch(path: str) -> None:
-    with _scratch_lock:
+    with _lifecycle_lock:
         _scratch_registry.add(path)
 
 
 def _unregister_scratch(path: str) -> None:
-    with _scratch_lock:
+    with _lifecycle_lock:
         _scratch_registry.discard(path)
 
 
 @atexit.register
 def _cleanup_scratch_dirs() -> None:
-    with _scratch_lock:
+    with _lifecycle_lock:
         dirs = list(_scratch_registry)
     for path in dirs:
         shutil.rmtree(path, ignore_errors=True)
         _unregister_scratch(path)
+
+
+def _pgid_alive(pgid: int) -> bool:
+    """True when the process group still has members (signal 0 probe)."""
+    try:
+        os.killpg(pgid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _kill_pgid(pgid: int) -> None:
+    """SIGKILL a process group; a vanished group is not an error."""
+    with contextlib.suppress(OSError, ProcessLookupError, PermissionError):
+        os.killpg(pgid, signal.SIGKILL)
+
+
+@atexit.register
+def _kill_live_process_groups() -> None:
+    """Last-resort orphan cleanup on interpreter exit.
+
+    Every ``execute`` runs in its own process group (``start_new_session``);
+    groups that outlive their command (background children) are killed here
+    and by ``OsLocalSandbox.close``. Hard interpreter death (SIGKILL, kernel
+    panic) cannot be caught from userspace — the bwrap tier additionally
+    carries kernel-level ``--die-with-parent`` for that case; seatbelt and
+    landlock have no equivalent, which is the documented residual gap.
+    """
+    with _lifecycle_lock:
+        pgids = list(_pgid_registry)
+        _pgid_registry.clear()
+    for pgid in pgids:
+        _kill_pgid(pgid)
 
 
 # ---------------------------------------------------------------------------
@@ -553,7 +674,33 @@ def _merge_output(stdout: str, stderr: str, note: str | None = None) -> str:
     return "\n".join(parts)
 
 
-def _kill_process_group(proc: subprocess.Popen[str]) -> None:
+def _read_bounded(pipe: object, cap: int) -> tuple[bytes, bool]:
+    """Drain a pipe up to ``cap`` bytes; never buffer more than the cap.
+
+    Binary chunks are read as they arrive (no line buffering), so a stream
+    without newlines still advances. When the cap is hit the reader stops —
+    the caller kills the process group to unblock the writer.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = pipe.read(65536)  # type: ignore[attr-defined]
+        if not chunk:
+            break
+        remaining = cap - total
+        if len(chunk) > remaining:
+            if remaining > 0:
+                chunks.append(chunk[:remaining])
+            total = cap
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+        if total >= cap:
+            break
+    return b"".join(chunks), total >= cap
+
+
+def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
     with contextlib.suppress(OSError, ProcessLookupError):
         os.killpg(proc.pid, signal.SIGKILL)
 
@@ -583,7 +730,7 @@ class OsLocalSandbox(BaseSandbox):
         self,
         config: OsLocalSandboxConfig,
         *,
-        popen: Callable[..., subprocess.Popen[str]] | None = None,
+        popen: Callable[..., subprocess.Popen[bytes]] | None = None,
     ) -> None:
         self._config = config
         self._id = f"os-sandbox-{uuid.uuid4().hex[:12]}"
@@ -598,6 +745,7 @@ class OsLocalSandbox(BaseSandbox):
         self._tier = self._select_tier(config)
         self._popen = popen or subprocess.Popen
         self._session: _SeatbeltSession | _BwrapSession | _LandlockSession | None = None
+        self._pgids: set[int] = set()
         logger.info("[Init] os_sandbox backend: id=%s tier=%s", self._id, self._tier)
 
     # -- identity / introspection ------------------------------------------------
@@ -720,7 +868,16 @@ class OsLocalSandbox(BaseSandbox):
     # -- BaseSandbox members -----------------------------------------------------
 
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
-        """Run one command inside the OS sandbox (errors and timeouts as data)."""
+        """Run one command inside the OS sandbox (errors and timeouts as data).
+
+        Output capture is bounded (``_EXECUTE_CAPTURE_CAP_BYTES`` per stream):
+        when the cap is hit the process group is killed and the response
+        carries a truncation note, so an unbounded writer can neither exhaust
+        memory nor stall the timeout. The command runs in its own process
+        group (``start_new_session``); groups that outlive the command
+        (background children) stay host-visible and are cleaned up by
+        ``close`` / interpreter exit.
+        """
         self._require_workspace()
         effective = self.default_timeout if timeout is None else int(timeout)
         argv = self._ensure_session().build_argv(command)
@@ -732,22 +889,60 @@ class OsLocalSandbox(BaseSandbox):
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
                 start_new_session=True,
             )
         except OSError as exc:
             return ExecuteResponse(output=f"Error: {exc}", exit_code=None)
+        pgid = proc.pid
+        self._track_pgid(pgid)
         try:
-            stdout, stderr = proc.communicate(timeout=effective)
-        except subprocess.TimeoutExpired:
-            _kill_process_group(proc)
-            stdout, stderr = proc.communicate()
-            note = f"Command exceeded timeout of {effective}s; the process group was killed."
-            return ExecuteResponse(output=_merge_output(stdout, stderr, note), exit_code=124)
-        return ExecuteResponse(
-            output=_merge_output(stdout, stderr),
-            exit_code=proc.returncode if proc.returncode is not None else -1,
-        )
+            captured: dict[str, tuple[bytes, bool]] = {}
+
+            def _drain(key: str, pipe: object) -> None:
+                captured[key] = _read_bounded(pipe, _EXECUTE_CAPTURE_CAP_BYTES)
+                if captured[key][1]:
+                    # Cap reached: the writer can never deliver more usable
+                    # output — unblock it (and the command) for good.
+                    _kill_pgid(pgid)
+
+            readers = [
+                threading.Thread(target=_drain, args=("stdout", proc.stdout), daemon=True),
+                threading.Thread(target=_drain, args=("stderr", proc.stderr), daemon=True),
+            ]
+            for reader in readers:
+                reader.start()
+            notes: list[str] = []
+            timed_out = False
+            try:
+                proc.wait(timeout=effective)
+            except subprocess.TimeoutExpired:
+                _kill_process_group(proc)
+                proc.wait()
+                timed_out = True
+                notes.append(
+                    f"Command exceeded timeout of {effective}s; the process group was killed."
+                )
+            for reader in readers:
+                reader.join()
+            for pipe in (proc.stdout, proc.stderr):
+                if pipe is not None:
+                    with contextlib.suppress(OSError, ValueError):
+                        pipe.close()
+            if any(truncated for _, truncated in captured.values()):
+                notes.append(
+                    f"Command output exceeded {_EXECUTE_CAPTURE_CAP_BYTES} bytes per stream"
+                    " and was truncated; the process group was killed."
+                )
+            stdout = captured.get("stdout", (b"", False))[0].decode(errors="replace")
+            stderr = captured.get("stderr", (b"", False))[0].decode(errors="replace")
+            return ExecuteResponse(
+                output=_merge_output(stdout, stderr, " ".join(notes) if notes else None),
+                exit_code=124
+                if timed_out
+                else (proc.returncode if proc.returncode is not None else -1),
+            )
+        finally:
+            self._reap_pgid(pgid)
 
     def upload_files(self, files: Sequence[tuple[str, bytes]]) -> list[FileUploadResponse]:
         responses: list[FileUploadResponse] = []
@@ -805,8 +1000,41 @@ class OsLocalSandbox(BaseSandbox):
 
     # -- lifecycle -------------------------------------------------------------------
 
+    def _track_pgid(self, pgid: int) -> None:
+        """Register a live process group for orphan cleanup (see close())."""
+        with _lifecycle_lock:
+            self._pgids.add(pgid)
+            _pgid_registry.add(pgid)
+
+    def _reap_pgid(self, pgid: int) -> None:
+        """Stop tracking a group once its last member is gone.
+
+        Groups that outlive their command (background children) stay
+        tracked — ``close`` and interpreter exit kill them.
+        """
+        if not _pgid_alive(pgid):
+            with _lifecycle_lock:
+                self._pgids.discard(pgid)
+                _pgid_registry.discard(pgid)
+
+    def _kill_live_groups(self) -> None:
+        with _lifecycle_lock:
+            pgids = list(self._pgids)
+            self._pgids.clear()
+        for pgid in pgids:
+            _kill_pgid(pgid)
+            with _lifecycle_lock:
+                _pgid_registry.discard(pgid)
+
     def close(self) -> None:
-        """Remove the session scratch directory (idempotent)."""
+        """Kill live sandbox process groups, then remove the scratch dir.
+
+        Idempotent. Killing the groups first means no sandboxed process is
+        still writing into the scratch tree while it is removed. Residual
+        gap: a hard interpreter crash (SIGKILL) bypasses this and atexit —
+        only the bwrap tier carries kernel-level ``--die-with-parent``.
+        """
+        self._kill_live_groups()
         if not self._scratch:
             return
         shutil.rmtree(self._scratch, ignore_errors=True)

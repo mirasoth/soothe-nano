@@ -111,8 +111,21 @@ def _process_dead(pid: int, timeout: float = 3.0) -> bool:
 
 
 def _in_sandbox_python() -> str:
-    """Interpreter that exists inside every tier's view of the filesystem."""
-    return "/usr/bin/python3" if sys.platform == "linux" else sys.executable
+    """Interpreter that exists inside every tier's view of the filesystem.
+
+    macOS narrow reads exclude ``$HOME`` (pyenv/venv interpreters) and
+    ``/Applications``; homebrew and CommandLineTools interpreters live in
+    the allowed read trees. Linux keeps the /usr bind.
+    """
+    if sys.platform == "linux":
+        return "/usr/bin/python3"
+    for candidate in (
+        "/opt/homebrew/bin/python3",
+        "/Library/Developer/CommandLineTools/usr/bin/python3",
+    ):
+        if os.path.exists(candidate):
+            return candidate
+    return "/usr/bin/python3"
 
 
 class TestFilesystemBoundary:
@@ -171,6 +184,25 @@ class TestFilesystemBoundary:
             pytest.skip("landlock has no /dev/null write carve-out (documented v1 shape)")
         response = sandbox.execute("echo x > /dev/null")
         assert response.exit_code == 0, response.output
+
+    def test_read_outside_allow_set_denied(self, sandbox: OsLocalSandbox, tmp_path: Path) -> None:
+        """Read isolation parity across tiers: a home file is unreadable.
+
+        seatbelt denies it (EPERM), bwrap never mounts it (ENOENT), landlock
+        denies it (the home tree is not in the allowed set) — every tier
+        fails the read, only the failure mode differs.
+        """
+        home = Path.home()
+        if tmp_path.is_relative_to(home) or home.is_relative_to(tmp_path):
+            pytest.skip("home and workspace overlap on this host")
+        probe = home / ".soothe-os-sandbox-itest-read-probe.txt"
+        probe.write_text("host-secret")
+        try:
+            response = sandbox.execute(f"cat {shlex.quote(str(probe))}")
+            assert response.exit_code != 0, response.output
+            assert "host-secret" not in response.output
+        finally:
+            probe.unlink(missing_ok=True)
 
 
 class TestNetworkBoundary:
@@ -253,6 +285,30 @@ class TestProcessLifecycle:
             pytest.fail(f"background pid {pid} is not host-visible (tier={sandbox.tier})")
         os.kill(pid, signal.SIGKILL)
         assert _process_dead(pid)
+
+    def test_close_kills_background_process_groups(
+        self, sandbox: OsLocalSandbox, tmp_path: Path
+    ) -> None:
+        """P2: groups that outlive their command die when the sandbox closes."""
+        pid_file = tmp_path / "bg.pid"
+        command = f"nohup sleep 300 >/dev/null 2>&1 & echo $! > {shlex.quote(str(pid_file))}"
+        response = sandbox.execute(command)
+        assert response.exit_code == 0, response.output
+        pid = int(pid_file.read_text().strip())
+        os.kill(pid, 0)  # alive while the sandbox is open
+        sandbox.close()
+        assert _process_dead(pid), f"background pid {pid} survived close (tier={sandbox.tier})"
+
+    def test_unbounded_output_capped_and_killed(self, sandbox: OsLocalSandbox) -> None:
+        """P0: an unbounded writer is capped, killed, and flagged."""
+        code = "import sys; sys.stdout.write('x' * 20_000_000)"
+        response = sandbox.execute(
+            f"{shlex.quote(_in_sandbox_python())} -c {shlex.quote(code)}", timeout=60
+        )
+        assert "truncated" in response.output, response.output[-200:]
+        assert "process group was killed" in response.output, response.output[-200:]
+        # far below the 20 MB the writer attempted
+        assert len(response.output) < 20_000_000
 
 
 class TestPathEscape:
