@@ -180,6 +180,73 @@ class TestBwrapArgv:
         # /tmp is a private tmpfs, not the host one
         tmpfs_idx = argv.index("--tmpfs")
         assert argv[tmpfs_idx + 1] == "/tmp"
+        # direct spawn mounts a fresh proc
+        proc_idx = argv.index("--proc")
+        assert argv[proc_idx + 1] == "/proc"
+
+    def test_nested_spawn_prefix_wraps_bwrap_and_ro_binds_proc(self, tmp_path: Path) -> None:
+        ws = tmp_path.resolve()
+        prefix = ["unshare", "--user", "--map-root-user"]
+        session = _BwrapSession(ws, ws / "scratch", spawn_prefix=prefix)
+        argv = session.build_argv("true")
+        assert argv[:3] == prefix
+        assert argv[3] == "bwrap"
+        bwrap_args = argv[3:]
+        assert "--proc" not in bwrap_args  # bwrap < 0.5 cannot mount proc in a userns
+        ro_proc = ["--ro-bind-try", "/proc", "/proc"]
+        assert any(bwrap_args[i : i + 3] == ro_proc for i in range(len(bwrap_args) - 2))
+
+
+class TestBwrapSpawnPrefix:
+    """Root-in-container detection: direct first, userns wrapper fallback."""
+
+    def test_non_root_uses_direct_without_probing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(os_local.os, "geteuid", lambda: 1000)
+        monkeypatch.setattr(
+            os_local,
+            "_bwrap_roundtrip",
+            lambda *a, **k: pytest.fail("non-root must never probe"),
+        )
+        monkeypatch.setattr(os_local, "_BWRAP_SPAWN_PREFIX", None)
+        assert os_local._bwrap_spawn_prefix() == []
+
+    def test_root_direct_failure_falls_back_to_nested(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[tuple[object, ...]] = []
+
+        def _fake_roundtrip(prefix: object, proc_args: object) -> bool:
+            calls.append((tuple(prefix), tuple(proc_args)))  # type: ignore[arg-type]
+            return len(tuple(prefix)) > 0  # direct fails, nested succeeds
+
+        monkeypatch.setattr(os_local.os, "geteuid", lambda: 0)
+        monkeypatch.setattr(os_local, "_bwrap_roundtrip", _fake_roundtrip)
+        monkeypatch.setattr(os_local, "_BWRAP_SPAWN_PREFIX", None)
+        assert os_local._bwrap_spawn_prefix() == ["unshare", "--user", "--map-root-user"]
+        # direct attempt used the fresh-proc form; nested used the ro-bind form
+        assert calls[0] == ((), ("--proc", "/proc"))
+        assert calls[1][0] == ("unshare", "--user", "--map-root-user")
+
+    def test_nested_failure_keeps_empty_prefix_and_probe_fails(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(os_local.os, "geteuid", lambda: 0)
+        monkeypatch.setattr(os_local, "_bwrap_roundtrip", lambda *a, **k: False)
+        monkeypatch.setattr(os_local, "_BWRAP_SPAWN_PREFIX", None)
+        assert os_local._bwrap_spawn_prefix() == []
+        assert os_local._probe_bwrap() is False
+
+    def test_probe_uses_the_resolved_spawn_form(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(os_local, "_bwrap_spawn_prefix", lambda: ["unshare", "--user"])
+        monkeypatch.setattr(
+            os_local,
+            "_bwrap_roundtrip",
+            lambda prefix, proc_args: (
+                tuple(prefix) == ("unshare", "--user")
+                and tuple(proc_args) == ("--ro-bind-try", "/proc", "/proc")
+            ),
+        )
+        assert os_local._probe_bwrap() is True
 
 
 class TestLandlockArgv:

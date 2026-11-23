@@ -53,6 +53,10 @@ OsSandboxTier = Literal["seatbelt", "bwrap", "landlock"]
 
 _BWRAP_PROBE_TIMEOUT = 5.0
 
+# bwrap spawn strategy, resolved once per process (see _bwrap_spawn_prefix).
+_BWRAP_SPAWN_PREFIX: list[str] | None = None
+_bwrap_prefix_lock = threading.Lock()
+
 # Landlock syscall numbers (identical across supported architectures).
 _LANDLOCK_CREATE_RULESET = 444
 _LANDLOCK_CREATE_RULESET_VERSION = 1
@@ -144,13 +148,41 @@ def _native_arch() -> str | None:
     return None
 
 
-def _probe_bwrap() -> bool:
-    """Real bwrap round-trip — the only trustworthy capable-userns probe."""
+def _bwrap_roundtrip(prefix: Sequence[str], proc_args: Sequence[str]) -> bool:
+    """One real bwrap round-trip using the session's bind skeleton."""
     if shutil.which("bwrap") is None:
         return False
+    if prefix and shutil.which("unshare") is None:
+        return False
+    argv = [
+        *prefix,
+        "bwrap",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--ro-bind-try",
+        "/usr/local",
+        "/usr/local",
+        "--ro-bind-try",
+        "/bin",
+        "/bin",
+        "--ro-bind-try",
+        "/lib",
+        "/lib",
+        "--ro-bind-try",
+        "/lib64",
+        "/lib64",
+        "--ro-bind-try",
+        "/etc",
+        "/etc",
+        *proc_args,
+        "--dev",
+        "/dev",
+        "true",
+    ]
     try:
         proc = subprocess.run(
-            ["bwrap", "--ro-bind", "/usr", "/usr", "--dev", "/dev", "true"],
+            argv,
             capture_output=True,
             timeout=_BWRAP_PROBE_TIMEOUT,
             check=False,
@@ -158,6 +190,54 @@ def _probe_bwrap() -> bool:
     except (OSError, subprocess.TimeoutExpired):
         return False
     return proc.returncode == 0
+
+
+def _bwrap_proc_args(prefix: Sequence[str]) -> list[str]:
+    """proc mount strategy for the resolved spawn form.
+
+    A fresh ``--proc`` mount is the default, but bwrap's sysrq-trigger probe
+    fails on user-namespace-mounted proc (bwrap < 0.5) — the userns-wrapped
+    spawn binds the host proc read-only instead. Visibility is equivalent:
+    the PID namespace is never unshared (§5.3), so the process set is the
+    same either way.
+    """
+    if prefix:
+        return ["--ro-bind-try", "/proc", "/proc"]
+    return ["--proc", "/proc"]
+
+
+def _bwrap_spawn_prefix() -> list[str]:
+    """argv prefix bwrap needs on this host (empty when bwrap runs direct).
+
+    bubblewrap running as euid 0 skips its own user namespace and creates
+    the mount namespace directly — EPERM on hosts that are root inside a
+    container without CAP_SYS_ADMIN over the initial namespace (a common
+    CI/dev-container shape). Wrapping bwrap in
+    ``unshare --user --map-root-user`` hands it a userns to operate from.
+    Detected empirically (a real round-trip, never a flag check), cached
+    per process.
+    """
+    global _BWRAP_SPAWN_PREFIX
+    with _bwrap_prefix_lock:
+        if _BWRAP_SPAWN_PREFIX is not None:
+            return _BWRAP_SPAWN_PREFIX
+        prefix: list[str] = []
+        if os.geteuid() == 0 and not _bwrap_roundtrip([], _bwrap_proc_args([])):
+            nested = ["unshare", "--user", "--map-root-user"]
+            if _bwrap_roundtrip(nested, _bwrap_proc_args(nested)):
+                logger.info(
+                    "os_sandbox: bwrap requires a userns wrapper on this host "
+                    "(root without CAP_SYS_ADMIN over the initial namespace)"
+                )
+                prefix = nested
+        _BWRAP_SPAWN_PREFIX = prefix
+        return prefix
+
+
+def _probe_bwrap() -> bool:
+    """Real bwrap round-trip with the spawn form this process would use."""
+    prefix = _bwrap_spawn_prefix()
+    return _bwrap_roundtrip(prefix, _bwrap_proc_args(prefix))
 
 
 def _probe_landlock() -> bool:
@@ -354,15 +434,17 @@ class _SeatbeltSession:
 class _BwrapSession:
     """Linux full tier: bwrap namespace + embedded seccomp launcher."""
 
-    def __init__(self, workspace: Path, scratch: Path) -> None:
+    def __init__(self, workspace: Path, scratch: Path, *, spawn_prefix: Sequence[str] = ()) -> None:
         self._workspace = workspace
         self._scratch = scratch
+        self._spawn_prefix = list(spawn_prefix)
         self._arch = _native_arch() or "x86_64"
         self._bpf = _build_seccomp_bpf(_AUDIT_ARCH[self._arch], _SECCOMP_DENY_SYSCALLS[self._arch])
 
     def build_argv(self, command: str) -> list[str]:
         interp, extra_binds = _namespace_interpreter()
         argv: list[str] = [
+            *self._spawn_prefix,
             "bwrap",
             "--ro-bind",
             "/usr",
@@ -382,8 +464,7 @@ class _BwrapSession:
             "--ro-bind-try",
             "/etc",
             "/etc",
-            "--proc",
-            "/proc",
+            *_bwrap_proc_args(self._spawn_prefix),
             "--dev",
             "/dev",
             "--tmpfs",
@@ -618,7 +699,7 @@ class OsLocalSandbox(BaseSandbox):
             if self._tier == "seatbelt":
                 self._session = _SeatbeltSession(ws, scratch)
             elif self._tier == "bwrap":
-                self._session = _BwrapSession(ws, scratch)
+                self._session = _BwrapSession(ws, scratch, spawn_prefix=_bwrap_spawn_prefix())
             else:
                 self._session = _LandlockSession(ws, scratch)
         return self._session

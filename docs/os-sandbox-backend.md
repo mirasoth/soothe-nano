@@ -10,6 +10,12 @@ deny-list (full tier) or Landlock (declared degraded tier).
 Design: [RFC-CORE-011](../../../.platonic/specs/coreagent/RFC-CORE-011-os-local-sandbox-backend.md) ·
 Implementation guide: [IG-CORE-007](../../../.platonic/impl/coreagent/IG-CORE-007-os-local-sandbox-backend.md).
 
+Isolation-capability integration suite:
+`tests/integration/test_os_sandbox_isolation.py` (run with
+`pytest tests/integration/ --run-integration`; executes real commands
+through every tier the host provides — verified on macOS Seatbelt and on
+Linux bubblewrap in a root-without-CAP_SYS_ADMIN container).
+
 Like the ArcBox backend this is a *remote-execution backend*: the sandbox
 provides a command environment and the workspace filesystem; reasoning, tool
 decisions, and credentials stay on the host. Unlike ArcBox there is **no
@@ -96,6 +102,20 @@ run under the namespace's interpreter) that:
    privilege-escalation block;
 2. installs the seccomp-bpf filter via `seccomp(2)` (ctypes);
 3. `os.execvp`s `/bin/sh -c <command>`.
+
+### Root-in-container hosts (userns wrapper)
+
+bubblewrap running as euid 0 skips its own user namespace and creates the
+mount namespace directly — `EPERM` on hosts that are root inside a
+container without `CAP_SYS_ADMIN` over the initial namespace (a common
+dev/CI container shape). The backend detects this empirically (a real
+bwrap round-trip, never a flag check, cached per process) and wraps bwrap
+in `unshare --user --map-root-user`. The userns-wrapped spawn binds the
+host `/proc` read-only instead of mounting a fresh proc (bwrap < 0.5's
+sysrq-trigger probe fails on userns-mounted proc); visibility is
+equivalent because the PID namespace is never unshared. The capability
+probe and every later spawn use the same resolved form — the probe can
+never pass while the spawn would fail.
 
 ### Seccomp filter shape
 
