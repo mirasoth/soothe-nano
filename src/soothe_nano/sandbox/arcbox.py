@@ -299,6 +299,7 @@ class _SandboxManager:
         idle_timeout_seconds: float = 300.0,
         api_url: str | None = None,
         api_key: str | None = None,
+        socket_path: str | None = None,
     ) -> None:
         self._image = image
         self._vcpus = vcpus
@@ -309,6 +310,7 @@ class _SandboxManager:
         self._idle_timeout_seconds = idle_timeout_seconds
         self._api_url = api_url
         self._api_key = api_key
+        self._socket_path = socket_path
         self._sandbox_id: str | None = None
         self._client: Any = None
 
@@ -336,6 +338,8 @@ class _SandboxManager:
             conn_kwargs["api_url"] = self._api_url
         if self._api_key:
             conn_kwargs["api_key"] = self._api_key
+        if self._socket_path:
+            conn_kwargs["socket_path"] = self._socket_path
         connection = arcbox.Connection(**conn_kwargs) if conn_kwargs else None
         self._client = arcbox.AsyncArcBox(connection)
         self._sandbox_id = _call_sync(
@@ -463,6 +467,7 @@ class ArcBoxBackend(BaseSandbox):
         min_free_bytes: int = 0,
         api_url: str | None = None,
         api_key: str | None = None,
+        socket_path: str | None = None,
     ) -> ArcBoxBackend:
         """Create a self-managing ArcBoxBackend from sandbox config fields.
 
@@ -486,6 +491,7 @@ class ArcBoxBackend(BaseSandbox):
                 compatibility with config-driven construction.
             api_url: Optional daemon URL (env fallback ``ARCBOX_API_URL``).
             api_key: Optional daemon credential (env fallback ``ARCBOX_API_KEY``).
+            socket_path: Optional daemon Unix socket path.
         """
         manager = _SandboxManager(
             image=image,
@@ -497,6 +503,7 @@ class ArcBoxBackend(BaseSandbox):
             idle_timeout_seconds=idle_timeout_seconds,
             api_url=api_url,
             api_key=api_key,
+            socket_path=socket_path,
         )
         return cls(
             sandbox_id="",
@@ -505,6 +512,7 @@ class ArcBoxBackend(BaseSandbox):
             connect_timeout=connect_timeout,
             api_url=api_url,
             api_key=api_key,
+            socket_path=socket_path,
             manager=manager,
         )
 

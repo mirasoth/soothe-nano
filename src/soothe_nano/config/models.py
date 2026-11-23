@@ -611,6 +611,71 @@ class ArcBoxBackendConfig(BaseModel):
     socket_path: str | None = Field(default=None)
 
 
+_OS_SANDBOX_DEFAULT_ENV_ALLOWLIST = (
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "TMPDIR",
+    "HOME",
+)
+
+
+class OsLocalEgressConfig(BaseModel):
+    """Egress policy surface for the os_sandbox backend (default deny).
+
+    Args:
+        enabled: Must stay ``False`` — the egress relay is a follow-up spec;
+            enabling it is a loud config-time failure, never a silent no-op.
+    """
+
+    enabled: bool = Field(default=False)
+
+    @model_validator(mode="after")
+    def _validate_not_yet_implemented(self) -> OsLocalEgressConfig:
+        if self.enabled:
+            msg = (
+                "sandbox.backend.os_sandbox.egress.enabled=true is not implemented yet — "
+                "the default-deny boundary stays closed until the egress relay lands"
+            )
+            raise ValueError(msg)
+        return self
+
+
+class OsLocalSandboxConfig(BaseModel):
+    """Configuration for the os_sandbox local OS-primitive backend.
+
+    Passed to :class:`OsLocalSandbox` when ``sandbox.backend.type`` is
+    ``"os_sandbox"``. The sandbox binds the real host workspace directory
+    with identity path mapping — guest paths are host paths.
+
+    Args:
+        type: Discriminator — always ``"os_sandbox"``.
+        workspace_root: Host workspace directory to bind. ``None`` defers to
+            builder injection via ``bind_workspace`` (thread-aware workspaces).
+        linux_tier: ``"auto"`` probes bwrap first, then Landlock (only when
+            ``allow_degraded``); explicit values pin a tier and fail loudly
+            when its OS prerequisites are missing.
+        allow_degraded: Gate for accepting the Landlock tier (file-access
+            denial only — no filesystem view, network, or process isolation).
+        default_timeout: Fallback ``execute`` timeout in seconds.
+        env_allowlist: Exact environment keys the child may receive; secrets
+            outside the allowlist never cross the sandbox boundary.
+        egress: Egress policy (default deny; see :class:`OsLocalEgressConfig`).
+    """
+
+    type: Literal["os_sandbox"] = Field(default="os_sandbox")
+    workspace_root: str | None = Field(default=None)
+    linux_tier: Literal["auto", "bwrap", "landlock"] = Field(default="auto")
+    allow_degraded: bool = Field(default=False)
+    default_timeout: int = Field(default=120, ge=1)
+    env_allowlist: list[str] = Field(
+        default_factory=lambda: list(_OS_SANDBOX_DEFAULT_ENV_ALLOWLIST)
+    )
+    egress: OsLocalEgressConfig = Field(default_factory=OsLocalEgressConfig)
+
+
 class SandboxBackendConfig(BaseModel):
     """Backend-agnostic sandbox configuration with a type discriminator.
 
@@ -620,13 +685,14 @@ class SandboxBackendConfig(BaseModel):
     registering a config model + factory in :mod:`soothe_nano.sandbox.factory`.
 
     Args:
-        type: Backend type discriminator (``"arcbox"``).
+        type: Backend type discriminator (``"arcbox"``, ``"os_sandbox"``).
         config: Backend-specific config. When ``None``, defaults are used
             (ArcBoxBackendConfig with only ``image`` required).
     """
 
     type: str = Field(default="arcbox")
     arcbox: ArcBoxBackendConfig | None = Field(default=None)
+    os_sandbox: OsLocalSandboxConfig | None = Field(default=None)
 
     @model_validator(mode="after")
     def _validate_config_matches_type(self) -> SandboxBackendConfig:
@@ -634,6 +700,10 @@ class SandboxBackendConfig(BaseModel):
         if self.type == "arcbox":
             if self.arcbox is None:
                 msg = "sandbox.backend.type='arcbox' requires sandbox.backend.arcbox config"
+                raise ValueError(msg)
+        elif self.type == "os_sandbox":
+            if self.os_sandbox is None:
+                msg = "sandbox.backend.type='os_sandbox' requires sandbox.backend.os_sandbox config"
                 raise ValueError(msg)
         elif self.type not in _SANDBOX_BACKEND_TYPES:
             msg = (
@@ -697,6 +767,10 @@ class SandboxConfig(BaseModel):
             policy doesn't spawn sandboxes); the host runtime reads it as
             the single source of truth for the cap, allowing operator
             overrides without a separate config section.
+        acknowledge_no_isolation: Explicit acknowledgment required when the
+            sandbox is disabled while ``security.hard_deny_severities``
+            excludes ``"critical"`` — combining no isolation with relaxed
+            hard denies must be a deliberate choice, never a silent default.
     """
 
     enabled: bool = Field(default=False)
@@ -705,6 +779,7 @@ class SandboxConfig(BaseModel):
     placement_overrides: dict[str, str] = Field(default_factory=dict)
     max_shuttle_bytes: int = Field(default=32 * 1024 * 1024, gt=0)
     max_sandboxes: int | None = Field(default=8, ge=0)
+    acknowledge_no_isolation: bool = Field(default=False)
 
     @model_validator(mode="after")
     def _validate_enabled_requires_backend(self) -> SandboxConfig:

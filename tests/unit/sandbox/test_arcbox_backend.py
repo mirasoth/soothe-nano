@@ -314,6 +314,36 @@ class TestBridgeLoop:
         assert _call_sync(quick(), timeout=5) == "done"
 
 
+class TestFromConfigSocketPath:
+    """RFC-CORE-011 P0-1: the daemon Unix socket path flows from config to transport."""
+
+    def test_from_config_forwards_socket_path(self) -> None:
+        from soothe_nano.sandbox.arcbox import _SandboxManager, _SdkArcBoxClient
+
+        backend = ArcBoxBackend.from_config(
+            image="debian:12", socket_path="/run/arcbox/arcbox.sock"
+        )
+        assert isinstance(backend._manager, _SandboxManager)
+        assert backend._manager._socket_path == "/run/arcbox/arcbox.sock"
+        assert isinstance(backend._client, _SdkArcBoxClient)
+        assert backend._client._socket_path == "/run/arcbox/arcbox.sock"
+
+    def test_from_config_defaults_to_none(self) -> None:
+        backend = ArcBoxBackend.from_config(image="debian:12")
+        assert backend._manager._socket_path is None
+        assert backend._client._socket_path is None
+
+    def test_factory_passes_socket_path_through(self) -> None:
+        from soothe_nano.config.models import ArcBoxBackendConfig, SandboxBackendConfig
+        from soothe_nano.sandbox.factory import create_sandbox_backend
+
+        cfg = ArcBoxBackendConfig(image="debian:12", socket_path="/run/arcbox/arcbox.sock")
+        backend = create_sandbox_backend(SandboxBackendConfig(type="arcbox", arcbox=cfg))
+        assert isinstance(backend, ArcBoxBackend)
+        assert backend._client._socket_path == "/run/arcbox/arcbox.sock"
+        assert backend._manager._socket_path == "/run/arcbox/arcbox.sock"
+
+
 class TestLazyImports:
     def test_package_importable_without_sdk_use(self) -> None:
         """Importing the sandbox package never requires the arcbox SDK."""
@@ -367,6 +397,7 @@ class TestSandboxInvariants:
             "socket_path",
             "connect_timeout",
             "enable_capture_offload",
+            "manager",  # self-managed lifecycle (from_config) — no credentials
         }
 
     def test_file_tools_and_shell_share_guest_workspace(self, tmp_path: Path) -> None:

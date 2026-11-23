@@ -406,6 +406,221 @@ class TestSandboxPlannerThreading:
         assert subagent_kwargs.get("sandbox_backend") is None
 
 
+class _RecordingOsSandbox(ArcBoxBackend):
+    """ArcBoxBackend shape plus the os_sandbox duck-typed extras.
+
+    ``bind_workspace`` and ``sandbox_posture`` are not protocol members —
+    the builder reaches them via ``getattr`` — so this fake mirrors the
+    os_sandbox surface for builder-level wiring assertions.
+    """
+
+    def __init__(self, posture: str = "full") -> None:
+        super().__init__(
+            sandbox_id="sbx-os-fake",
+            client=ScriptedClient(),
+            workspace_root="/workspace",
+        )
+        self.bound_roots: list[str] = []
+        self._fake_posture = posture
+
+    def bind_workspace(self, host_root: str) -> None:
+        self.bound_roots.append(host_root)
+
+    @property
+    def sandbox_posture(self) -> str:
+        return self._fake_posture
+
+    @property
+    def tier(self) -> str:
+        return "fake_tier"
+
+
+def _enabled_sandbox_cfg() -> SootheConfig:
+    """A config whose sandbox creation path activates (backend factory patched)."""
+    from soothe_nano.config.models import ArcBoxBackendConfig, SandboxBackendConfig
+
+    cfg = SootheConfig()
+    cfg.sandbox.enabled = True
+    cfg.sandbox.backend = SandboxBackendConfig(
+        type="arcbox", arcbox=ArcBoxBackendConfig(image="debian:12")
+    )
+    return cfg
+
+
+class TestSandboxBackendConstruction:
+    """RFC-CORE-011: builder-driven construction — engage or abort, never fallback."""
+
+    def test_construction_failure_propagates_no_host_fallback(self) -> None:
+        from soothe_nano.sandbox.arcbox import ArcBoxError
+
+        cfg = _enabled_sandbox_cfg()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        with patch(
+            "soothe_nano.sandbox.create_sandbox_backend",
+            side_effect=ArcBoxError("daemon unreachable"),
+        ):
+            with pytest.raises(ArcBoxError, match="daemon unreachable"):
+                TestAgentBuilderSandboxMode()._build_with_patches(
+                    cfg, None, resolve_kwargs, captured
+                )
+
+    def test_created_backend_flows_into_tool_resolution(self) -> None:
+        fake = _RecordingOsSandbox()
+        cfg = _enabled_sandbox_cfg()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        with patch("soothe_nano.sandbox.create_sandbox_backend", return_value=fake):
+            TestAgentBuilderSandboxMode()._build_with_patches(cfg, None, resolve_kwargs, captured)
+        assert resolve_kwargs.get("sandbox_backend") is fake
+        assert captured["backend"].default is fake
+
+    def test_explicit_backend_bypasses_factory(self) -> None:
+        sandbox = make_sandbox()
+        cfg = _enabled_sandbox_cfg()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        with patch("soothe_nano.sandbox.create_sandbox_backend") as factory:
+            TestAgentBuilderSandboxMode()._build_with_patches(
+                cfg, sandbox, resolve_kwargs, captured
+            )
+        factory.assert_not_called()
+
+
+class TestOsSandboxWorkspaceBinding:
+    """RFC-CORE-011: os_sandbox gets the resolved host workspace bound at build."""
+
+    def test_bind_workspace_called_with_effective_tool_workspace(self) -> None:
+        from soothe_nano.workspace.workspace_policy import WorkspaceResolver
+
+        fake = _RecordingOsSandbox()
+        cfg = _enabled_sandbox_cfg()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        with patch("soothe_nano.sandbox.create_sandbox_backend", return_value=fake):
+            TestAgentBuilderSandboxMode()._build_with_patches(cfg, None, resolve_kwargs, captured)
+        assert fake.bound_roots == [str(WorkspaceResolver.effective_tool_workspace(cfg))]
+
+    def test_arcbox_backend_without_binder_is_untouched(self) -> None:
+        """Backends without a ``bind_workspace`` extra are not coerced."""
+        sandbox = make_sandbox()  # ArcBoxBackend: no bind_workspace attribute
+        cfg = _enabled_sandbox_cfg()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        with patch("soothe_nano.sandbox.create_sandbox_backend", return_value=sandbox):
+            TestAgentBuilderSandboxMode()._build_with_patches(cfg, None, resolve_kwargs, captured)
+        assert not hasattr(sandbox, "bind_workspace")
+        assert resolve_kwargs.get("sandbox_backend") is sandbox
+
+
+class TestSandboxPosture:
+    """RFC-CORE-011: achieved posture (full | subprocess_only) derivation."""
+
+    def test_full_posture_with_guest_only_tools(self) -> None:
+        fake = _RecordingOsSandbox("full")
+        cfg = _enabled_sandbox_cfg()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        builder = AgentBuilder(cfg)
+        # Builtin infra tools (search_tools, ...) derive to host placement and
+        # legitimately force subprocess_only; force a guest-only surface to
+        # observe the full posture.
+        with (
+            patch("soothe_nano.sandbox.create_sandbox_backend", return_value=fake),
+            patch("soothe_nano.sandbox.placement.resolve_placement", return_value="guest"),
+        ):
+            TestAgentBuilderSandboxMode()._build_with_patches(
+                cfg, None, resolve_kwargs, captured, _builder=builder
+            )
+        placements = builder.placement_report.placements if builder.placement_report else {}
+        assert placements and all(p == "guest" for p in placements.values())
+        assert builder.sandbox_posture == "full"
+
+    def test_degraded_backend_tier_forces_subprocess_only(self) -> None:
+        fake = _RecordingOsSandbox("subprocess_only")
+        cfg = _enabled_sandbox_cfg()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        builder = AgentBuilder(cfg)
+        with patch("soothe_nano.sandbox.create_sandbox_backend", return_value=fake):
+            TestAgentBuilderSandboxMode()._build_with_patches(
+                cfg, None, resolve_kwargs, captured, _builder=builder
+            )
+        assert builder.sandbox_posture == "subprocess_only"
+
+    def test_host_routed_tool_forces_subprocess_only(self) -> None:
+        from types import SimpleNamespace
+
+        fake = _RecordingOsSandbox("full")
+        cfg = _enabled_sandbox_cfg()
+        cfg.sandbox.placement_overrides = {"analyze_image": "host"}
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        builder = AgentBuilder(cfg)
+        with patch("soothe_nano.sandbox.create_sandbox_backend", return_value=fake):
+            TestAgentBuilderSandboxMode()._build_with_patches(
+                cfg,
+                None,
+                resolve_kwargs,
+                captured,
+                tools=[SimpleNamespace(name="analyze_image")],
+                _builder=builder,
+            )
+        assert builder.sandbox_posture == "subprocess_only"
+
+    def test_host_build_leaves_posture_unset(self) -> None:
+        cfg = SootheConfig()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        builder = AgentBuilder(cfg)
+        TestAgentBuilderSandboxMode()._build_with_patches(
+            cfg, None, resolve_kwargs, captured, _builder=builder
+        )
+        assert builder.sandbox_posture is None
+
+
+class TestNoIsolationAcknowledgement:
+    """sandbox off + relaxed hard-deny severities requires an explicit ack."""
+
+    def test_relaxed_hard_deny_without_ack_raises(self) -> None:
+        cfg = SootheConfig()
+        cfg.security.hard_deny_severities = set()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        with pytest.raises(ValueError, match="acknowledge_no_isolation"):
+            TestAgentBuilderSandboxMode()._build_with_patches(cfg, None, resolve_kwargs, captured)
+
+    def test_ack_allows_the_relaxed_combination(self) -> None:
+        cfg = SootheConfig()
+        cfg.security.hard_deny_severities = set()
+        cfg.sandbox.acknowledge_no_isolation = True
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        TestAgentBuilderSandboxMode()._build_with_patches(
+            cfg, None, resolve_kwargs, captured
+        )  # builds fine
+
+    def test_enabled_sandbox_never_requires_ack(self) -> None:
+        fake = _RecordingOsSandbox()
+        cfg = _enabled_sandbox_cfg()
+        cfg.security.hard_deny_severities = set()
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        with patch("soothe_nano.sandbox.create_sandbox_backend", return_value=fake):
+            TestAgentBuilderSandboxMode()._build_with_patches(
+                cfg, None, resolve_kwargs, captured
+            )  # builds fine
+
+    def test_default_critical_severity_never_requires_ack(self) -> None:
+        cfg = SootheConfig()  # hard_deny_severities defaults to {"critical"}
+        assert "critical" in cfg.security.hard_deny_severities
+        captured: dict[str, Any] = {}
+        resolve_kwargs: dict[str, Any] = {}
+        TestAgentBuilderSandboxMode()._build_with_patches(
+            cfg, None, resolve_kwargs, captured
+        )  # builds fine
+
+
 class TestAllModesTimesSandbox:
     """docs/arcbox-backend.md §6: every interaction mode × sandbox combination must build."""
 

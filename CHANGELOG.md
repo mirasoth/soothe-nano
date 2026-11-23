@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`os_sandbox` backend (RFC-CORE-011)**: a local OS-primitive sandbox for hosts without hardware virtualization. macOS runs agent commands under a Seatbelt profile (`(deny default)`, writes confined to the workspace + session scratch, no network); Linux runs them inside a bubblewrap mount-namespace (identity workspace bind, tmpfs `/tmp`, `--unshare-net`, host-visible PIDs so `kill_process`/`tail_background_log` semantics are unchanged) with an in-namespace launcher applying `PR_SET_NO_NEW_PRIVS` plus an arch-aware seccomp-bpf **deny-list** (ENOSYS for unknown syscalls); a Landlock tier exists as an explicitly declared degraded option (`allow_degraded`, always reported `subprocess_only`). Selected via `sandbox.backend.type = "os_sandbox"`; construction probes the tier and fails loudly (`OsSandboxCapabilityError`) — there is no fallback to host execution. The child env is an exact allowlist (`env_allowlist`, `HOME`=workspace, `TMPDIR`=scratch) — host secrets never cross the boundary. See `docs/os-sandbox-backend.md`.
+- **`sandbox_posture`** on `AgentBuilder`: `full` | `subprocess_only` | `None`, derived after tool placement resolution — any tool placed `host`/`shuttle` (including the default-placed search tool group) forces `subprocess_only`; the build log lists the host-process tools.
+
+### Fixed
+
+- **P0: config-driven sandbox construction dropped `socket_path`** — `SandboxBackendFactory`'s arcbox branch now forwards `ArcBoxBackendConfig.socket_path` to `ArcBoxBackend.from_config` (previously the config path could never produce a working ArcBox backend even with a daemon socket configured).
+- **P0: silent host-execution fallback removed** — `AgentBuilder` no longer catches `ArcBoxError` during sandbox construction and continues with the host backend; a configured sandbox either engages or aborts the build with the original error.
+
+### Changed
+
+- **`sandbox.enabled=false` + relaxed hard-deny severities requires acknowledgment**: when the sandbox is disabled while `security.hard_deny_severities` excludes `"critical"`, agent build now requires `sandbox.acknowledge_no_isolation=true` (combining no isolation with relaxed hard denies must be deliberate; default severities `{"critical"}` are unaffected).
+
 ## [2.0.9] - 2026-11-15
 
 ### Fixed

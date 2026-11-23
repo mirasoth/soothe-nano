@@ -1,0 +1,199 @@
+# os_sandbox Backend (Local OS Primitives)
+
+**Status**: implemented (v1). Design record and integrator guide for
+`OsLocalSandbox` — the sandbox backend that gives the agent's shell plane a
+real OS-level isolation boundary on hosts **without hardware virtualization**
+(no `/dev/kvm`, no nested virtualization). macOS uses Seatbelt
+(`sandbox-exec`); Linux uses bubblewrap mount-namespaces plus a seccomp-bpf
+deny-list (full tier) or Landlock (declared degraded tier).
+
+Design: [RFC-CORE-011](../../../.platonic/specs/coreagent/RFC-CORE-011-os-local-sandbox-backend.md) ·
+Implementation guide: [IG-CORE-007](../../../.platonic/impl/coreagent/IG-CORE-007-os-local-sandbox-backend.md).
+
+Like the ArcBox backend this is a *remote-execution backend*: the sandbox
+provides a command environment and the workspace filesystem; reasoning, tool
+decisions, and credentials stay on the host. Unlike ArcBox there is **no
+second OS** — guest paths are host paths and guest PIDs are host PIDs.
+
+## 1. Overview
+
+- `OsLocalSandbox(BaseSandbox)` is constructed from
+  `sandbox.backend.os_sandbox` config via the existing factory (`type:
+  "os_sandbox"`), or injected programmatically.
+- It implements only `BaseSandbox`'s four abstract members — `id`,
+  `execute`, `upload_files`, `download_files`. `ls` / `read` / `write` /
+  `edit` / `glob` / `grep` / `delete` are derived by `BaseSandbox` from
+  sandboxed `execute`.
+- **Identity path mapping**: the workspace directory is bound as-is
+  (guest path == host path). No path rewriting exists anywhere in the stack.
+- **Host-visible PIDs**: the PID namespace is never unshared.
+  `run_background` children stay enumerable; `kill_process` and
+  `tail_background_log` semantics are identical to host mode.
+- Construction failures (`OsSandboxCapabilityError`) and build-time
+  failures propagate — **there is no fallback to host execution** (§8).
+- Model credentials never enter the backend or the sandboxed child env (§6).
+
+## 2. Tier matrix
+
+| Platform | Tier | Mechanism | Posture |
+|---|---|---|---|
+| macOS | `seatbelt` (only) | `sandbox-exec` profile: `(deny default)`, broad read, narrow write, no network | `full` |
+| Linux | `bwrap` (full) | mount-ns (`--bind` ws, `--ro-bind` system trees, `--tmpfs /tmp`, `--dev`, `--unshare-net`) + in-namespace launcher: `PR_SET_NO_NEW_PRIVS` → seccomp deny-list → `exec` | `full` |
+| Linux | `landlock` (degraded) | Landlock ruleset: read/write confined to workspace + scratch, read-only on system trees | `subprocess_only` |
+
+Tier selection (`linux_tier`):
+
+- `auto` (default): probe bwrap first (a real `bwrap` round-trip — the only
+  trustworthy capable-userns probe); if unavailable and `allow_degraded` is
+  set, Landlock; otherwise `OsSandboxCapabilityError`.
+- `bwrap` / `landlock`: pin a tier; a missing prerequisite is a loud
+  capability error. `landlock` additionally requires `allow_degraded: true`
+  — a declared degradation is never silent.
+
+## 3. Seatbelt v1 boundary (macOS)
+
+The profile is regenerated per exec from the session template:
+
+```
+(version 1)
+(deny default)
+(allow file-read*)
+(allow process-exec)
+(allow process-fork)
+(allow file-write* (subpath "<resolved workspace>") (subpath "<scratch>"))
+(allow file-write-data (literal "/dev/null"))
+```
+
+- **Writes** are denied everywhere except the workspace and the session
+  scratch directory; both subpaths use `Path.resolve()`-ed real paths
+  (firmlink resolution: `/tmp` → `/private/tmp` — unresolved subpath
+  literals never match).
+- **Network and signals** are denied by the root `(deny default)` rule.
+- `/dev/null` write-data is allowed so standard redirects keep working.
+- The command runs under `/bin/sh -c` (zsh refuses to start under
+  deny-default).
+
+**v1 read-side trade-off**: reads are unrestricted. Narrow subpath read
+allowances break process startup on current macOS — dyld resolves library
+paths through firmlinks that only match under unrestricted reads (SIGABRT
+at exec). The load-bearing v1 boundary is write/network/signal reach;
+read-side restriction is a documented follow-up (RFC §8).
+
+## 4. Linux full tier: bwrap + seccomp
+
+`_BwrapSession` builds the argv (pure, unit-tested):
+
+- `--ro-bind` / `--ro-bind-try` of `/usr`, `/usr/local`, `/bin`, `/lib`,
+  `/lib64`, `/etc`; `--proc /proc`; `--dev /dev`; `--tmpfs /tmp`.
+- `--bind` (read-write, **identity**) of the workspace and scratch.
+- `--die-with-parent --new-session --unshare-net`.
+- **No `--unshare-pid`** — see §1 (host-visible PIDs).
+
+The final argv element is an embedded Python launcher (`_LAUNCHER_SECCOMP`,
+run under the namespace's interpreter) that:
+
+1. sets `PR_SET_NO_NEW_PRIVS` first — the load-bearing
+   privilege-escalation block;
+2. installs the seccomp-bpf filter via `seccomp(2)` (ctypes);
+3. `os.execvp`s `/bin/sh -c <command>`.
+
+### Seccomp filter shape
+
+An **arch-aware deny-list** (not an allowlist): unknown syscalls return
+`ENOSYS` (libc falls back gracefully for benign newer syscalls like `rseq`),
+unknown architectures are denied, and the denied set — namespace and
+privilege escapes (`unshare`, `setns`, `mount`, `umount2`, `pivot_root`,
+`ptrace`, `clone3`, `bpf`, module loading, `perf_event_open`, ...) — fails
+outright. The mount-ns/userns capability checks carry the boundary; seccomp
+is defense in depth on top of `no_new_privs`.
+
+The BPF program is built parent-side (`_build_seccomp_bpf`) — layout and
+jump targets are unit-testable on every platform — and shipped to the
+launcher as hex.
+
+## 5. Landlock degraded tier
+
+`_LandlockSession` runs a launcher (`sys.executable -c`) that applies a
+Landlock ruleset (kernel ≥ 5.13, probed by forking a child that calls
+`landlock_create_ruleset`): read/write confined to workspace + scratch,
+read-only on the system trees, then execs the command. No filesystem view,
+no network restriction, no process isolation — hence opt-in
+(`allow_degraded`) and always reported as `sandbox_posture =
+subprocess_only`.
+
+## 6. Environment and credentials
+
+The child env is constructed from an exact allowlist
+(`env_allowlist`, default `PATH`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TERM`,
+`TMPDIR`, `HOME`) with two overrides: `HOME` = workspace root, `TMPDIR` =
+session scratch. No wholesale inheritance: host-env secrets outside the
+allowlist never cross the boundary. Network egress is default-deny on every
+tier; the egress relay is a follow-up spec and `egress.enabled=true` is a
+loud config-time failure today.
+
+## 7. Workspace binding
+
+The workspace root is bound at construction when `workspace_root` is set,
+otherwise injected by the agent builder (`_bind_os_sandbox_workspace`) from
+`WorkspaceResolver.effective_tool_workspace` — the same root the host
+backend resolves, never the process CWD. Rebinding a different root is a
+loud `OsSandboxConfigError`; a non-directory root likewise. `upload_files` /
+`download_files` resolve paths symlink-safely against the bound roots and
+reject escapes with `INVALID_PATH`.
+
+## 8. Fail-loud invariants
+
+- Configured sandbox that cannot engage (probe failure) ⇒
+  `OsSandboxCapabilityError` at construction — never host execution.
+- Builder-level: construction failures abort the agent build with the
+  original error (the ArcBox-era silent host fallback is removed).
+- `sandbox.enabled=false` combined with `security.hard_deny_severities`
+  excluding `"critical"` requires `sandbox.acknowledge_no_isolation: true`
+  — the two risk-relaxing knobs must never combine silently.
+
+## 9. Posture reporting
+
+`OsLocalSandbox.sandbox_posture` reports the backend tier
+(`full` for seatbelt/bwrap, `subprocess_only` for Landlock). The **agent
+builder's** `sandbox_posture` is authoritative: any tool placed `host` or
+`shuttle` (executing in the agent process, outside the kernel boundary)
+forces `subprocess_only` even on a full-tier backend. On the default
+placement table this is the expected steady state; the build log lists the
+host-process tools explicitly.
+
+```json
+{
+  "sandbox_posture": "subprocess_only",
+  "engine": "bwrap",
+  "host_placement_tools": ["search_tools", "search_skills", "invoke_skill"]
+}
+```
+
+## 10. Config reference
+
+```yaml
+sandbox:
+  enabled: true
+  backend:
+    type: os_sandbox
+    os_sandbox:
+      workspace_root: null       # null = builder binds the effective tool workspace
+      linux_tier: auto           # auto | bwrap | landlock
+      allow_degraded: false      # gate for the Landlock tier
+      default_timeout: 120
+      env_allowlist: [PATH, LANG, LC_ALL, LC_CTYPE, TERM, TMPDIR, HOME]
+      egress:
+        enabled: false           # must stay false (relay is a follow-up)
+```
+
+## 11. Limitations
+
+- **No egress relay yet** — network is default-deny with no approved-egress
+  path (RFC-CORE-011 §5.5 defines the seam; the proxy is follow-up).
+- **Seatbelt v1 reads unrestricted** (§3 trade-off).
+- **Landlock tier** is file-access denial only — no filesystem view, no
+  network or process isolation.
+- **Not a VM**: same kernel, same filesystem, same PIDs as the host. The
+  boundary is syscall/mount/policy-level, appropriate for containing
+  agent-generated command behavior, not for running untrusted code with
+  hostile kernel-exploit capability (that is ArcBox/microVM's tier).

@@ -132,8 +132,9 @@ class AgentBuilder:
         # passed, the builder creates a sandbox backend via the
         # SandboxBackendFactory — the consuming integration does not need to
         # call any sandbox SDK directly.
+        self._validate_sandbox_risk_posture()
         if backend is None and self._config.sandbox.enabled:
-            resolved_backend = self._create_sandbox_backend(resolved_policy)
+            resolved_backend = self._create_sandbox_backend()
         else:
             resolved_backend = backend or self._initialize_backend(resolved_policy)
         sandbox_backend = self._extract_sandbox_backend(resolved_backend)
@@ -197,6 +198,7 @@ class AgentBuilder:
             # wrapped for guest-path byte transfer.
             self._resolved_backend = resolved_backend
             all_tools = self._finalize_tool_placements(all_tools)
+            self._resolve_sandbox_posture(sandbox_backend)
 
         tools_ms = (time.perf_counter() - tools_start) * 1000
         logger.info("[Init] Tools resolved: %d tools (%.1fms)", len(all_tools), tools_ms)
@@ -559,10 +561,7 @@ class AgentBuilder:
             policy=policy,
         )
 
-    def _create_sandbox_backend(
-        self,
-        policy: PolicyProtocol | None,
-    ) -> BackendProtocol:
+    def _create_sandbox_backend(self) -> BackendProtocol:
         """Create a sandbox backend from ``config.sandbox.backend`` settings.
 
         When ``sandbox.enabled`` is true and no explicit backend was passed,
@@ -571,24 +570,30 @@ class AgentBuilder:
         The backend manages its own lifecycle (create/kill) so the consuming
         integration only sets ``sandbox:`` in its config — no SDK calls.
 
-        Falls back to the host backend when the sandbox backend is not
-        available (e.g. SDK not installed), with a warning, so a misconfigured
-        environment degrades gracefully rather than crashing the build.
+        Construction failures propagate: a configured sandbox either engages
+        or aborts the build (never a silent host-execution fallback).
         """
         from soothe_nano.sandbox import create_sandbox_backend
-        from soothe_nano.sandbox.arcbox import ArcBoxError
 
         sb = self._config.sandbox
         assert sb.backend is not None  # validated by SandboxConfig
-        try:
-            return create_sandbox_backend(sb.backend)
-        except ArcBoxError as exc:
-            logger.warning(
-                "Sandbox backend unavailable (%s); falling back to host "
-                "execution. Install the required SDK or set sandbox.enabled=false.",
-                exc,
-            )
-            return self._initialize_backend(policy)
+        backend = create_sandbox_backend(sb.backend)
+        self._bind_os_sandbox_workspace(backend)
+        return backend
+
+    def _bind_os_sandbox_workspace(self, backend: Any) -> None:
+        """Bind the resolved workspace root for backends that require it.
+
+        ``bind_workspace`` is a duck-typed extra (os_sandbox), not a protocol
+        member: backends without it are untouched. The bound root is the same
+        workspace the host backend resolves — never the process CWD default.
+        """
+        binder = getattr(backend, "bind_workspace", None)
+        if binder is None:
+            return
+        from soothe_nano.workspace.workspace_policy import WorkspaceResolver
+
+        binder(str(WorkspaceResolver.effective_tool_workspace(self._config)))
 
     @staticmethod
     def _extract_sandbox_backend(backend: Any) -> Any:
@@ -713,6 +718,59 @@ class AgentBuilder:
     def placement_report(self) -> ToolPlacementReport | None:
         """Placement decisions from the last sandbox-mode build, if any."""
         return getattr(self, "_placement_report", None)
+
+    @property
+    def sandbox_posture(self) -> str | None:
+        """Achieved sandbox posture from the last sandbox-mode build.
+
+        ``full`` | ``subprocess_only`` | ``None`` (host build) — RFC-CORE-011.
+        """
+        return getattr(self, "_sandbox_posture", None)
+
+    def _validate_sandbox_risk_posture(self) -> None:
+        """No isolation + relaxed hard-deny severities requires explicit ack.
+
+        Combining ``sandbox.enabled=false`` with
+        ``security.hard_deny_severities`` excluding ``"critical"`` removes
+        both the kernel boundary and the hard-deny backstop — it must be a
+        deliberate operator choice (``sandbox.acknowledge_no_isolation``).
+        """
+        sandbox_cfg = self._config.sandbox
+        if sandbox_cfg.enabled or sandbox_cfg.acknowledge_no_isolation:
+            return
+        severities = getattr(self._config.security, "hard_deny_severities", None)
+        if severities is None or "critical" in severities:
+            return
+        msg = (
+            "sandbox is disabled while security.hard_deny_severities does not "
+            "include 'critical' — combining no isolation with relaxed hard denies "
+            "requires sandbox.acknowledge_no_isolation=true."
+        )
+        raise ValueError(msg)
+
+    def _resolve_sandbox_posture(self, sandbox_backend: Any) -> None:
+        """Derive the achieved posture after tool placement resolution.
+
+        The backend's tier can only downgrade to ``subprocess_only`` (the
+        Landlock degraded tier never reports ``full``); any tool placed
+        ``host`` or ``shuttle`` executes in the agent process, outside the
+        kernel boundary, and forces ``subprocess_only``.
+        """
+        report = self.placement_report
+        placements = report.placements if report is not None else {}
+        backend_posture = getattr(sandbox_backend, "sandbox_posture", "full")
+        host_routed = any(p in ("host", "shuttle") for p in placements.values())
+        posture = (
+            "subprocess_only" if backend_posture == "subprocess_only" or host_routed else "full"
+        )
+        self._sandbox_posture = posture
+        host_tools = sorted(n for n, p in placements.items() if p in ("host", "shuttle"))
+        logger.info(
+            "[Init] Sandbox posture: %s (engine: %s); host-process tools: %s",
+            posture,
+            getattr(sandbox_backend, "tier", "unknown"),
+            ", ".join(host_tools) or "(none)",
+        )
 
     @staticmethod
     def _tool_name(tool: Any) -> str:

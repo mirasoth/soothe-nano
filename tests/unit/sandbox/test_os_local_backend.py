@@ -1,0 +1,432 @@
+"""Unit tests for the os_sandbox local OS-primitive backend (no real exec)."""
+
+from __future__ import annotations
+
+import struct
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from soothe_nano.config.models import OsLocalSandboxConfig
+from soothe_nano.sandbox import os_local
+from soothe_nano.sandbox.os_local import (
+    OsLocalSandbox,
+    OsSandboxConfigError,
+    _build_seccomp_bpf,
+    _BwrapSession,
+    _LandlockSession,
+    _posture_for_tier,
+    _SeatbeltSession,
+)
+
+
+class FakePopen:
+    """Recording Popen double for execute-semantics tests."""
+
+    def __init__(self, argv: list[str], **kwargs: Any) -> None:
+        self.argv = argv
+        self.kwargs = kwargs
+        self.communicated: list[int | None] = []
+        self.timeout_at: int | None = None
+        self.killed = False
+        self.returncode = 0
+
+    def communicate(self, timeout: int | None = None) -> tuple[str, str]:
+        self.communicated.append(timeout)
+        # Only the first, timed communicate raises — the post-kill drain
+        # (communicate with no timeout) must succeed for the 124 contract.
+        if (
+            timeout is not None
+            and self.timeout_at is not None
+            and len(self.communicated) >= self.timeout_at
+        ):
+            raise subprocess.TimeoutExpired(self.argv, timeout)
+        return "out", "err"
+
+    def kill(self) -> None:  # pragma: no cover - only reached via killpg override
+        self.killed = True
+
+
+def make_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    **cfg_kwargs: Any,
+) -> OsLocalSandbox:
+    monkeypatch.setattr(os_local, "_probe_bwrap", lambda: True)
+    monkeypatch.setattr(os_local, "_probe_landlock", lambda: True)
+    cfg = OsLocalSandboxConfig(workspace_root=str(tmp_path), **cfg_kwargs)
+    return OsLocalSandbox(cfg)
+
+
+class TestBuildSeccompBpf:
+    def test_layout_and_jump_targets(self) -> None:
+        arch = 0xC000003E
+        denied = (272, 308, 435)
+        raw = _build_seccomp_bpf(arch, denied)
+        assert len(raw) % 8 == 0
+        ins = [struct.unpack("<HBBI", raw[i : i + 8]) for i in range(0, len(raw), 8)]
+        # [LD arch][JEQ arch][LD nr][JEQ nr]*[RET allow][RET errno]
+        assert len(ins) == 3 + len(denied) + 2
+        assert ins[0][0] == 0x20 and ins[0][3] == 4  # LD W ABS arch
+        assert ins[1][0] == 0x15 and ins[1][3] == arch
+        assert ins[2][0] == 0x20 and ins[2][3] == 0  # LD W ABS nr
+        allow_idx = 3 + len(denied)
+        deny_idx = allow_idx + 1
+        # arch mismatch jumps to the deny ret
+        assert ins[1][2] == deny_idx - 2  # jf offset from instruction 1
+        for i, nr in enumerate(denied):
+            assert ins[3 + i][3] == nr
+            assert ins[3 + i][0] == 0x15
+            assert ins[3 + i][1] == deny_idx - (3 + i) - 1  # jt offset to deny
+        assert ins[allow_idx][0] == 0x06 and ins[allow_idx][3] == 0x7FFF0000
+        assert ins[deny_idx][0] == 0x06
+        assert ins[deny_idx][3] == 0x00050000 | 38  # ERRNO | ENOSYS
+
+    def test_empty_deny_list_still_blocks_unknown_archs(self) -> None:
+        raw = _build_seccomp_bpf(0xC00000B7, ())
+        ins = [struct.unpack("<HBBI", raw[i : i + 8]) for i in range(0, len(raw), 8)]
+        assert len(ins) == 5
+        # allow at idx 3, deny at idx 4
+        assert ins[3][3] == 0x7FFF0000
+        assert ins[4][3] == 0x00050000 | 38
+
+
+class TestDenyTables:
+    def test_numbers_unique_per_arch(self) -> None:
+        for numbers in os_local._SECCOMP_DENY_SYSCALLS.values():
+            assert len(numbers) == len(set(numbers))
+
+    def test_namespace_escapes_denied_on_both_arches(self) -> None:
+        # unshare / setns / mount / pivot_root / ptrace / clone3
+        x86 = set(os_local._SECCOMP_DENY_SYSCALLS["x86_64"])
+        arm = set(os_local._SECCOMP_DENY_SYSCALLS["aarch64"])
+        assert 272 in x86 and 97 in arm  # unshare
+        assert 308 in x86 and 268 in arm  # setns
+        assert 165 in x86 and 40 in arm  # mount
+        assert 155 in x86 and 41 in arm  # pivot_root
+        assert 101 in x86 and 117 in arm  # ptrace
+        assert 435 in x86 and 435 in arm  # clone3
+
+    def test_seccomp_nr_and_audit_arch_covered(self) -> None:
+        assert set(os_local._SECCOMP_NR) == {"x86_64", "aarch64"}
+        assert set(os_local._AUDIT_ARCH) == {"x86_64", "aarch64"}
+
+
+class TestLauncherSources:
+    def test_seccomp_launcher_sets_no_new_privs_before_filter(self) -> None:
+        source = os_local._LAUNCHER_SECCOMP
+        prctl_pos = source.index("prctl")
+        seccomp_pos = source.index("syscall(")
+        assert prctl_pos < seccomp_pos
+        assert "NO_NEW_PRIVS" in source
+        assert "execvp" in source
+
+    def test_landlock_launcher_restricts_self_before_exec(self) -> None:
+        source = os_local._LAUNCHER_LANDLOCK
+        assert source.index("444") < source.index("445") < source.index("446")
+        assert "prctl" in source
+        assert "execvp" in source
+
+
+class TestSeatbeltProfile:
+    def test_profile_shape(self, tmp_path: Path) -> None:
+        session = _SeatbeltSession(tmp_path.resolve(), Path("/private/tmp/scratch"))
+        profile = session._profile
+        assert "(deny default)" in profile
+        assert f'(subpath "{tmp_path.resolve()}")' in profile
+        assert '(subpath "/private/tmp/scratch")' in profile
+        assert '(literal "/dev/null")' in profile
+
+    def test_build_argv(self, tmp_path: Path) -> None:
+        session = _SeatbeltSession(tmp_path.resolve(), Path("/private/tmp/scratch"))
+        argv = session.build_argv("echo hi")
+        assert argv[0] == "sandbox-exec"
+        assert argv[1] == "-p"
+        assert argv[2] is session._profile
+        assert argv[3:] == ["/bin/sh", "-c", "echo hi"]
+
+
+class TestBwrapArgv:
+    def test_argv_shape(self, tmp_path: Path) -> None:
+        ws = tmp_path.resolve()
+        session = _BwrapSession(ws, ws / "scratch")
+        argv = session.build_argv("echo hi")
+        assert argv[0] == "bwrap"
+        joined = " ".join(argv)
+        assert f"--bind {ws} {ws}" in joined  # identity bind
+        assert "--die-with-parent" in argv
+        assert "--new-session" in argv
+        assert "--unshare-net" in argv
+        assert "--unshare-pid" not in argv  # background PIDs stay host-visible
+        assert "--clearenv" not in argv  # env applied at Popen, not bwrap
+        # launcher wiring: <interp> -c LAUNCHER <bpf_hex> <seccomp_nr> -- /bin/sh -c cmd
+        launcher_idx = argv.index("-c") + 1
+        assert argv[launcher_idx] is os_local._LAUNCHER_SECCOMP
+        bpf_hex = argv[launcher_idx + 1]
+        seccomp_nr = argv[launcher_idx + 2]
+        assert seccomp_nr == str(os_local._SECCOMP_NR[session._arch])
+        assert bytes.fromhex(bpf_hex) == session._bpf
+        assert argv[launcher_idx + 3] == "--"
+        assert argv[launcher_idx + 4 :] == ["/bin/sh", "-c", "echo hi"]
+
+    def test_read_only_system_binds(self, tmp_path: Path) -> None:
+        ws = tmp_path.resolve()
+        argv = _BwrapSession(ws, ws / "scratch").build_argv("true")
+        assert "--ro-bind" in argv
+        assert "/usr" in argv
+        # /tmp is a private tmpfs, not the host one
+        tmpfs_idx = argv.index("--tmpfs")
+        assert argv[tmpfs_idx + 1] == "/tmp"
+
+
+class TestLandlockArgv:
+    def test_argv_shape(self, tmp_path: Path) -> None:
+        ws = tmp_path.resolve()
+        scratch = ws / "scratch"
+        argv = _LandlockSession(ws, scratch).build_argv("echo hi")
+        assert argv[:3] == [sys.executable, "-c", os_local._LAUNCHER_LANDLOCK]
+        assert argv[3:5] == [str(ws), str(scratch)]
+        assert argv[5] == "--"
+        assert argv[6:] == ["/bin/sh", "-c", "echo hi"]
+
+
+class TestEnvAllowlist:
+    def test_only_allowlisted_keys_cross(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("PATH", "/usr/bin")
+        monkeypatch.setenv("SECRET_TOKEN", "leak-me")
+        monkeypatch.setenv("API_KEY_SENTINEL", "leak-me-too")
+        backend = make_backend(monkeypatch, tmp_path)
+        env = backend._build_child_env()
+        assert env["PATH"] == "/usr/bin"
+        assert "SECRET_TOKEN" not in env
+        assert "API_KEY_SENTINEL" not in env
+
+    def test_home_and_tmpdir_overridden(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("HOME", "/Users/someone")
+        backend = make_backend(monkeypatch, tmp_path)
+        env = backend._build_child_env()
+        assert env["HOME"] == str(tmp_path.resolve())
+        assert env["TMPDIR"] == backend._scratch
+
+    def test_custom_allowlist(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("PATH", "/usr/bin")
+        monkeypatch.setenv("CUSTOM_VAR", "x")
+        backend = make_backend(monkeypatch, tmp_path, env_allowlist=["CUSTOM_VAR"])
+        env = backend._build_child_env()
+        assert env["CUSTOM_VAR"] == "x"
+        assert "PATH" not in env
+
+
+class TestBindWorkspace:
+    def test_bind_resolves_and_sets_root(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        assert backend.workspace_root == str(tmp_path.resolve())
+
+    def test_rebind_same_root_is_noop(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        backend.bind_workspace(str(tmp_path))
+
+    def test_rebind_different_root_raises(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        other = tmp_path / "other"
+        other.mkdir()
+        with pytest.raises(OsSandboxConfigError, match="refusing rebind"):
+            backend.bind_workspace(str(other))
+
+    def test_bind_non_directory_raises(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        target = tmp_path / "file.txt"
+        target.write_text("x")
+        with pytest.raises(OsSandboxConfigError, match="not a directory"):
+            backend.bind_workspace(str(target))
+
+    def test_execute_before_binding_raises(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(os_local, "_probe_bwrap", lambda: True)
+        backend = OsLocalSandbox(OsLocalSandboxConfig())
+        with pytest.raises(OsSandboxConfigError, match="not bound"):
+            backend.execute("true")
+
+
+class TestPathResolution:
+    def test_relative_path_rejected(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        assert backend._resolve_in_sandbox("relative.txt") is None
+
+    def test_outside_path_rejected(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        assert backend._resolve_in_sandbox("/etc/hosts") is None
+
+    def test_symlink_escape_rejected(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        escape = tmp_path.parent / "soothe-escape-target.txt"
+        escape.write_text("secret")
+        try:
+            (tmp_path / "escape-link").symlink_to(escape)
+            assert backend._resolve_in_sandbox(str(tmp_path / "escape-link")) is None
+        finally:
+            escape.unlink(missing_ok=True)
+
+    def test_in_workspace_path_resolved(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        assert backend._resolve_in_sandbox(str(tmp_path / "a.txt")) == tmp_path.resolve() / "a.txt"
+
+    def test_upload_download_roundtrip(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        ups = backend.upload_files([(str(tmp_path / "nested" / "new.txt"), b"payload")])
+        assert ups[0].error is None
+        downs = backend.download_files([str(tmp_path / "nested" / "new.txt")])
+        assert downs[0].content == b"payload"
+        assert downs[0].error is None
+
+    def test_upload_escape_rejected(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        ups = backend.upload_files([("/etc/soothe-escape", b"x")])
+        assert ups[0].error is not None
+        assert not Path("/etc/soothe-escape").exists()
+
+    def test_download_missing_and_directory(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        (tmp_path / "dir").mkdir()
+        downs = backend.download_files([str(tmp_path / "missing.txt"), str(tmp_path / "dir")])
+        assert downs[0].error is not None
+        assert downs[1].error is not None
+
+
+class TestPosture:
+    def test_landlock_is_degraded(self) -> None:
+        assert _posture_for_tier("landlock") == "subprocess_only"
+
+    def test_full_tiers_report_full(self) -> None:
+        assert _posture_for_tier("seatbelt") == "full"
+        assert _posture_for_tier("bwrap") == "full"
+
+
+class TestExecuteSemantics:
+    def _make_with_popen(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake: FakePopen
+    ) -> OsLocalSandbox:
+        monkeypatch.setattr(os_local, "_probe_bwrap", lambda: True)
+
+        def _popen(argv: list[str], **kwargs: Any) -> FakePopen:
+            fake.argv = argv
+            fake.kwargs = kwargs
+            return fake
+
+        cfg = OsLocalSandboxConfig(workspace_root=str(tmp_path))
+        return OsLocalSandbox(cfg, popen=_popen)
+
+    def test_env_and_cwd_forwarded(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        fake = FakePopen([])
+        backend = self._make_with_popen(monkeypatch, tmp_path, fake)
+        response = backend.execute("true")
+        assert response.exit_code == 0
+        assert response.output == "out\nerr"
+        assert fake.kwargs["cwd"] == str(tmp_path.resolve())
+        assert fake.kwargs["env"]["HOME"] == str(tmp_path.resolve())
+        assert fake.kwargs["start_new_session"] is True
+
+    def test_timeout_uses_exit_code_124_convention(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        fake = FakePopen([])
+        fake.timeout_at = 1
+        monkeypatch.setattr(
+            os_local, "_kill_process_group", lambda proc: setattr(proc, "killed", True)
+        )
+        backend = self._make_with_popen(monkeypatch, tmp_path, fake)
+        response = backend.execute("sleep 99", timeout=7)
+        assert response.exit_code == 124
+        assert "exceeded timeout of 7s" in response.output
+        assert fake.killed is True
+
+    def test_default_timeout_forwarded(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        fake = FakePopen([])
+        backend = self._make_with_popen(monkeypatch, tmp_path, fake)
+        backend.execute("true")
+        assert fake.communicated == [120]
+
+    def test_popen_oserror_as_error_data(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        def _boom(*args: Any, **kwargs: Any) -> Any:
+            raise OSError("no bwrap binary")
+
+        monkeypatch.setattr(os_local, "_probe_bwrap", lambda: True)
+        cfg = OsLocalSandboxConfig(workspace_root=str(tmp_path))
+        backend = OsLocalSandbox(cfg, popen=_boom)
+        response = backend.execute("true")
+        assert response.exit_code is None
+        assert response.output.startswith("Error:")
+
+
+class TestFactory:
+    def test_os_sandbox_dispatch(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        from soothe_nano.config.models import SandboxBackendConfig
+        from soothe_nano.sandbox import create_sandbox_backend
+
+        monkeypatch.setattr(os_local, "_probe_bwrap", lambda: True)
+        config = SandboxBackendConfig(
+            type="os_sandbox", os_sandbox=OsLocalSandboxConfig(workspace_root=str(tmp_path))
+        )
+        backend = create_sandbox_backend(config)
+        assert isinstance(backend, OsLocalSandbox)
+        assert backend.workspace_root == str(tmp_path.resolve())
+
+    def test_missing_subconfig_rejected(self) -> None:
+        from soothe_nano.config.models import SandboxBackendConfig
+        from soothe_nano.sandbox import create_sandbox_backend
+
+        with pytest.raises(ValueError, match="requires sandbox.backend.os_sandbox"):
+            create_sandbox_backend(SandboxBackendConfig(type="os_sandbox"))
+
+    def test_capability_error_propagates_from_factory(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from soothe_nano.config.models import SandboxBackendConfig
+        from soothe_nano.sandbox import create_sandbox_backend
+
+        monkeypatch.setattr(os_local, "_probe_bwrap", lambda: False)
+        monkeypatch.setattr(os_local, "_probe_landlock", lambda: False)
+        if sys.platform == "darwin":
+            pytest.skip("darwin always resolves the seatbelt tier")
+        config = SandboxBackendConfig(
+            type="os_sandbox", os_sandbox=OsLocalSandboxConfig(workspace_root=str(tmp_path))
+        )
+        with pytest.raises(os_local.OsSandboxCapabilityError):
+            create_sandbox_backend(config)
+
+
+class TestClose:
+    def test_close_is_idempotent(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        backend = make_backend(monkeypatch, tmp_path)
+        scratch = backend._scratch
+        assert Path(scratch).is_dir()
+        backend.close()
+        assert not Path(scratch).exists()
+        assert backend._scratch == ""
+        backend.close()  # no raise
