@@ -134,20 +134,23 @@ class TestRunBackgroundMocked:
         security = MagicMock()
         security.allow_paths_outside_workspace = False
         tool = RunBackgroundTool(workspace_root=str(tmp_path), security_config=security)
-        captured: dict[str, object] = {}
+        shell_cmds: list[object] = []
 
         class FakeProc:
             pid = 99
 
         def fake_popen(cmd, **_kwargs):
-            captured["cmd"] = cmd
+            # The ownership-sidecar probe may also Popen (argv list, e.g.
+            # `ps -o lstart=`); only the shell spawn is a plain command string.
+            if isinstance(cmd, str):
+                shell_cmds.append(cmd)
             return FakeProc()
 
         with patch("soothe_nano.toolkits.shell.subprocess.Popen", side_effect=fake_popen):
             tool._run("cat /README.md")
 
         ws = str(tmp_path.resolve())
-        assert captured["cmd"] == f"cat {ws}/README.md"
+        assert shell_cmds == [f"cat {ws}/README.md"]
 
     def test_run_background_runtime_workspace_overrides_root(self, tmp_path) -> None:
         client_ws = tmp_path / "client"

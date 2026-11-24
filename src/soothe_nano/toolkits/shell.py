@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import json
 import logging
 import os
 import queue
@@ -145,6 +146,78 @@ def _background_log_path_for_pid(pid: int, log_dir: Path) -> Path:
     return log_dir / f"bg-{pid}.log"
 
 
+PROCESS_META_SCHEMA = 1
+"""Ownership-sidecar schema version for spawn markers (``<marker>.meta``)."""
+
+
+def marker_meta_path(marker: Path) -> Path:
+    """Ownership-sidecar path for a spawn marker (``<marker>.meta``)."""
+    return marker.with_name(marker.name + ".meta")
+
+
+def process_start_token(pid: int) -> str | None:
+    """Best-effort OS start-time token for ``pid``, or ``None``.
+
+    Linux: the jiffies-since-boot field of ``/proc/<pid>/stat``. macOS: the
+    ``ps -o lstart=`` timestamp. A recycled PID gets a different token, so
+    the host drain can verify the PID behind a marker is still the process
+    the marker was written for.
+    """
+    if sys.platform.startswith("linux"):
+        try:
+            data = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+            # Field 22 overall: index 19 after the ``(comm)`` split, because
+            # ``comm`` may itself contain spaces.
+            return data.rsplit(")", 1)[1].split()[19]
+        except (OSError, IndexError, ValueError):
+            return None
+    if sys.platform == "darwin":
+        try:
+            out = subprocess.run(  # noqa: S603 — fixed argv, no shell
+                ["ps", "-o", "lstart=", "-p", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+            return out.stdout.strip() or None
+        except Exception:  # noqa: BLE001 — best-effort probe must never break spawn
+            return None
+    return None
+
+
+def _write_process_meta(pid: int, *, marker: Path) -> None:
+    """Write the ownership sidecar for a spawn marker (best-effort).
+
+    The marker filename carries the PID; this sidecar carries the
+    spawn-time identity (pgid + start-time token) the host drain validates
+    before killing a process group — marker names live in the
+    agent-writable workspace, so a name alone must never authorize a kill.
+    """
+    try:
+        pgid = os.getpgid(pid)
+    except OSError:
+        pgid = None
+    meta = {
+        "schema": PROCESS_META_SCHEMA,
+        "pid": pid,
+        "pgid": pgid,
+        "start_time": process_start_token(pid),
+    }
+    with contextlib.suppress(OSError):
+        marker_meta_path(marker).write_text(
+            json.dumps(meta, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+
+def _remove_process_meta(marker: Path | None) -> None:
+    """Remove the ownership sidecar next to a spawn marker."""
+    if marker is None:
+        return
+    with contextlib.suppress(OSError):
+        marker_meta_path(marker).unlink(missing_ok=True)
+
+
 def _append_background_log_footer(
     pid: int,
     *,
@@ -194,6 +267,7 @@ def _cleanup_stale_background_logs(log_dir: Path, retention_days: int) -> None:
         with contextlib.suppress(OSError):
             if path.stat().st_mtime < cutoff:
                 path.unlink()
+                marker_meta_path(path).unlink(missing_ok=True)
 
 
 def _resolve_foreground_session_dir(cwd: str | None) -> Path | None:
@@ -239,6 +313,7 @@ def _register_foreground_session(pid: int, *, cwd: str | None, command: str) -> 
             f"[soothe] run_command started {ts}\n[soothe] command: {command}\n",
             encoding="utf-8",
         )
+        _write_process_meta(pid, marker=path)
         return path
     return None
 
@@ -249,6 +324,7 @@ def _unregister_foreground_session(path: Path | None) -> None:
         return
     with contextlib.suppress(OSError):
         path.unlink(missing_ok=True)
+        _remove_process_meta(path)
 
 
 def _tail_text_file(path: Path, *, max_lines: int) -> str:
@@ -1040,11 +1116,21 @@ class RunBackgroundTool(BaseTool):
         pending = f"{bg_dir}/bg-pending-{uuid.uuid4().hex[:12]}.log"
         header = _format_background_log_header(command)
         inner = f"printf {shlex.quote(header)}; exec sh -c {shlex.quote(command)}"
+        # printf format: pid/pgid as bare numbers, start_time quoted (may be
+        # empty on guests without /proc) — same shape `_write_process_meta`
+        # writes host-side. f-string so only the schema literal is
+        # interpolated; `%s` stays literal for the guest printf.
+        meta_fmt = f'{{"schema":{PROCESS_META_SCHEMA},"pid":%s,"pgid":%s,"start_time":"%s"}}'
         one_liner = (
             f"mkdir -p {shlex.quote(bg_dir)} || exit 1; "
             f"command -v setsid >/dev/null 2>&1 && SETSID=setsid; "
             f"$SETSID nohup sh -c {shlex.quote(inner)} > {shlex.quote(pending)} 2>&1 < /dev/null & "
-            f'pid=$!; mv {shlex.quote(pending)} "{bg_dir}/bg-$pid.log"; echo $pid'
+            f"pid=$!; "
+            f"pg=$(ps -o pgid= -p $pid 2>/dev/null | tr -d ' '); pg=${{pg:-$pid}}; "
+            f"st=$(cut -d' ' -f22 /proc/$pid/stat 2>/dev/null); "
+            f'printf \'{meta_fmt}\' "$pid" "$pg" "$st" '
+            f"> {shlex.quote(bg_dir)}/bg-$pid.log.meta 2>/dev/null || true; "
+            f'mv {shlex.quote(pending)} "{bg_dir}/bg-$pid.log"; echo $pid'
         )
         try:
             outcome = executor.run(one_liner, cwd=root, timeout=30)
@@ -1139,6 +1225,7 @@ class RunBackgroundTool(BaseTool):
         except OSError:
             logger.debug("Could not rename background log %s → %s", pending_log, log_path)
             log_path = pending_log
+        _write_process_meta(proc.pid, marker=log_path)
 
         log_path_str = str(log_path)
         return {
