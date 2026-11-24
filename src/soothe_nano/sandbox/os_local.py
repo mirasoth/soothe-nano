@@ -567,7 +567,6 @@ class _BwrapSession:
             argv += ["--ro-bind-try", bind_dir, bind_dir]
         argv += [
             "--die-with-parent",
-            "--new-session",
             "--unshare-net",
             interp,
             "-c",

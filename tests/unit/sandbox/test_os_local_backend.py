@@ -199,7 +199,10 @@ class TestBwrapArgv:
         joined = " ".join(argv)
         assert f"--bind {ws} {ws}" in joined  # identity bind
         assert "--die-with-parent" in argv
-        assert "--new-session" in argv
+        # no inner setsid: sandboxed children stay in the Popen session so
+        # close()/timeout killpg reaches them (start_new_session already
+        # detaches the tree from the host terminal session)
+        assert "--new-session" not in argv
         assert "--unshare-net" in argv
         assert "--unshare-pid" not in argv  # background PIDs stay host-visible
         assert "--clearenv" not in argv  # env applied at Popen, not bwrap

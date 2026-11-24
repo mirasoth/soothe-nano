@@ -1,6 +1,7 @@
 # os_sandbox Backend (Local OS Primitives)
 
-**Status**: implemented (v1). Design record and integrator guide for
+**Status**: implemented (v2 — read-side parity, bounded capture, orphan
+cleanup). Design record and integrator guide for
 `OsLocalSandbox` — the sandbox backend that gives the agent's shell plane a
 real OS-level isolation boundary on hosts **without hardware virtualization**
 (no `/dev/kvm`, no nested virtualization). macOS uses Seatbelt
@@ -43,7 +44,7 @@ second OS** — guest paths are host paths and guest PIDs are host PIDs.
 
 | Platform | Tier | Mechanism | Posture |
 |---|---|---|---|
-| macOS | `seatbelt` (only) | `sandbox-exec` profile: `(deny default)`, broad read, narrow write, no network | `full` |
+| macOS | `seatbelt` (only) | `sandbox-exec` profile: `(deny default)`, narrow read (bwrap-parity set), narrow write, no network | `full` |
 | Linux | `bwrap` (full) | mount-ns (`--bind` ws, `--ro-bind` system trees, `--tmpfs /tmp`, `--dev`, `--unshare-net`) + in-namespace launcher: `PR_SET_NO_NEW_PRIVS` → seccomp deny-list → `exec` | `full` |
 | Linux | `landlock` (degraded) | Landlock ruleset: read/write confined to workspace + scratch, read-only on system trees | `subprocess_only` |
 
@@ -56,34 +57,57 @@ Tier selection (`linux_tier`):
   capability error. `landlock` additionally requires `allow_degraded: true`
   — a declared degradation is never silent.
 
-## 3. Seatbelt v1 boundary (macOS)
+## 3. Seatbelt v2 boundary (macOS)
 
-The profile is regenerated per exec from the session template:
+The profile is regenerated per session from the template:
 
 ```
 (version 1)
 (deny default)
-(allow file-read*)
 (allow process-exec)
 (allow process-fork)
-(allow file-write* (subpath "<resolved workspace>") (subpath "<scratch>"))
+(allow file-read-metadata (literal "/") ...root + workspace ancestors...)
+(allow file-read-data (literal "/"))
+(allow file-read* (subpath "/usr") ...system trees + workspace/scratch...)
+(allow file-read-data (literal "/dev/urandom") (literal "/dev/random") (literal "/dev/null"))
+(allow file-write* (subpath "<resolved workspace>") (subpath "<resolved scratch>"))
 (allow file-write-data (literal "/dev/null"))
 ```
 
+- **Reads are narrowed to the bwrap-parity set** (`_SEATBELT_READ_TREES`):
+  `/usr`, `/bin`, `/sbin`, `/System`, `/Library`, `/opt`, `/private/etc`,
+  `/private/var/select` plus the workspace/scratch. Everything else — other
+  users' data under `/Users`, `/private/var/db`, package roots under
+  `/Applications`, host `/private/tmp` — is denied, matching the bwrap bind
+  list's effective read set. `/opt` stands in for the Linux `/usr/local`
+  bind (homebrew prefix).
 - **Writes** are denied everywhere except the workspace and the session
   scratch directory; both subpaths use `Path.resolve()`-ed real paths
-  (firmlink resolution: `/tmp` → `/private/tmp` — unresolved subpath
-  literals never match).
+  (firmlink resolution: `/tmp` → `/private/tmp`, `/var` → `/private/var` —
+  unresolved subpath literals never match, seatbelt checks the resolved
+  path).
 - **Network and signals** are denied by the root `(deny default)` rule.
-- `/dev/null` write-data is allowed so standard redirects keep working.
+- `/dev/null` write-data is allowed so standard redirects keep working;
+  `/dev/urandom`/`/dev/random` are readable because interpreters seed from
+  them at startup (`_Py_HashRandomization_Init`).
 - The command runs under `/bin/sh -c` (zsh refuses to start under
   deny-default).
 
-**v1 read-side trade-off**: reads are unrestricted. Narrow subpath read
-allowances break process startup on current macOS — dyld resolves library
-paths through firmlinks that only match under unrestricted reads (SIGABRT
-at exec). The load-bearing v1 boundary is write/network/signal reach;
-read-side restriction is a documented follow-up (RFC §8).
+macOS-specific allowances the parity set needs:
+
+- `file-read-metadata` (literal) on the firmlink/volume roots
+  (`/etc`, `/tmp`, `/var`, `/private`, `/Users`, ...) and on every ancestor
+  of the workspace/scratch: path resolution and tools like git `lstat` the
+  whole cwd chain. This leaks only the `lstat` of those directory entries
+  (existence/mtime), never listings or file data.
+- `file-read-data (literal "/")`: `getcwd` walks `..` — the root directory
+  is listable, exposing top-level names only.
+- `file-read* (subpath "/private/var/select")`: the shell-selection symlink
+  tree macOS consults when exec'ing `/bin/sh`.
+
+The v1 read-side trade-off (broad reads) is closed: the SIGABRT mystery was
+the missing `/` readdir and `/private/var/select` read, not firmlink
+resolution as first suspected.
 
 ## 4. Linux full tier: bwrap + seccomp
 
@@ -92,7 +116,11 @@ read-side restriction is a documented follow-up (RFC §8).
 - `--ro-bind` / `--ro-bind-try` of `/usr`, `/usr/local`, `/bin`, `/lib`,
   `/lib64`, `/etc`; `--proc /proc`; `--dev /dev`; `--tmpfs /tmp`.
 - `--bind` (read-write, **identity**) of the workspace and scratch.
-- `--die-with-parent --new-session --unshare-net`.
+- `--die-with-parent --unshare-net`.
+- **No `--new-session`**: `start_new_session=True` on the Popen already
+  detaches the whole tree from the host terminal's session, and an inner
+  `setsid` would move sandboxed children out of the tracked process group —
+  `close()`/timeout `killpg` could no longer reach them.
 - **No `--unshare-pid`** — see §1 (host-visible PIDs).
 
 The final argv element is an embedded Python launcher (`_LAUNCHER_SECCOMP`,
@@ -206,13 +234,38 @@ sandbox:
         enabled: false           # must stay false (relay is a follow-up)
 ```
 
-## 11. Limitations
+## 11. Output capture and process lifecycle
+
+**Bounded output capture** (`execute`): stdout/stderr are drained by daemon
+reader threads capped at `_EXECUTE_CAPTURE_CAP_BYTES` (16 MiB) per stream —
+strictly above `BaseSandbox._EXECUTE_CAPTURE_MAX_BYTES` (10 MiB guest-side
+offload window) so offloaded reads are never clipped. When a cap is hit the
+reader kills the process group (an unbounded writer can neither exhaust
+memory nor stall the timeout) and the response appends a truncation note.
+Timeouts keep the `exit_code=124` contract and kill the group first, then
+drain.
+
+**Process-group lifecycle** (P2): every `execute` runs in its own process
+group (`start_new_session`). Groups that outlive their command (background
+children — deliberately host-visible, §1) are tracked in a registry and
+killed by `close()` and by an atexit handler (processes die before the
+scratch tree is removed). Hard interpreter death (SIGKILL) bypasses both —
+only the bwrap tier carries kernel-level `--die-with-parent` for that case;
+seatbelt and landlock have no `PDEATHSIG` equivalent, which is the
+documented residual gap.
+
+## 12. Limitations
 
 - **No egress relay yet** — network is default-deny with no approved-egress
   path (RFC-CORE-011 §5.5 defines the seam; the proxy is follow-up).
-- **Seatbelt v1 reads unrestricted** (§3 trade-off).
 - **Landlock tier** is file-access denial only — no filesystem view, no
   network or process isolation.
+- **Hard-crash orphans on seatbelt/landlock** (§11): a SIGKILL of the host
+  interpreter can leave background groups running (bwrap's
+  `--die-with-parent` covers its tier).
+- **Seatbelt metadata leak** (§3): `lstat` of firmlink roots and workspace
+  ancestors (existence/mtime of directory entries) plus top-level names of
+  `/` — the price of path resolution and `getcwd` under deny-default.
 - **Not a VM**: same kernel, same filesystem, same PIDs as the host. The
   boundary is syscall/mount/policy-level, appropriate for containing
   agent-generated command behavior, not for running untrusted code with
