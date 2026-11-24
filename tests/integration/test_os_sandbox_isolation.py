@@ -180,10 +180,18 @@ class TestFilesystemBoundary:
         assert not probe.exists()
 
     def test_dev_null_writable(self, sandbox: OsLocalSandbox) -> None:
-        if sandbox.tier == "landlock":
-            pytest.skip("landlock has no /dev/null write carve-out (documented v1 shape)")
         response = sandbox.execute("echo x > /dev/null")
         assert response.exit_code == 0, response.output
+
+    def test_capture_offload_works(self, sandbox: OsLocalSandbox) -> None:
+        """Shell tools rely on capture offload, whose wrapper uses >/dev/null."""
+        response = sandbox.execute_with_offload(
+            "mkdir -p .soothe/captures && echo offload-ok > .soothe/captures/cmd.log",
+            ".soothe/captures/cmd.log",
+            max_inline_bytes=100_000,
+        )
+        assert response.response.exit_code == 0, response.response.output
+        assert "Permission denied" not in response.response.output
 
     def test_read_outside_allow_set_denied(self, sandbox: OsLocalSandbox, tmp_path: Path) -> None:
         """Read isolation parity across tiers: a home file is unreadable.

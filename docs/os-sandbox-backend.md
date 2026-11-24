@@ -164,10 +164,14 @@ launcher as hex.
 `_LandlockSession` runs a launcher (`sys.executable -c`) that applies a
 Landlock ruleset (kernel ≥ 5.13, probed by forking a child that calls
 `landlock_create_ruleset`): read/write confined to workspace + scratch,
-read-only on the system trees, then execs the command. No filesystem view,
-no network restriction, no process isolation — hence opt-in
-(`allow_degraded`) and always reported as `sandbox_posture =
-subprocess_only`.
+read-only on the system trees, then execs the command. Two narrow carve-outs
+keep the tool surface working: `WRITE_FILE` on `/dev/null` (the Seatbelt tier
+does the same) so shell redirects such as `2>/dev/null` — used by every shell
+tool's capture-offload wrapper — keep working, and a read-only allowance for
+the interpreter prefix (`sys.prefix`, e.g. `/app/.venv`) so `run_python`'s
+spawned `python3` can load its `pyvenv.cfg`. No filesystem view, no network
+restriction, no process isolation — hence opt-in (`allow_degraded`) and
+always reported as `sandbox_posture = subprocess_only`.
 
 ## 6. Environment and credentials
 

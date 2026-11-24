@@ -409,6 +409,20 @@ if rest and rest[0] == "--":
     rest = rest[1:]
 for tree in ("/usr", "/lib", "/lib64", "/bin", "/etc", "/opt", "/dev", "/proc", "/sys"):
     _allow(tree, READ_ONLY)
+# run_python spawns the venv's python3; its site module reads <prefix>/pyvenv.cfg
+# before the snippet runs. The venv root often lives outside the system trees
+# (e.g. /app/.venv in the image), so allow it read-only — the bwrap tier binds
+# the interpreter's parent dir read-only for the same reason. Reads only; the
+# write boundary stays workspace + scratch.
+if sys.prefix and sys.prefix not in ("/usr", "/"):
+    _allow(sys.prefix, READ_ONLY)
+# Shell tools route through execute_with_offload, whose wrapper (and the
+# mkdir -p of <workspace>/.soothe/captures) uses 2>/dev/null and >/dev/null.
+# /dev is READ_ONLY above, so a redirect fails before the command runs (rc=2)
+# and every shell-based tool breaks. Mirror the Seatbelt carve-out: Landlock
+# unions the matching rules, so this specific WRITE_FILE grant wins for the
+# device node without widening write access to the rest of /dev.
+_allow("/dev/null", WRITE_FILE)
 for tree in (workspace, scratch):
     if tree:
         _allow(tree, READ_WRITE)

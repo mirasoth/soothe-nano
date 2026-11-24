@@ -136,6 +136,19 @@ class TestLauncherSources:
         assert "prctl" in source
         assert "execvp" in source
 
+    def test_landlock_launcher_carves_out_dev_null_write(self) -> None:
+        # Shell tools use 2>/dev/null and capture offload; without this grant
+        # every run_command/run_python fails before the command is executed.
+        source = os_local._LAUNCHER_LANDLOCK
+        assert '_allow("/dev/null", WRITE_FILE)' in source
+
+    def test_landlock_launcher_allows_interpreter_prefix_read(self) -> None:
+        # run_python spawns the venv python3, whose site module reads pyvenv.cfg
+        # before the snippet runs; the venv root is often outside /usr (e.g.
+        # /app/.venv in the image) and must be readable.
+        source = os_local._LAUNCHER_LANDLOCK
+        assert "_allow(sys.prefix, READ_ONLY)" in source
+
 
 class TestSeatbeltProfile:
     def test_profile_shape(self, tmp_path: Path) -> None:

@@ -5,6 +5,12 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.12] - 2026-11-24
+
+### Fixed
+
+- **Landlock tier broke every shell tool (`run_command`/`run_python`)**: the degraded Linux launcher granted `/dev` read-only, so the capture-offload wrapper's `2>/dev/null` redirects (and its `.soothe/captures` mkdir) failed before the command ran; `run_python` additionally could not read its venv `pyvenv.cfg` outside `/usr`. A `WRITE_FILE` carve-out on `/dev/null` (mirroring Seatbelt) and a read-only allowance for `sys.prefix` fix both; writes stay confined to workspace + scratch.
+
 ## [2.0.10] - 2026-11-23
 
 ### Added
