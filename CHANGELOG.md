@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.13] - 2026-11-24
+
 ### Added
 
 - **Spawn-marker ownership sidecars (schema 1)**: `run_command` foreground sessions (`fg-{pid}.session`) and host-path `run_background` logs (`bg-{pid}.log`) now record a `<marker>.meta` JSON sidecar at spawn time — pid, pgid, and an OS start-time token (Linux `/proc/<pid>/stat` jiffies, macOS `ps -o lstart=`). Guest/sandbox `run_background` writes the same sidecar from the spawn one-liner (best-effort on guests without `/proc`). The host drain (`soothe` package) cross-checks the sidecar before killing a process group, so a forged marker filename in the agent-writable workspace can no longer authorize a kill; the sidecar is removed with the marker on exit, retention cleanup, and drain. New public helpers: `PROCESS_META_SCHEMA`, `marker_meta_path`, `process_start_token` in `soothe_nano.toolkits.shell`.
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.12...v2.0.13
 
 ## [2.0.12] - 2026-11-24
 
