@@ -182,6 +182,27 @@ class ChatLitellmModel(BaseChatModel):
         """Detect the generic 'No generations found in stream' error."""
         return "No generations found in stream" in str(exc)
 
+    def _with_stream_usage(self, call_kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Request streaming usage for OpenAI-compatible endpoints.
+
+        Without ``stream_options={"include_usage": True}`` OpenAI-compatible
+        streams omit usage entirely, so every consumer (loop token totals,
+        TUI counters) falls back to content-based estimates. litellm only
+        forwards ``stream_options`` to OpenAI-compatible backends, so the
+        flag is gated on the ``openai/`` model prefix (all custom
+        OpenAI-compatible endpoints route through it).
+        """
+        if self.model.startswith("openai/"):
+            out = dict(call_kwargs)
+            out.setdefault("stream_options", {"include_usage": True})
+            return out
+        return call_kwargs
+
+    @staticmethod
+    def _is_stream_options_error(exc: BaseException) -> bool:
+        """Detect a server rejecting the ``stream_options`` parameter."""
+        return "stream_options" in str(exc).lower()
+
     # ------------------------------------------------------------------
     # Non-streaming generation
     # ------------------------------------------------------------------
@@ -205,6 +226,7 @@ class ChatLitellmModel(BaseChatModel):
             raise
         choice = response.choices[0].message
         ai_msg = self._strip_thinking_from_message(extract_tool_calls_from_litellm(choice))
+        ai_msg = _attach_usage_metadata(ai_msg, getattr(response, "usage", None))
         # Token usage — surfaced via ChatResult.llm_output for Langfuse callbacks.
         llm_output: dict[str, Any] = {}
         usage = getattr(response, "usage", None)
@@ -235,6 +257,7 @@ class ChatLitellmModel(BaseChatModel):
             raise
         choice = response.choices[0].message
         ai_msg = self._strip_thinking_from_message(extract_tool_calls_from_litellm(choice))
+        ai_msg = _attach_usage_metadata(ai_msg, getattr(response, "usage", None))
         llm_output: dict[str, Any] = {}
         usage = getattr(response, "usage", None)
         if usage is not None:
@@ -270,13 +293,18 @@ class ChatLitellmModel(BaseChatModel):
                 yield ChatGenerationChunk(message=gen.message)
             return
         llm_messages = lc_to_litellm_messages(messages)
+        retry_no_stream_usage = kwargs.pop("_retry_no_stream_usage", False)
         call_kwargs = self._litellm_kwargs(stream=True, **kwargs)
+        if not retry_no_stream_usage:
+            call_kwargs = self._with_stream_usage(call_kwargs)
         if stop:
             call_kwargs["stop"] = stop
         filt = (
             ThinkingStreamFilter(logger=logger) if self.capabilities.hide_thinking_tokens else None
         )
         native_reasoning_parts: list[str] = []
+        final_usage: dict[str, int] | None = None
+        saw_chunk = False
         try:
             logger.info(
                 "LLM stream start: model=%s endpoint=%s",
@@ -285,7 +313,15 @@ class ChatLitellmModel(BaseChatModel):
             )
             stream = litellm.completion(messages=llm_messages, **call_kwargs)
             for chunk in stream:
-                delta = chunk.choices[0].delta
+                saw_chunk = True
+                metadata = _usage_metadata_from_litellm(getattr(chunk, "usage", None))
+                if metadata is not None:
+                    final_usage = metadata
+                choices = getattr(chunk, "choices", None)
+                if not choices:
+                    # Usage-only chunks carry no delta content.
+                    continue
+                delta = choices[0].delta
                 text = getattr(delta, "content", None) or ""
                 tool_call_deltas = getattr(delta, "tool_calls", None)
                 # Capture native reasoning tokens (delta.reasoning_content) that
@@ -329,6 +365,21 @@ class ChatLitellmModel(BaseChatModel):
                         )
                     )
         except Exception as exc:
+            if (
+                not retry_no_stream_usage
+                and not saw_chunk
+                and "stream_options" in call_kwargs
+                and self._is_stream_options_error(exc)
+            ):
+                logger.warning("litellm streaming rejected stream_options; retrying without usage")
+                yield from self._stream(
+                    messages,
+                    stop=stop,
+                    run_manager=run_manager,
+                    _retry_no_stream_usage=True,
+                    **kwargs,
+                )
+                return
             if self._is_no_generations_error(exc):
                 logger.warning(
                     "litellm streaming returned no generations; auto-falling back to _generate"
@@ -338,6 +389,12 @@ class ChatLitellmModel(BaseChatModel):
                     yield ChatGenerationChunk(message=gen.message)
                 return
             raise
+        if final_usage is not None:
+            # Terminal usage-only chunk: real per-call counts for loop totals
+            # and TUI counters (consumers read usage_metadata off any chunk).
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(content="", usage_metadata=final_usage)
+            )
 
     async def _astream(
         self,
@@ -353,13 +410,18 @@ class ChatLitellmModel(BaseChatModel):
                 yield ChatGenerationChunk(message=gen.message)
             return
         llm_messages = lc_to_litellm_messages(messages)
+        retry_no_stream_usage = kwargs.pop("_retry_no_stream_usage", False)
         call_kwargs = self._litellm_kwargs(stream=True, **kwargs)
+        if not retry_no_stream_usage:
+            call_kwargs = self._with_stream_usage(call_kwargs)
         if stop:
             call_kwargs["stop"] = stop
         filt = (
             ThinkingStreamFilter(logger=logger) if self.capabilities.hide_thinking_tokens else None
         )
         native_reasoning_parts: list[str] = []
+        final_usage: dict[str, int] | None = None
+        saw_chunk = False
         try:
             logger.info(
                 "LLM stream start: model=%s endpoint=%s",
@@ -368,7 +430,15 @@ class ChatLitellmModel(BaseChatModel):
             )
             stream = await litellm.acompletion(messages=llm_messages, **call_kwargs)
             async for chunk in stream:
-                delta = chunk.choices[0].delta
+                saw_chunk = True
+                metadata = _usage_metadata_from_litellm(getattr(chunk, "usage", None))
+                if metadata is not None:
+                    final_usage = metadata
+                choices = getattr(chunk, "choices", None)
+                if not choices:
+                    # Usage-only chunks carry no delta content.
+                    continue
+                delta = choices[0].delta
                 text = getattr(delta, "content", None) or ""
                 tool_call_deltas = getattr(delta, "tool_calls", None)
                 # Capture native reasoning tokens (delta.reasoning_content) that
@@ -412,6 +482,24 @@ class ChatLitellmModel(BaseChatModel):
                         )
                     )
         except Exception as exc:
+            if (
+                not retry_no_stream_usage
+                and not saw_chunk
+                and "stream_options" in call_kwargs
+                and self._is_stream_options_error(exc)
+            ):
+                logger.warning(
+                    "litellm async streaming rejected stream_options; retrying without usage"
+                )
+                async for gen in self._astream(
+                    messages,
+                    stop=stop,
+                    run_manager=run_manager,
+                    _retry_no_stream_usage=True,
+                    **kwargs,
+                ):
+                    yield gen
+                return
             if self._is_no_generations_error(exc):
                 logger.warning(
                     "litellm async streaming returned no generations; auto-falling back to _agenerate"
@@ -423,6 +511,12 @@ class ChatLitellmModel(BaseChatModel):
                     yield ChatGenerationChunk(message=gen.message)
                 return
             raise
+        if final_usage is not None:
+            # Terminal usage-only chunk: real per-call counts for loop totals
+            # and TUI counters (consumers read usage_metadata off any chunk).
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(content="", usage_metadata=final_usage)
+            )
 
     # ------------------------------------------------------------------
     # Structured output
@@ -1045,6 +1139,56 @@ class _StructuredOutputRunnable:
         if isinstance(self._schema, dict):
             return data
         return self._schema.model_validate(data)
+
+
+def _usage_metadata_from_litellm(usage: Any) -> dict[str, int] | None:
+    """Normalize a litellm ``Usage`` object into langchain ``usage_metadata``.
+
+    Returns None when the usage object carries no positive counts (absent,
+    None, or an all-zero placeholder). ``input_token_details`` carries
+    provider cache counts when litellm surfaces them.
+    """
+    if usage is None:
+        return None
+
+    def _count(name: str) -> int:
+        value = getattr(usage, name, None)
+        return int(value) if isinstance(value, (int, float)) else 0
+
+    input_tokens = _count("prompt_tokens")
+    output_tokens = _count("completion_tokens")
+    total_tokens = _count("total_tokens")
+    if total_tokens <= 0:
+        total_tokens = input_tokens + output_tokens
+    if input_tokens <= 0 and output_tokens <= 0 and total_tokens <= 0:
+        return None
+    metadata: dict[str, int] = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+    cache_read = _count("cache_read_input_tokens")
+    cache_creation = _count("cache_creation_input_tokens")
+    if cache_read or cache_creation:
+        metadata["input_token_details"] = {
+            "cache_read": cache_read,
+            "cache_creation": cache_creation,
+        }
+    return metadata
+
+
+def _attach_usage_metadata(message: AIMessage, usage: Any) -> AIMessage:
+    """Copy ``usage_metadata`` from a litellm response onto an AIMessage.
+
+    Non-streaming results previously exposed usage only via
+    ``ChatResult.llm_output`` (Langfuse); message-level metadata is what
+    loop token accounting and the TUI read, so without this attach those
+    consumers never saw real counts for non-streaming calls.
+    """
+    metadata = _usage_metadata_from_litellm(usage)
+    if metadata is None:
+        return message
+    return message.model_copy(update={"usage_metadata": metadata})
 
 
 def _normalize_tool_call_chunks(deltas: Any) -> list[dict[str, Any]]:

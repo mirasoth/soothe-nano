@@ -113,10 +113,17 @@ def _sum_token_usage_from_messages(
     *,
     include_chunks: bool,
 ) -> dict[str, int]:
-    """Sum usage across AI messages (optionally including stream chunks)."""
+    """Sum usage across AI messages (optionally including stream chunks).
+
+    Chunks of the same generation share one message id; for providers that
+    attach usage to several chunks of a generation the values are cumulative,
+    so the last chunk wins (dedup by id) instead of double-summing. Chunks
+    without an id are summed as-is (delta-style providers).
+    """
     from langchain_core.messages import AIMessage, AIMessageChunk
 
-    prompt = completion = total = 0
+    by_id: dict[str, dict[str, int]] = {}
+    anonymous: list[dict[str, int]] = []
     for msg in messages:
         if isinstance(msg, AIMessage):
             counts = _token_counts_from_ai_message(msg)
@@ -126,9 +133,15 @@ def _sum_token_usage_from_messages(
             continue
         if counts is None:
             continue
-        prompt += counts["prompt"]
-        completion += counts["completion"]
-        total += counts["total"]
+        msg_id = getattr(msg, "id", None)
+        if msg_id:
+            by_id[str(msg_id)] = counts
+        else:
+            anonymous.append(counts)
+    parts = list(by_id.values()) + anonymous
+    prompt = sum(c["prompt"] for c in parts)
+    completion = sum(c["completion"] for c in parts)
+    total = sum(c["total"] for c in parts)
     if total <= 0:
         return {}
     return {"prompt": prompt, "completion": completion, "total": total}

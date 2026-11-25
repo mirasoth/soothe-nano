@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `ChatLitellmModel` now surfaces real token usage: OpenAI-compatible streams request `stream_options={"include_usage": true}` (with a retry-without fallback when a server rejects the parameter), per-chunk `usage` is captured and re-emitted as a terminal usage-only `AIMessageChunk`, and non-streaming results attach `usage_metadata` to the AIMessage (previously usage lived only in `ChatResult.llm_output`, so loop token totals and live UI counters fell back to content-based estimates). Message-based usage extraction dedupes stream chunks by message id, so providers that attach cumulative usage to several chunks of one generation no longer double-count output tokens.
+
 ## [2.0.13] - 2026-11-24
 
 ### Added
