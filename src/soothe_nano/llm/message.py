@@ -171,6 +171,27 @@ def _normalize_tool_calls_entry(tcs: Any) -> list[dict[str, Any]]:
     return normalized
 
 
+def _normalize_message_content(content: Any) -> str | list[Any]:
+    """Normalize message content for the litellm/OpenAI wire.
+
+    String content passes through unchanged; `None` becomes `""`. **List or
+    tuple content is preserved as-is**: langchain multimodal messages carry
+    OpenAI content-part arrays (`[{"type": "text", ...}, {"type":
+    "image_url", ...}]`) that litellm forwards natively — flattening them
+    with `str()` would turn image blocks into an opaque repr string, so the
+    model never receives the image and silently hallucinates a description.
+    Any other non-string shape falls back to `str()` for backwards
+    compatibility.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, (list, tuple)):
+        return list(content)
+    return str(content)
+
+
 def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
     """Convert langchain messages to the `[{role, content}]` dict list litellm expects.
 
@@ -183,6 +204,10 @@ def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
     `_agenerate` uncoerced. Without this dict path the converter raised
     `AttributeError: 'dict' object has no attribute 'type'` (deployed
     `soothe_nano.subagents.plan.engine` structured-output draft).
+
+    Multimodal content (list of OpenAI content parts, e.g. text + image_url
+    blocks from vision preflight) is preserved structurally; only non-list
+    non-string content is stringified.
 
     Malformed `tool_calls` entries (a missing or empty `function.name`) are
     dropped: providers return a non-retriable 400 `invalid_request_error` for
@@ -198,9 +223,7 @@ def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
             entry: dict[str, Any] = dict(m)
             role = entry.get("role", "user")
             entry["role"] = _LITELLM_ROLE_ALIAS.get(role, role)
-            content = entry.get("content")
-            if not isinstance(content, str):
-                entry["content"] = "" if content is None else str(content)
+            entry["content"] = _normalize_message_content(entry.get("content"))
             if "tool_calls" in entry:
                 tcs = _normalize_tool_calls_entry(entry["tool_calls"])
                 if tcs:
@@ -213,7 +236,7 @@ def lc_to_litellm_messages(messages: list[BaseMessage]) -> list[dict[str, Any]]:
             continue
 
         role = m.type  # "human" | "ai" | "system" | "tool"
-        content = m.content if isinstance(m.content, str) else str(m.content)
+        content = _normalize_message_content(m.content)
         entry = {"role": role, "content": content}
         # AI tool_calls
         tcs = getattr(m, "tool_calls", None)

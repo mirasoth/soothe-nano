@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `lc_to_litellm_messages` preserves multimodal content (list/tuple of OpenAI content-part arrays) structurally instead of flattening it with `str()`. Vision requests (text + `image_url` blocks) previously arrived at the provider as an opaque Python repr string, so the model never received the image and silently fabricated a description; dict-passthrough messages had the same flattening. Exotic non-string, non-list content still falls back to `str()`.
+
 ## [2.0.14] - 2026-11-25
 
 ### Fixed

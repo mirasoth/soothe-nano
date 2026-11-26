@@ -57,12 +57,29 @@ def test_dict_message_preserves_tool_fields() -> None:
     assert out[0]["content"] == "42"
 
 
-def test_dict_message_coerces_non_string_content() -> None:
-    """Non-string content (e.g. list blocks) is stringified, not passed raw."""
-    messages = [{"role": "user", "content": [{"type": "text", "text": "hi"}]}]
+def test_dict_message_preserves_list_content_blocks() -> None:
+    """List content (multimodal blocks) passes through structurally, not str()'d.
+
+    Regression guard: flattening content-part arrays with ``str()`` turned
+    ``image_url`` blocks into an opaque repr string, so vision models never
+    received the image and hallucinated a description instead.
+    """
+    blocks = [
+        {"type": "text", "text": "describe"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,aGk="}},
+    ]
+    messages = [{"role": "user", "content": blocks}]
     out = lc_to_litellm_messages(messages)
     assert out[0]["role"] == "user"
-    assert isinstance(out[0]["content"], str)
+    assert out[0]["content"] == blocks
+
+
+def test_dict_message_coerces_exotic_non_string_content() -> None:
+    """Non-string, non-list content (exotic shapes) is still stringified."""
+    messages = [{"role": "user", "content": 12345}]
+    out = lc_to_litellm_messages(messages)
+    assert out[0]["role"] == "user"
+    assert out[0]["content"] == "12345"
 
 
 def test_dict_message_with_missing_content_defaults_to_empty() -> None:
@@ -103,6 +120,35 @@ def test_mixed_dict_and_base_messages() -> None:
     assert [m["role"] for m in out] == ["system", "user"]
     assert out[0]["content"] == "sys"
     assert out[1]["content"] == "hi"
+
+
+def test_basemessage_multimodal_blocks_pass_through_structurally() -> None:
+    """HumanMessage with text+image_url blocks keeps the block list intact.
+
+    This is the langchain shape the daemon vision preflight
+    (``enrich_user_text_with_vision``) sends; the converter must emit the
+    OpenAI content-part array verbatim so litellm forwards the image.
+    """
+    blocks = [
+        {"type": "text", "text": "Describe this image concisely."},
+        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,aGk="}},
+    ]
+    out = lc_to_litellm_messages([HumanMessage(content=blocks)])
+    assert out[0]["role"] == "user"
+    assert out[0]["content"] == blocks
+    assert isinstance(out[0]["content"], list)
+
+
+def test_basemessage_multimodal_tuple_blocks_become_list() -> None:
+    """Tuple-shaped block content converts to a list (JSON-serializable)."""
+    blocks = (
+        {"type": "text", "text": "hi"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,aGk="}},
+    )
+    out = lc_to_litellm_messages([HumanMessage(content=blocks)])
+    content = out[0]["content"]
+    assert isinstance(content, list)
+    assert content[0] == {"type": "text", "text": "hi"}
 
 
 # ==============================================================================
