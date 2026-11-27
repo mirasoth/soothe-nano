@@ -75,6 +75,9 @@ class WorkspaceFilesystem(UnifiedFilesystem):
         ".ruff_cache",
         ".mypy_cache",
         "site-packages",
+        # The private framework namespace is never part of the agent-visible
+        # listing surface (direct paths still resolve).
+        ".soothe",
     ]
 
     def __init__(

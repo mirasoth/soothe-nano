@@ -182,6 +182,7 @@ def discover_all_plugins(
         ("datetime", "soothe_nano.toolkits.datetime:DatetimePlugin"),
         ("wizsearch", "soothe_nano.toolkits.wizsearch:WizsearchPlugin"),
         ("http_requests", "soothe_nano.toolkits.http_requests:HttpRequestsPlugin"),
+        ("vision", "soothe_nano.toolkits.vision:VisionPlugin"),
     ]
     for plugin_name, module_path in _builtin_plugins:
         discovered[plugin_name] = (module_path, {}, "built-in")

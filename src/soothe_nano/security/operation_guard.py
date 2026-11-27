@@ -28,6 +28,7 @@ from soothe_nano.protocols.operation_security import (
     OperationSecurityRequest,
     RuleSeverity,
 )
+from soothe_nano.security.path_security import DANGEROUS_COMPONENT_NAMES
 from soothe_nano.utils import expand_path
 from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
@@ -253,6 +254,24 @@ def _deny_or_hint(
     )
 
 
+def _private_namespace_hit(resolved: Path) -> str | None:
+    """Return the protected private-namespace subtree a path targets, or `None`.
+
+    Matches `.soothe/<framework-state subdir>/` (e.g. backups, background,
+    skills mirror) — the engine state that must only be written through
+    framework channels.
+    """
+    parts = resolved.parts
+    for i, part in enumerate(parts):
+        if (
+            part == _PRIVATE_NAMESPACE_DIR
+            and i + 1 < len(parts)
+            and parts[i + 1] in _PRIVATE_STATE_SUBDIRS
+        ):
+            return f"{_PRIVATE_NAMESPACE_DIR}/{parts[i + 1]}"
+    return None
+
+
 def dangerous_command_rule_id(command: str) -> str | None:
     """Return the ``rule_id`` for the first banned pattern ``command`` matches, or ``None``."""
     if not command:
@@ -340,6 +359,7 @@ _SENSITIVE_SYSTEM_PATH_PATTERNS: tuple[str, ...] = (
 # (RFC-LOOP-030 §4.2).
 _FS_RULE_SEVERITY: dict[str, tuple[RuleSeverity, RuleSeverity]] = {
     "filesystem.dangerous_component": ("medium", "high"),
+    "filesystem.private_namespace": ("medium", "critical"),
     "filesystem.sensitive_system_path": ("medium", "critical"),
     "filesystem.workspace_boundary": ("high", "critical"),
     "filesystem.denied_path": ("critical", "critical"),
@@ -347,34 +367,31 @@ _FS_RULE_SEVERITY: dict[str, tuple[RuleSeverity, RuleSeverity]] = {
     "filesystem.denied_filetype": ("critical", "critical"),
 }
 
+# Framework-state subdirs of the `.soothe` private namespace whose direct
+# tool writes are denied: engine state flows through framework channels only.
+# The rest of the namespace (subagent outputs, the virtual-mode home scratch
+# area, rails authored by skills) stays writable — a blanket deny would break
+# `~` writes in virtual mode, where `~` resolves to `<workspace>/.soothe`.
+_PRIVATE_NAMESPACE_DIR = ".soothe"
+_PRIVATE_STATE_SUBDIRS = frozenset(
+    {
+        "backups",
+        "background",
+        "foreground",
+        "conversation_history",
+        "large_tool_results",
+        "skills",
+    }
+)
+
 
 class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
     """Evaluate workspace filesystem and execution command security."""
 
     # Bypass-immune dangerous path components — checked before security_config
-    # so they fire even when no SecurityConfig is wired. Mirrors the
-    # DANGEROUS_COMPONENTS set in path_security.py's PathValidator, kept in
-    # sync so both layers enforce the same boundaries.
-    _DANGEROUS_PATH_COMPONENTS: frozenset[str] = frozenset(
-        {
-            ".git",
-            ".svn",
-            ".hg",
-            ".vscode",
-            ".idea",
-            ".claude",
-            ".bashrc",
-            ".bash_profile",
-            ".zshrc",
-            ".zprofile",
-            ".profile",
-            ".gitconfig",
-            ".gitmodules",
-            ".ripgreprc",
-            ".mcp.json",
-            ".claude.json",
-        }
-    )
+    # so they fire even when no SecurityConfig is wired. Single definition in
+    # path_security.py (IG-CORE-013 D5) shared by both layers.
+    _DANGEROUS_PATH_COMPONENTS = DANGEROUS_COMPONENT_NAMES
 
     def _check_filesystem(
         self,
@@ -408,6 +425,17 @@ class WorkspaceToolOperationSecurity(OperationSecurityProtocol):
                     "filesystem.dangerous_component",
                     f"Path '{file_path}' contains dangerous component '{part}'",
                 )
+
+        # Private framework namespace (IG-CORE-013): engine state is never
+        # written through direct tool calls. Reads stay allowed (medium →
+        # audited hint under the default posture); writes are critical and
+        # hard-deny under the default posture.
+        namespace_hit = _private_namespace_hit(Path(resolved_path))
+        if namespace_hit is not None:
+            return _fs_decision(
+                "filesystem.private_namespace",
+                f"Path '{file_path}' targets the protected private namespace '{namespace_hit}'",
+            )
 
         security = context.security_config
         if security is None:

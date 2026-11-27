@@ -129,7 +129,10 @@ def _ensure_dir_with_backend(path: Path) -> Path:
 
 
 def get_subagent_runtime_dir(subagent_name: str) -> Path:
-    """Get runtime directory for a subagent under virtual home or SOOTHE_HOME.
+    """Get runtime directory for a subagent.
+
+    Unified resolver: workspace-bound →
+    `<workspace>/.soothe/agents/<name>/`; no workspace → `SOOTHE_HOME/agents/<name>/`.
 
     Args:
         subagent_name: Lowercase subagent name (e.g., "browser", "planner").
@@ -137,8 +140,7 @@ def get_subagent_runtime_dir(subagent_name: str) -> Path:
     Returns:
         Path to subagent runtime directory.
     """
-    runtime_dir = _get_virtual_home() / "agents" / subagent_name.lower()
-    return _ensure_dir_with_backend(runtime_dir)
+    return get_workspace_subagent_output_dir(subagent_name)
 
 
 def get_workspace_subagent_output_dir(subagent_name: str) -> Path:

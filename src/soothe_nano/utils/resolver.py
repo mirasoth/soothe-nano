@@ -241,6 +241,7 @@ def resolve_tools(
         "wizsearch",
         "http_requests",
         "deepxiv",
+        "vision",
     ]
     skipped = frozenset(exclude_tool_groups or ())
     enabled_tools = []
@@ -453,6 +454,12 @@ def _resolve_single_tool_group_uncached(
         from soothe_nano.toolkits.http_requests import HttpRequestsToolkit
 
         toolkit = HttpRequestsToolkit(config=config)
+        return toolkit.get_tools()
+
+    if name == "vision":
+        from soothe_nano.toolkits.vision import VisionToolkit
+
+        toolkit = VisionToolkit(config=config)
         return toolkit.get_tools()
 
     # Support individual tool names (map to consolidated group)

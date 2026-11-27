@@ -5,7 +5,18 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.16] - 2026-11-27
+
+### Added
+- Vision toolkit: new `vision` tool group with `analyze_image` (targeted image understanding via the `image` model role) and `extract_text_from_image` (OCR via the `ocr` role). Tools are workspace-anchored and read-only (relative paths anchor to the workspace root; boundary escapes, non-sniffable or disallowed formats, and oversize files are rejected — MIME comes from magic bytes, not extensions). Each tool registers only when its role is set on the router; the group degrades to an empty list otherwise. Calls go through `ainvoke_traced` (rate limiting, retry, tracing).
+- `soothe_nano.llm.multimodal.build_image_message` / `ImageBytes`: shared multimodal message construction (base64 data-URL `image_url` blocks) for vision callers.
+- Config: `tools.vision` (`VisionToolsConfig`) with `image_role`/`ocr_role`/`max_image_bytes` (20 MiB default)/`allowed_formats` (png, jpeg, webp, gif, bmp).
+
+### Changed
+- Workspace reserved-directory normalization: `.soothe` is the single agent-plane private namespace. It is now excluded from glob/listing surfaces (`ESSENTIAL_GLOB_EXCLUDES`), and direct tool writes into its framework-state subdirs (`backups`, `background`, `foreground`, `conversation_history`, `large_tool_results`, `skills`) are denied via the new bypass-immune `filesystem.private_namespace` rule (critical on write, medium on read) — the rest of the namespace (subagent outputs, virtual-home scratch, rails authored by skills) stays writable. The dangerous-component set shared by `PathValidator` and `WorkspaceToolOperationSecurity` is deduplicated into one definition (`security.path_security.DANGEROUS_COMPONENT_NAMES`).
+- Subagent runtime directories are unified: workspace-bound agents always use `<workspace>/.soothe/agents/<name>/` (browser/computer previously used the virtual-home path, splitting outputs across two trees); `SOOTHE_HOME/agents/<name>/` remains the no-workspace fallback.
+- A custom `backup_dir` is always nested under `.soothe/` (previously a relative custom name escaped the private namespace in virtual mode).
+- The implicit process workspace fallback moved from the shared `/tmp/soothe-workspace` to `SOOTHE_HOME/data/tmp/workspace` (private per user).
 
 ## [2.0.15] - 2026-11-26
 

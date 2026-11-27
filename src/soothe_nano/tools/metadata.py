@@ -471,8 +471,20 @@ _register(
 )
 
 # ---------------------------------------------------------------------------
-# soothe media tools
+# soothe media tools (vision toolkit)
 # ---------------------------------------------------------------------------
+
+_register(
+    ToolMeta(
+        name="analyze_image",
+        display_name="AnalyzeImage",
+        arg_keys=("image_path",),
+        path_arg_keys=("image_path",),
+        category="media",
+        outcome_type="file_read",
+        source="soothe",
+    )
+)
 
 _register(
     ToolMeta(
@@ -488,46 +500,10 @@ _register(
 
 _register(
     ToolMeta(
-        name="analyze_video",
-        display_name="AnalyzeVideo",
-        arg_keys=("video_path",),
-        path_arg_keys=("video_path",),
-        category="media",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
         name="get_video_info",
         display_name="GetVideoInfo",
         arg_keys=("video_path",),
         path_arg_keys=("video_path",),
-        category="media",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="transcribe_audio",
-        display_name="TranscribeAudio",
-        arg_keys=("audio_path",),
-        path_arg_keys=("audio_path",),
-        category="media",
-        outcome_type="file_read",
-        source="soothe",
-    )
-)
-
-_register(
-    ToolMeta(
-        name="audio_qa",
-        display_name="AudioQA",
-        arg_keys=("audio_path",),
-        path_arg_keys=("audio_path",),
         category="media",
         outcome_type="file_read",
         source="soothe",

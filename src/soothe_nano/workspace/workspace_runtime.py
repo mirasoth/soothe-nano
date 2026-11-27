@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,10 +97,16 @@ class WorkspaceRuntime:
 
     @classmethod
     def process_workspace_root(cls) -> Path:
-        """Process-default workspace root when no explicit workspace is bound."""
+        """Process-default workspace root when no explicit workspace is bound.
+
+        The fallback lives under SOOTHE_HOME (private per user) instead of a
+        shared temp directory.
+        """
         env_workspace = os.environ.get("SOOTHE_WORKSPACE")
         if env_workspace:
             return Path(env_workspace).expanduser().resolve()
-        workspace = Path(tempfile.gettempdir()) / "soothe-workspace"
+        from soothe_nano.config import SOOTHE_HOME
+
+        workspace = Path(SOOTHE_HOME) / "data" / "tmp" / "workspace"
         workspace.mkdir(parents=True, exist_ok=True)
         return workspace.resolve()

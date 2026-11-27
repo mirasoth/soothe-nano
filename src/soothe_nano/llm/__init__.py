@@ -18,6 +18,7 @@ from soothe_nano.llm.invoke_policy import (
     await_with_llm_call_policy,
     llm_rate_limit_config_from,
 )
+from soothe_nano.llm.multimodal import ImageBytes, build_image_message
 from soothe_nano.llm.observability import (
     SootheLLMTokenUsageCallbackHandler,
     bind_llm_token_observability,
@@ -111,6 +112,9 @@ __all__ = [
     "ainvoke_traced",
     "ainvoke_structured_traced",
     "build_traced_invoke_config",
+    # Multimodal message construction
+    "ImageBytes",
+    "build_image_message",
     # Exceptions
     "LLMError",
 ]

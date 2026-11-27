@@ -542,6 +542,44 @@ class HttpRequestsToolsConfig(ToolConfig):
     verify_ssl: bool = Field(default=True, description="TLS verification for outbound HTTP.")
 
 
+DEFAULT_VISION_MAX_IMAGE_BYTES = 20 * 1024 * 1024
+"""Default maximum image payload size for vision tools (20 MiB)."""
+
+DEFAULT_VISION_ALLOWED_FORMATS: tuple[str, ...] = ("png", "jpeg", "webp", "gif", "bmp")
+"""Allowed vision tool image formats, matched against magic bytes."""
+
+
+class VisionToolsConfig(ToolConfig):
+    """Vision tools (analyze_image, extract_text_from_image).
+
+    Each tool registers only when its model role is set on the router; the
+    group degrades to empty when no roles are configured.
+
+    Args:
+        enabled: Whether vision tools are registered.
+        image_role: Router role for targeted image understanding.
+        ocr_role: Router role for OCR text extraction.
+        max_image_bytes: Maximum decoded image size in bytes.
+        allowed_formats: Allowed image formats, matched against magic bytes.
+    """
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable analyze_image / extract_text_from_image tools.",
+    )
+    image_role: str = Field(default="image", description="Router role for image understanding.")
+    ocr_role: str = Field(default="ocr", description="Router role for OCR text extraction.")
+    max_image_bytes: int = Field(
+        default=DEFAULT_VISION_MAX_IMAGE_BYTES,
+        gt=0,
+        description="Maximum decoded image size in bytes.",
+    )
+    allowed_formats: tuple[str, ...] = Field(
+        default_factory=lambda: tuple(DEFAULT_VISION_ALLOWED_FORMATS),
+        description="Allowed image formats, matched against magic bytes.",
+    )
+
+
 class ToolsConfig(BaseModel):
     """Configuration for all tool groups.
 
@@ -555,6 +593,7 @@ class ToolsConfig(BaseModel):
             (tool names `wizsearch_*` kept for wire/config compatibility).
         http_requests: LangChain Requests toolkit (HTTP GET/POST/PATCH/PUT/DELETE).
         deepxiv: DeepXiv academic paper search tools (disabled by default).
+        vision: Vision tools (analyze_image, extract_text_from_image).
     """
 
     shell: ShellToolsConfig = Field(default_factory=ShellToolsConfig)
@@ -562,6 +601,7 @@ class ToolsConfig(BaseModel):
     wizsearch: WebSearchConfig = Field(default_factory=WebSearchConfig)
     http_requests: HttpRequestsToolsConfig = Field(default_factory=HttpRequestsToolsConfig)
     deepxiv: DeepxivToolsConfig = Field(default_factory=lambda: DeepxivToolsConfig(enabled=False))
+    vision: VisionToolsConfig = Field(default_factory=VisionToolsConfig)
 
 
 class ArcBoxBackendConfig(BaseModel):

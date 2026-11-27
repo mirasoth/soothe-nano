@@ -14,6 +14,35 @@ from soothe_nano.workspace.workspace_paths import WorkspacePaths
 
 logger = logging.getLogger(__name__)
 
+# Named dangerous path components shared by PathValidator and the operation
+# guard — the single definition (IG-CORE-013 D5); both layers previously
+# duplicated this set and drifted.
+DANGEROUS_COMPONENT_NAMES: frozenset[str] = frozenset(
+    {
+        # VCS / cache dirs (existing)
+        ".git",
+        ".svn",
+        ".hg",
+        # Project config dirs (RFC-622 \u00a79b migration from soothe)
+        ".vscode",
+        ".idea",
+        ".claude",
+        # Shell config files (code execution on shell startup)
+        ".bashrc",
+        ".bash_profile",
+        ".zshrc",
+        ".zprofile",
+        ".profile",
+        # Git config files (hooks = arbitrary code execution)
+        ".gitconfig",
+        ".gitmodules",
+        # Other sensitive config
+        ".ripgreprc",
+        ".mcp.json",
+        ".claude.json",
+    }
+)
+
 
 class PathValidationError(Exception):
     """Raised when path validation fails."""
@@ -79,38 +108,15 @@ class PathValidator:
         (r"^\\\\\\\\", "unc_path_backslash", ValidationSeverity.CRITICAL),
     )
 
-    DANGEROUS_COMPONENTS: frozenset[str] = frozenset(
-        {
-            "..",
-            ".",
-            "~",
-            "",
-            # VCS / cache dirs (existing)
-            ".git",
-            ".svn",
-            ".hg",
-            "__pycache__",
-            ".DS_Store",
-            "Thumbs.db",
-            # Project config dirs (RFC-622 \u00a79b migration from soothe)
-            ".vscode",
-            ".idea",
-            ".claude",
-            # Shell config files (code execution on shell startup)
-            ".bashrc",
-            ".bash_profile",
-            ".zshrc",
-            ".zprofile",
-            ".profile",
-            # Git config files (hooks = arbitrary code execution)
-            ".gitconfig",
-            ".gitmodules",
-            # Other sensitive config
-            ".ripgreprc",
-            ".mcp.json",
-            ".claude.json",
-        }
-    )
+    DANGEROUS_COMPONENTS: frozenset[str] = DANGEROUS_COMPONENT_NAMES | {
+        "..",
+        ".",
+        "~",
+        "",
+        "__pycache__",
+        ".DS_Store",
+        "Thumbs.db",
+    }
 
     BLOCKED_SYSTEM_PATHS: frozenset[str] = frozenset(
         {

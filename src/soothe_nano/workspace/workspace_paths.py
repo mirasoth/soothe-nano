@@ -144,13 +144,18 @@ class WorkspacePaths:
     ) -> str:
         """Resolve product backup directory for tool/backend use.
 
-        Defaults to workspace `.soothe/backups`. Returns a virtual absolute path
-        when the backend is in virtual mode; otherwise a host path under the
-        workspace root.
+        Defaults to workspace `.soothe/backups`; a configured relative name is
+        always nested under the `.soothe/` private namespace so custom backup
+        dirs can never escape it. Returns a virtual absolute
+        path when the backend is in virtual mode; otherwise a host path under
+        the workspace root.
         """
         raw = str(configured).strip() if configured is not None else ""
         rel = raw or WORKSPACE_BACKUP_DIR
         path = Path(rel)
+        if not path.is_absolute() and path.parts[0] != ".soothe":
+            path = Path(".soothe") / path
+            rel = path.as_posix()
         virtual = bool(getattr(backend, "virtual_mode", False)) if backend is not None else False
         if virtual:
             if path.is_absolute():
