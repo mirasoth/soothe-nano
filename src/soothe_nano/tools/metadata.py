@@ -578,10 +578,18 @@ _FALLBACK_PATH_ARG_KEYS: tuple[str, ...] = (
 
 
 def is_policy_filesystem_tool(tool_name: str) -> bool:
-    """Return True if *tool_name* is a filesystem tool subject to path policy."""
+    """Return True if *tool_name* is a filesystem tool subject to path policy.
+
+    Covers ``file_ops`` tools and any registered read-only tool that targets a
+    filesystem path (e.g. the vision toolkit) — both follow the same
+    filesystem-read policy chain (sensitive/denied/allowed paths, workspace
+    boundary with `security.allow_paths_outside_workspace`).
+    """
     meta = get_tool_meta(tool_name)
     if meta is not None:
-        return meta.category == "file_ops"
+        if meta.category == "file_ops":
+            return True
+        return bool(meta.path_arg_keys) and meta.outcome_type == "file_read"
     return tool_name.startswith("fs_")
 
 

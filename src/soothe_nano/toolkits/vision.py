@@ -84,17 +84,15 @@ def _resolve_workspace(workspace_root: str, tool_runtime: Any = None) -> Path | 
 
 
 def _resolve_image_file(image_path: str, workspace: Path) -> Path:
-    """Anchor *image_path* inside *workspace* and enforce the workspace boundary.
+    """Anchor *image_path* to *workspace* and require an existing file.
 
-    Relative paths anchor to the workspace root; both relative and absolute
-    paths must resolve inside the workspace boundary (symlink escapes included).
+    Relative paths anchor to the workspace root. Path policy (workspace
+    boundary, `security.allow_paths_outside_workspace`, denied/allowed paths)
+    is enforced by the operation-security middleware like every other read
+    tool; the toolkit itself only anchors and sniffs.
     """
     candidate = Path(image_path)
     full = candidate.resolve() if candidate.is_absolute() else (workspace / candidate).resolve()
-    try:
-        full.relative_to(workspace.resolve())
-    except ValueError as exc:
-        raise ValueError(f"image path escapes workspace boundary: {image_path}") from exc
     if not full.is_file():
         raise ValueError(f"image path is not a file: {image_path}")
     return full
@@ -190,7 +188,7 @@ class AnalyzeImageTool(BaseTool):
     description: str = (
         "Analyze an image file and answer a question about its contents "
         "(objects, text, charts, layout, or any visual detail). "
-        "Inputs: `image_path` (required, workspace-relative or absolute within the workspace); "
+        "Inputs: `image_path` (required, workspace-relative path, or any path when security.allow_paths_outside_workspace=true); "
         "`question` (recommended — the specific detail to answer). "
         "Read-only; does not modify the workspace. "
         "Cost: one targeted vision model call."
@@ -246,7 +244,7 @@ class ExtractTextFromImageTool(BaseTool):
     description: str = (
         "Extract all text visible in an image (OCR) and return it verbatim, "
         "preserving reading order and line breaks. "
-        "Inputs: `image_path` (required, workspace-relative or absolute within the workspace); "
+        "Inputs: `image_path` (required, workspace-relative path, or any path when security.allow_paths_outside_workspace=true); "
         "`language` (optional hint for the expected text language). "
         "Read-only; does not modify the workspace. "
         "Cost: one OCR model call."

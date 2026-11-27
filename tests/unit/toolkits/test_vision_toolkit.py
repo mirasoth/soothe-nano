@@ -100,7 +100,7 @@ class TestVisionToolkitGating:
 
 
 class TestImagePathValidation:
-    """Verify workspace anchoring and boundary enforcement."""
+    """Verify workspace anchoring — path policy lives in the operation middleware."""
 
     def test_relative_path_anchors_to_workspace(self, tmp_path) -> None:
         _write_image(tmp_path, "input/attachments/a.png", PNG_BYTES)
@@ -112,25 +112,12 @@ class TestImagePathValidation:
         resolved = _resolve_image_file(str(tmp_path / "a.png"), tmp_path)
         assert resolved == (tmp_path / "a.png").resolve()
 
-    @pytest.mark.parametrize(
-        "image_path",
-        ["../outside.png", "../../etc/passwd"],
-    )
-    def test_relative_escape_rejected(self, tmp_path, image_path: str) -> None:
-        with pytest.raises(ValueError, match="escapes workspace boundary"):
-            _resolve_image_file(image_path, tmp_path)
-
-    def test_absolute_escape_rejected(self, tmp_path) -> None:
-        with pytest.raises(ValueError, match="escapes workspace boundary"):
-            _resolve_image_file("/etc/passwd", tmp_path)
-
-    def test_symlink_escape_rejected(self, tmp_path) -> None:
+    def test_absolute_path_outside_workspace_resolves(self, tmp_path) -> None:
+        """No toolkit-level boundary check — the middleware owns that policy."""
         outside = tmp_path.parent / "outside.png"
         outside.write_bytes(PNG_BYTES)
-        link = tmp_path / "link.png"
-        link.symlink_to(outside)
-        with pytest.raises(ValueError, match="escapes workspace boundary"):
-            _resolve_image_file("link.png", tmp_path)
+        resolved = _resolve_image_file(str(outside), tmp_path)
+        assert resolved == outside.resolve()
 
     def test_missing_file_rejected(self, tmp_path) -> None:
         with pytest.raises(ValueError, match="not a file"):
@@ -183,13 +170,22 @@ class TestAnalyzeImageExecution:
 
         tool = _make_analyze_tool(config, tmp_path)
         await tool.ainvoke({"image_path": "a.png"})
-        assert "Describe this image in detail" in recorder.calls[0]["messages"][0].content[0]["text"]
+        assert (
+            "Describe this image in detail" in recorder.calls[0]["messages"][0].content[0]["text"]
+        )
 
-    async def test_boundary_escape_returns_error(self, tmp_path) -> None:
+    async def test_outside_path_processed_without_tool_level_boundary(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """The toolkit does not boundary-check; policy is the middleware's job."""
+        outside = tmp_path.parent / "outside.png"
+        outside.write_bytes(PNG_BYTES)
+        recorder = _Recorder("outside answer")
+        monkeypatch.setattr("soothe_nano.toolkits.vision.ainvoke_traced", recorder)
+
         tool = _make_analyze_tool(_make_config(), tmp_path)
-        result = await tool.ainvoke({"image_path": "../outside.png"})
-        assert result.startswith("Error:")
-        assert "escapes workspace boundary" in result
+        result = await tool.ainvoke({"image_path": str(outside)})
+        assert result == "outside answer"
 
     async def test_oversize_rejected(self, tmp_path) -> None:
         config = _make_config(max_image_bytes=8)
