@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from litellm import APIConnectionError
+
 from soothe_nano.utils.tool_error_handler import (
     _filter_kwargs,
     _simplify_error,
@@ -198,6 +200,39 @@ class TestSimplifyError:
         msg = _simplify_error(exc)
         assert "ValueError" in msg
         assert "Something went wrong" in msg
+
+    def test_wrapped_programming_error_is_not_network(self):
+        """A programming error wrapped by a provider layer must not be
+        classified as a network failure (regression: litellm wrapped an
+        AttributeError from message transformation into APIConnectionError,
+        whose name contains "ConnectionError" — agents then probed
+        connectivity instead of stopping)."""
+        root = AttributeError("'str' object has no attribute 'get'")
+        exc = APIConnectionError(message=str(root), llm_provider="openai", model="m")
+        exc.__cause__ = root
+        msg = _simplify_error(exc)
+        assert "Tool bug" in msg
+        assert "AttributeError" in msg
+        assert "'str' object has no attribute 'get'" in msg
+        assert "not a transient failure" in msg
+        assert "Connection failed" not in msg
+
+    def test_bare_programming_error_reports_type(self):
+        msg = _simplify_error(KeyError("missing_config"))
+        assert "Tool bug" in msg
+        assert "KeyError" in msg
+        assert "not a transient failure" in msg
+
+    def test_llm_argument_typeerror_stays_recoverable(self):
+        exc = TypeError("got an unexpected keyword argument 'limit'")
+        msg = _simplify_error(exc)
+        assert "Unexpected argument" in msg
+        assert "Tool bug" not in msg
+
+    def test_provider_connection_error_still_network(self):
+        exc = APIConnectionError(message="boom", llm_provider="openai", model="m")
+        msg = _simplify_error(exc)
+        assert "Connection failed" in msg
 
     def test_unexpected_keyword_argument(self):
         """Unexpected kwargs become actionable guidance without TypeError noise."""

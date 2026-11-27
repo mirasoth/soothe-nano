@@ -20,6 +20,53 @@ _MISSING_REQUIRED_RE = re.compile(r"missing (?P<count>\d+) required positional a
 
 _RETRY_FAILED = object()
 
+# Provider/retry layers wrap raw errors (litellm → openai.APIConnectionError),
+# so the chain is scanned for the real cause before network classification.
+_PROGRAMMING_ERROR_TYPES: tuple[type[BaseException], ...] = (
+    AttributeError,
+    KeyError,
+    IndexError,
+    NameError,
+    UnboundLocalError,
+    NotImplementedError,
+    ZeroDivisionError,
+)
+
+# Exact type names treated as transient network failures. Substring matching
+# is unsafe: "APIConnectionError" contains both "ConnectError" and
+# "ConnectionError", which once mislabeled a wrapped programming error as a
+# network outage.
+_CONNECTION_ERROR_NAMES: frozenset[str] = frozenset(
+    {
+        "APIConnectionError",
+        "ConnectError",
+        "ConnectionError",
+        "SSLError",
+        "ProtocolError",
+        "ReadError",
+        "WriteError",
+        "RemoteProtocolError",
+    }
+)
+
+
+def _find_programming_error(exc: BaseException) -> BaseException | None:
+    """Return the first programming error in *exc*'s cause/context chain.
+
+    A non-argument `TypeError` counts as a programming error; argument-shape
+    TypeErrors are handled earlier as recoverable LLM mistakes.
+    """
+    seen: set[int] = set()
+    link: BaseException | None = exc
+    while link is not None and id(link) not in seen:
+        seen.add(id(link))
+        if isinstance(link, _PROGRAMMING_ERROR_TYPES):
+            return link
+        if isinstance(link, TypeError) and not _is_llm_argument_error(link):
+            return link
+        link = link.__cause__ or link.__context__
+    return None
+
 
 def tool_error_handler(tool_name: str, return_type: str = "dict") -> Callable[[Callable], Callable]:
     """Decorator for standardized tool error handling.
@@ -262,15 +309,30 @@ def _simplify_error(exc: Exception) -> str:
             )
         return "Missing required argument(s). Check the tool schema and retry."
 
-    # DNS/Network errors
+    # Programming errors (including ones wrapped by providers/retry layers) must
+    # not be classified as transient network failures — agents otherwise waste
+    # calls probing connectivity instead of stopping or adjusting the input.
+    root = _find_programming_error(exc)
+    if root is not None:
+        root_type = type(root).__name__
+        wrapper = "" if root is exc else f" (wrapped in {error_type})"
+        return (
+            f"Tool bug — {root_type}{wrapper}: {root}. "
+            "This is not a transient failure; do not retry the same call unchanged."
+        )
+
+    # DNS/Network errors — exact type-name match (substring matching would
+    # misclassify anything whose name merely contains these, and OSError
+    # subclasses cover connection refused/unreachable/DNS failures). The
+    # timeout check runs first: `asyncio.TimeoutError` is an OSError subclass.
+    if "Timeout" in error_type or "timeout" in error_msg.lower():
+        return "Request timed out"
     if "nodename nor servname" in error_msg:
         return "DNS resolution failed - invalid domain name"
-    if "ConnectError" in error_type or "ConnectionError" in error_type:
+    if isinstance(exc, OSError) or type(exc).__name__ in _CONNECTION_ERROR_NAMES:
         if "Connection refused" in error_msg:
             return "Connection refused - service may not be running"
         return "Connection failed - network unreachable or service down"
-    if "Timeout" in error_type or "timeout" in error_msg.lower():
-        return "Request timed out"
 
     # HTTP errors - check response object
     response = getattr(exc, "response", None)
