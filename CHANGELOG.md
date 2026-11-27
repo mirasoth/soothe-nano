@@ -7,8 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-27
+
 ### Changed
 - CI / Docker Guest Image workflow (`docker-base.yml`) no longer builds on GitHub release: it is now manually triggered only (`workflow_dispatch`), mirroring the soothe repo's `release-docker.yml` for `soothed`.
+
+### Fixed
+- Structured output on providers without native `json_schema` support no longer hides the schema from the model. The fallback path (`_StructuredOutputRunnable`) now appends a compact schema-in-prompt instruction and attaches `response_format: {"type": "json_object"}` (gated by the new `ProviderCapabilities.supports_json_object`, default true). Previously the fallback sent neither tools nor `response_format` nor an in-prompt schema, so thinking models invented field names (`goal_closed`/`confidence` instead of `goal_portion_complete`) or emitted broken JSON — on `openai/hy4-flash` this produced an 8-attempt, 9-minute retry storm in a single `assess_step_close` call (44–104 s per attempt, 8–13k output tokens each). With the schema in the prompt the same call returns exactly-correct fields in 3–5 s (6/6 live rounds).
+- `invoke_structured_chat` collapses the `function_calling → None → json_schema → json_mode` method ladder to a single method for nano chat models with `supports_json_schema=False` — all four methods route onto the same fallback runnable, so the ladder was re-rolling an identical broken call up to 8 times. The collapsed path is bounded to one attempt plus one repair retry.
+- `invoke_structured_chat` / `ainvoke_structured_traced` accept `deadline_s`: a total wall-clock budget for the whole method ladder that aborts with `StructuredOutputError` so callers can take their fail-closed path instead of stalling the loop.
+- Structured-output validation-failure debug logs now carry the validation error detail and the received payload keys (they previously said only "schema validation failed", leaving the actual mismatch to guesswork).
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.1.0...v2.1.1
 
 ## [2.1.0] - 2026-11-27
 
