@@ -7,12 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-27
+
 ### Changed
 - Vision tools now follow the shared operation-security read path instead of a toolkit-level workspace boundary: `analyze_image` / `extract_text_from_image` are classified as filesystem-read policy tools (registered `path_arg_keys` + `outcome_type="file_read"`), so `image_path` goes through the standard chain — sensitive system paths, `security.denied_paths` / `allowed_paths`, and the workspace boundary governed by `security.allow_paths_outside_workspace` (with `require_approval_for_outside_paths`). The toolkit itself only anchors relative paths to the workspace and sniffs the payload; outside-workspace images are readable when the security config allows, exactly like other read tools.
 
 ### Fixed
 - `tool_error_handler` no longer misclassifies programming errors as network failures. Provider/retry layers wrap raw errors (litellm → `openai.APIConnectionError`); the previous substring match on the exception type name (`"ConnectionError" in "APIConnectionError"`) turned a wrapped `AttributeError` from message transformation into "Connection failed - network unreachable or service down", sending agents on pointless connectivity probes (62 tool calls in one real loop). `_simplify_error` now scans the exception chain for programming errors (`AttributeError`/`KeyError`/`IndexError`/non-argument `TypeError`/…) and reports them as "Tool bug — … do not retry the same call unchanged"; network classification uses exact type names plus `OSError` `isinstance`, with the timeout check first (`asyncio.TimeoutError` is an `OSError` subclass).
 - `build_image_message` emits the text part as a `{"type": "text", ...}` dict instead of a bare string. litellm's OpenAI-compatible transform requires every multimodal content item to be a dict — a bare-string text part crashed `_transform_content_item` (`AttributeError: 'str' object has no attribute 'get'`), which the vision toolkit's error handler surfaced as a misleading "Connection failed - network unreachable or service down".
+
+[Compare with previous version]: https://github.com/mirasoth/soothe-nano/compare/v2.0.16...v2.1.0
 
 ## [2.0.16] - 2026-11-27
 
