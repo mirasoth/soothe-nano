@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-11-27
+
+### Fixed
+- Tool timeout middleware: `analyze_image` / `extract_text_from_image` now get a per-tool timeout of 180s instead of the 60s default. Both wrap a full multimodal model call that routinely exceeds 60s on large images, producing "Tool 'analyze_image' timed out after 60.0s" errors mid-loop. Per-tool overrides remain configurable via `agent.middleware.tool_timeout.per_tool`.
+
 ## [2.1.1] - 2026-11-27
 
 ### Changed

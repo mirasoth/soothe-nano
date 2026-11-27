@@ -1443,6 +1443,10 @@ class ToolTimeoutConfig(BaseModel):
             # decompose_task wraps an internal structured LLM call (grounding
             # critic) that may need schema-repair retries; give it 3x default.
             "decompose_task": 180.0,
+            # Vision tools wrap a full multimodal model call that can run long
+            # on large images; 3x default keeps them under the timeout ceiling.
+            "analyze_image": 180.0,
+            "extract_text_from_image": 180.0,
         },
         description="Per-tool timeout overrides (tool_name -> seconds)",
     )
