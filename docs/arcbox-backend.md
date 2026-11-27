@@ -324,7 +324,7 @@ backend differs between host and sandbox.
   (production guest image: python 3.12 bookworm + setsid/procps/coreutils; the
   daemon default template has **no python3** and is rejected by the image
   pre-check). Template definition `docker/templates/prod/Dockerfile` (root
-  runtime — ArcBox default); CI publishes it on release as
+  runtime — ArcBox default); CI publishes it on manual dispatch only as
   `registry.cn-hangzhou.aliyuncs.com/lacogito/soothe-nano-vm-prod`. Local
   registration:
 

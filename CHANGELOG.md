@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- CI / Docker Guest Image workflow (`docker-base.yml`) no longer builds on GitHub release: it is now manually triggered only (`workflow_dispatch`), mirroring the soothe repo's `release-docker.yml` for `soothed`.
+
 ## [2.1.0] - 2026-11-27
 
 ### Changed

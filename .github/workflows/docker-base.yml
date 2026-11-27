@@ -8,13 +8,12 @@ name: Docker Guest Image
 # published as a base image that downstream consumers (abctl, integration
 # layers) pull instead of building locally.
 #
-# Trigger: GitHub Release published, or manual workflow_dispatch. Manual
-# builds publish the configured IMAGE_VERSION (overridable via input) and
-# move the `latest` tag to that build (toggleable, default on).
+# Manually triggered only (workflow_dispatch); never fires automatically on a
+# GitHub release.
 #
 # The image is versioned standalone from the soothe-nano package: bump
-# IMAGE_VERSION below whenever the guest image changes. On a release, the
-# image is tagged with IMAGE_VERSION and `latest` is moved to that build.
+# IMAGE_VERSION below whenever the guest image changes. A manual build is
+# tagged with IMAGE_VERSION and optionally moves `latest` to that build.
 #
 # Image:
 #   registry.cn-hangzhou.aliyuncs.com/lacogito/soothe-nano-vm-prod
@@ -24,8 +23,6 @@ name: Docker Guest Image
 #   credentials. Without them the build runs in build-only mode (no push).
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       image_version:
@@ -76,13 +73,8 @@ jobs:
           fi
           echo "effective_version=${version}" >> "${GITHUB_OUTPUT}"
 
-          # `latest` tag: always moved on release; on manual dispatch follow the
-          # update_latest input (defaults to true).
-          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
-            update_latest=true
-          else
-            update_latest="${INPUT_UPDATE_LATEST}"
-          fi
+          # `latest` tag: follows the update_latest input (defaults to true).
+          update_latest="${INPUT_UPDATE_LATEST}"
           echo "update_latest=${update_latest}" >> "${GITHUB_OUTPUT}"
 
           echo "Effective image version: ${version}"
@@ -160,7 +152,7 @@ jobs:
           echo "" >> ${GITHUB_STEP_SUMMARY}
           echo "| Property | Value |" >> ${GITHUB_STEP_SUMMARY}
           echo "|----------|-------|" >> ${GITHUB_STEP_SUMMARY}
-          echo "| Release | ${{ github.event.release.tag_name || github.event_name }} |" >> ${GITHUB_STEP_SUMMARY}
+          echo "| Release | ${{ github.event_name }} |" >> ${GITHUB_STEP_SUMMARY}
           echo "| Image version | ${{ steps.resolve.outputs.effective_version }} |" >> ${GITHUB_STEP_SUMMARY}
           echo "| Latest tag | ${{ steps.resolve.outputs.update_latest }} |" >> ${GITHUB_STEP_SUMMARY}
           echo "| Tags | \`${{ steps.meta.outputs.tags }}\` |" >> ${GITHUB_STEP_SUMMARY}
