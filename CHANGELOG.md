@@ -5,6 +5,11 @@ All notable changes to soothe-nano are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `build_image_message` emits the text part as a `{"type": "text", ...}` dict instead of a bare string. litellm's OpenAI-compatible transform requires every multimodal content item to be a dict — a bare-string text part crashed `_transform_content_item` (`AttributeError: 'str' object has no attribute 'get'`), which the vision toolkit's error handler surfaced as a misleading "Connection failed - network unreachable or service down".
+
 ## [2.0.16] - 2026-11-27
 
 ### Added

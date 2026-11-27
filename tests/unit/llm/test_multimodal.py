@@ -42,12 +42,24 @@ def test_build_image_message_with_image_bytes() -> None:
     assert isinstance(message, HumanMessage)
     blocks = message.content
     assert isinstance(blocks, list)
-    assert blocks[0] == "hello"
+    assert blocks[0] == {"type": "text", "text": "hello"}
     image_block = blocks[1]
     assert isinstance(image_block, dict)
     assert image_block["type"] == "image_url"
     expected_url = "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode("ascii")
     assert image_block["image_url"]["url"] == expected_url
+
+
+def test_build_image_message_all_parts_are_dicts() -> None:
+    """litellm's OpenAI transform requires every content item to be a dict.
+
+    A bare-string text part crashes ``_transform_content_item`` with
+    ``AttributeError: 'str' object has no attribute 'get'`` — the failure the
+    vision toolkit shipped with before this pin.
+    """
+    message = build_image_message("describe this", [ImageBytes("image/png", PNG_BYTES)])
+    blocks = message.content
+    assert all(isinstance(block, dict) and "type" in block for block in blocks)
 
 
 def test_build_image_message_with_multiple_images() -> None:
@@ -71,7 +83,7 @@ def test_build_image_message_with_path_sniffs_mime(tmp_path, monkeypatch) -> Non
 
     message = build_image_message("describe", [Path("photo.png")])
     blocks = message.content
-    assert blocks[0] == "describe"
+    assert blocks[0] == {"type": "text", "text": "describe"}
     assert blocks[1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 

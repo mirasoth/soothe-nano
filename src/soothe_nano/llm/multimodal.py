@@ -61,9 +61,9 @@ def build_image_message(text: str, images: Sequence[ImageBytes | Path]) -> Human
     Raises:
         ValueError: When a `Path` input is not a sniffable image.
     """
-    blocks: list[dict[str, str] | str] = []
+    blocks: list[dict[str, str]] = []
     if text.strip():
-        blocks.append(text)
+        blocks.append({"type": "text", "text": text})
     for image in images:
         if isinstance(image, Path):
             image = _image_bytes_from_path(image)

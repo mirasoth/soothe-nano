@@ -171,7 +171,7 @@ class TestAnalyzeImageExecution:
         assert call["soothe_config"] is config
         message = call["messages"][0]
         blocks = message.content
-        assert blocks[0] == "read the gauge"
+        assert blocks[0] == {"type": "text", "text": "read the gauge"}
         expected_url = "data:image/png;base64," + base64.b64encode(PNG_BYTES).decode("ascii")
         assert blocks[1]["image_url"]["url"] == expected_url
 
@@ -183,7 +183,7 @@ class TestAnalyzeImageExecution:
 
         tool = _make_analyze_tool(config, tmp_path)
         await tool.ainvoke({"image_path": "a.png"})
-        assert "Describe this image in detail" in recorder.calls[0]["messages"][0].content[0]
+        assert "Describe this image in detail" in recorder.calls[0]["messages"][0].content[0]["text"]
 
     async def test_boundary_escape_returns_error(self, tmp_path) -> None:
         tool = _make_analyze_tool(_make_config(), tmp_path)
@@ -240,8 +240,8 @@ class TestExtractTextExecution:
         assert result == "extracted text"
         assert config._roles == ["ocr"]
         text_block = recorder.calls[0]["messages"][0].content[0]
-        assert "Extract all text" in text_block
-        assert "German" in text_block
+        assert "Extract all text" in text_block["text"]
+        assert "German" in text_block["text"]
 
 
 class TestResolverRegistration:
