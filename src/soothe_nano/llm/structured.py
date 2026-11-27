@@ -11,6 +11,7 @@ here; callers should use `invoke_structured_chat` /
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from typing import Any, TypeVar
 from weakref import WeakKeyDictionary
@@ -58,6 +59,11 @@ def _ordered_structured_methods(
 ) -> tuple[str | None, ...]:
     """Return method order with the cached working method moved to the front."""
     base = preferred if preferred is not None else _STRUCTURED_METHODS
+    if preferred is None and _uses_single_fallback(chat):
+        # Nano chat models with `supports_json_schema=False` route every
+        # method onto the same schema-in-prompt fallback runnable; walking
+        # the ladder would just re-roll the identical call.
+        return ("json_mode",)
     try:
         cached = _METHOD_CACHE.get(chat, _MISSING)
     except TypeError:
@@ -67,6 +73,14 @@ def _ordered_structured_methods(
     if cached not in base:
         return base
     return (cached, *(m for m in base if m != cached))
+
+
+def _uses_single_fallback(chat: BaseChatModel) -> bool:
+    """Duck-check nano chat models whose structured output has one real method."""
+    capabilities = getattr(chat, "capabilities", None)
+    if capabilities is None:
+        return False
+    return getattr(capabilities, "supports_json_schema", True) is False
 
 
 def _remember_structured_method(chat: BaseChatModel, method: str | None) -> None:
@@ -201,6 +215,7 @@ async def invoke_structured_chat(
     config: dict[str, Any] | None = None,
     normalize: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     methods: tuple[str | None, ...] | None = None,
+    deadline_s: float | None = None,
 ) -> dict[str, Any]:
     """Invoke chat with strict structured output enforced by `json_schema`.
 
@@ -213,6 +228,9 @@ async def invoke_structured_chat(
         config: Optional RunnableConfig (Langfuse tracing, etc.).
         normalize: Optional pre-validation dict normalizer.
         methods: Optional ordered structured-output methods to try.
+        deadline_s: Optional total wall-clock budget for the whole method
+            ladder; exceeded budgets abort with `StructuredOutputError` so
+            callers can take their fail-closed path instead of stalling.
 
     Returns:
         Parsed and validated output as a dict.
@@ -232,8 +250,17 @@ async def invoke_structured_chat(
     prepared_messages = ensure_json_keyword_in_messages(messages)
     bind_strict = strict if normalize is None else False
 
+    started = time.monotonic()
+
+    def _deadline_exceeded() -> bool:
+        return deadline_s is not None and (time.monotonic() - started) >= deadline_s
+
     last_exc: Exception | None = None
     for method in ordered:
+        if _deadline_exceeded():
+            raise StructuredOutputError(
+                f"structured invoke exceeded deadline of {deadline_s}s before method={method!r}"
+            )
         try:
             structured = _try_create_structured_runnable(
                 chat,
@@ -251,6 +278,11 @@ async def invoke_structured_chat(
 
         method_failed = False
         for attempt in range(_MAX_METHOD_INVOKE_ATTEMPTS):
+            if _deadline_exceeded():
+                raise StructuredOutputError(
+                    f"structured invoke exceeded deadline of {deadline_s}s "
+                    f"during method={method!r} attempt={attempt + 1}"
+                )
             try:
                 result = await structured.ainvoke(prepared_messages, config=invoke_cfg)
             except StructuredOutputError:
@@ -260,9 +292,10 @@ async def invoke_structured_chat(
                 if attempt + 1 < _MAX_METHOD_INVOKE_ATTEMPTS:
                     logger.debug(
                         "structured invoke: method=%s attempt=%d bind-time validation "
-                        "failed, retrying with repair hint",
+                        "failed (%s), retrying with repair hint",
                         method,
                         attempt + 1,
+                        exc.message,
                     )
                     prepared_messages = [
                         *prepared_messages,
@@ -271,8 +304,10 @@ async def invoke_structured_chat(
                     continue
                 if method != last_method:
                     logger.debug(
-                        "structured invoke: method=%s bind-time validation failed, falling back",
+                        "structured invoke: method=%s bind-time validation failed (%s), "
+                        "falling back",
                         method,
+                        exc.message,
                     )
                     method_failed = True
                     break
@@ -320,9 +355,11 @@ async def invoke_structured_chat(
                     if attempt + 1 < _MAX_METHOD_INVOKE_ATTEMPTS:
                         logger.debug(
                             "structured invoke: method=%s attempt=%d schema validation "
-                            "failed, retrying with repair hint",
+                            "failed (%s; received keys=%s), retrying with repair hint",
                             method,
                             attempt + 1,
+                            str(exc)[:300],
+                            sorted(data.keys()) if isinstance(data, dict) else type(data).__name__,
                         )
                         prepared_messages = [
                             *prepared_messages,
@@ -333,8 +370,11 @@ async def invoke_structured_chat(
                         continue
                     if method != last_method:
                         logger.debug(
-                            "structured invoke: method=%s schema validation failed, falling back",
+                            "structured invoke: method=%s schema validation failed "
+                            "(%s; received keys=%s), falling back",
                             method,
+                            str(exc)[:300],
+                            sorted(data.keys()) if isinstance(data, dict) else type(data).__name__,
                         )
                         method_failed = True
                         break

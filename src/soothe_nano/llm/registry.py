@@ -28,6 +28,11 @@ class ProviderCapabilities:
     (DashScope GLM/Kimi thinking models), structured output falls back to
     instructor or `function_calling`."""
 
+    supports_json_object: bool = True
+    """Provider honors `response_format: json_object`. This is the most widely
+    supported structured-output constraint across custom OpenAI-compatible
+    endpoints, so the fallback path pairs it with a schema-in-prompt message."""
+
     streaming: bool = True
     """Enable litellm streaming. False for servers whose streaming endpoint
     is broken (vLLM-Metal returns non-SSE JSON); routes through

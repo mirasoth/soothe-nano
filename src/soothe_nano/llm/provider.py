@@ -36,7 +36,7 @@ from langchain_core.callbacks import (  # noqa: E402
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models import BaseChatModel  # noqa: E402
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage  # noqa: E402
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage  # noqa: E402
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult  # noqa: E402
 from pydantic import ConfigDict  # noqa: E402
 
@@ -550,8 +550,16 @@ class ChatLitellmModel(BaseChatModel):
                 wire_schema, name=name, strict=strict
             )
             return _StructuredOutputRunnable(self, response_format=response_format, schema=schema)
-        # Fallback: instructor over the litellm adapter.
-        return _StructuredOutputRunnable(self, response_format=None, schema=schema)
+        # Fallback: schema-in-prompt + json_object response format (see
+        # `_StructuredOutputRunnable` — the model must be *told* the schema,
+        # otherwise it invents field names).
+        return _StructuredOutputRunnable(
+            self,
+            response_format=None,
+            schema=schema,
+            fallback=True,
+            json_object=self.capabilities.supports_json_object,
+        )
 
 
 class _ModelCircuit:
@@ -992,15 +1000,23 @@ class MultiModelChatModel(BaseChatModel):
                 wire_schema, name=name, strict=strict
             )
             return _StructuredOutputRunnable(self, response_format=response_format, schema=schema)
-        return _StructuredOutputRunnable(self, response_format=None, schema=schema)
+        return _StructuredOutputRunnable(
+            self,
+            response_format=None,
+            schema=schema,
+            fallback=True,
+            json_object=self.capabilities.supports_json_object,
+        )
 
 
 class _StructuredOutputRunnable:
     """Runnable that enforces structured output on top of a `ChatLitellmModel`.
 
     For `json_schema`-capable providers, attaches `response_format` to
-    the litellm call. For others, parses the JSON text response into the
-    pydantic schema (instructor-style fallback).
+    the litellm call. For others, the fallback *tells the model the schema*:
+    it appends a compact schema instruction message and (when the provider
+    supports it) attaches `response_format: json_object`. Without this the
+    model never sees the schema and invents field names.
 
     Invokes the public `ChatLitellmModel.invoke` / `ainvoke` path so
     LangChain callbacks (Langfuse generations, token usage) fire. `config`
@@ -1010,15 +1026,48 @@ class _StructuredOutputRunnable:
 
     _LC_CALL_KEYS = frozenset({"config", "callbacks", "tags", "metadata", "run_name", "run_id"})
 
+    _SCHEMA_INSTRUCTION = (
+        "Respond with ONLY a JSON object that exactly matches this JSON Schema "
+        "(no markdown fences, no extra keys, include every required field):\n{schema_json}"
+    )
+
     def __init__(
         self,
         model: ChatLitellmModel,
         response_format: dict[str, Any] | None,
         schema: Any,
+        *,
+        fallback: bool = False,
+        json_object: bool = False,
     ) -> None:
         self._model = model
         self._response_format = response_format
         self._schema = schema
+        self._fallback = fallback
+        self._json_object = json_object and fallback
+
+    def _schema_instruction_message(self) -> BaseMessage | None:
+        """Build the schema-in-prompt message for the fallback path."""
+        import json
+
+        if not self._fallback:
+            return None
+        if isinstance(self._schema, dict):
+            wire_schema = self._schema
+        else:
+            wire_schema = self._schema.model_json_schema()
+        compact = json.dumps(wire_schema, separators=(",", ":"), ensure_ascii=False)
+        return HumanMessage(content=self._SCHEMA_INSTRUCTION.format(schema_json=compact))
+
+    def _prepare_messages(self, messages: list[BaseMessage]) -> list[BaseMessage]:
+        """Append the schema instruction message on the fallback path."""
+        instruction = self._schema_instruction_message()
+        if instruction is None:
+            return messages
+        if messages and getattr(messages[-1], "content", "") == instruction.content:
+            # Repair-hint retries already carry the instruction.
+            return messages
+        return [*messages, instruction]
 
     @classmethod
     def _split_call_kwargs(
@@ -1044,6 +1093,11 @@ class _StructuredOutputRunnable:
         out = dict(kwargs)
         if self._response_format is not None:
             out["response_format"] = self._response_format
+        elif self._json_object:
+            out.setdefault(
+                "response_format",
+                {"type": "json_object"},
+            )
         return out
 
     @staticmethod
@@ -1106,7 +1160,7 @@ class _StructuredOutputRunnable:
     def invoke(self, messages: list[BaseMessage], config: Any | None = None, **kwargs: Any) -> Any:
         config, call_kwargs = self._split_call_kwargs(config, kwargs)
         msg = self._model.invoke(
-            messages,
+            self._prepare_messages(messages),
             config=self._config_for_model(config),
             **self._enrich_kwargs(call_kwargs),
         )
@@ -1117,7 +1171,7 @@ class _StructuredOutputRunnable:
     ) -> Any:
         config, call_kwargs = self._split_call_kwargs(config, kwargs)
         msg = await self._model.ainvoke(
-            messages,
+            self._prepare_messages(messages),
             config=self._config_for_model(config),
             **self._enrich_kwargs(call_kwargs),
         )

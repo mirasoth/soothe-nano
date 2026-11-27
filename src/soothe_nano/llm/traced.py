@@ -193,6 +193,7 @@ async def ainvoke_structured_traced(
     rate_limit_overrides: dict[str, Any] | None = None,
     normalize: Any | None = None,
     methods: tuple[str | None, ...] | None = None,
+    deadline_s: float | None = None,
 ) -> dict[str, Any]:
     """Invoke a chat model with structured output, Langfuse tracing, and rate-limit.
 
@@ -223,6 +224,8 @@ async def ainvoke_structured_traced(
             to :func:`invoke_structured_chat`).  When `None`, the default
             order (`function_calling → None → json_schema → json_mode`)
             is used.
+        deadline_s: Optional total wall-clock budget for the structured
+            method ladder, forwarded to :func:`invoke_structured_chat`.
 
     Returns:
         Parsed structured-output dictionary.
@@ -255,6 +258,7 @@ async def ainvoke_structured_traced(
             config=invoke_config,
             normalize=normalize,
             methods=methods,
+            deadline_s=deadline_s,
         )
 
     return await await_with_llm_call_policy(

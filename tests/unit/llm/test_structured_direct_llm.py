@@ -832,3 +832,198 @@ async def test_invoke_structured_chat_applies_normalize_before_validation() -> N
     assert out["defer"] is False
     assert out["answers"] == ["pushed commit to origin"]
     assert out["confidence"] == pytest.approx(0.7)
+
+
+# ── Fallback stability: schema-in-prompt + json_object (IG-CORE-014) ─────────
+
+
+def _fallback_model(**capability_overrides: object) -> object:
+    from soothe_nano.llm.provider import ChatLitellmModel
+    from soothe_nano.llm.registry import ProviderCapabilities
+
+    capabilities = ProviderCapabilities(
+        supports_json_schema=False,
+        **capability_overrides,  # type: ignore[arg-type]
+    )
+    return ChatLitellmModel(model="openai/test", capabilities=capabilities)
+
+
+@pytest.mark.asyncio
+async def test_structured_output_runnable_fallback_embeds_schema_and_json_object() -> None:
+    """Fallback structured output must tell the model the schema.
+
+    Regression for the plan-mode storm: the fallback sent neither tools nor
+    response_format nor an in-prompt schema, so thinking models invented
+    field names and every ladder attempt re-rolled the same broken call.
+    """
+    from soothe_nano.llm.provider import _StructuredOutputRunnable
+
+    model = _fallback_model()
+    runnable = model.with_structured_output(_WORD_SCHEMA)
+    assert isinstance(runnable, _StructuredOutputRunnable)
+
+    captured: dict[str, object] = {}
+
+    async def _fake_agenerate(messages, stop=None, run_manager=None, **kwargs):  # type: ignore[no-untyped-def]
+        captured["messages"] = messages
+        captured["kwargs"] = kwargs
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content='{"word": "OK"}'))])
+
+    model._agenerate = _fake_agenerate  # type: ignore[assignment]
+
+    out = await runnable.ainvoke([HumanMessage(content="pick a word")])
+    assert out == {"word": "OK"}
+
+    messages = captured["messages"]
+    instruction = messages[-1]  # type: ignore[index]
+    assert '"word"' in instruction.content
+    assert "JSON Schema" in instruction.content
+    assert captured["kwargs"].get("response_format") == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_structured_output_runnable_fallback_without_json_object_support() -> None:
+    """Providers without json_object support still get the schema in prompt."""
+    model = _fallback_model(supports_json_object=False)
+    runnable = model.with_structured_output(_WORD_SCHEMA)
+
+    captured: dict[str, object] = {}
+
+    async def _fake_agenerate(messages, stop=None, run_manager=None, **kwargs):  # type: ignore[no-untyped-def]
+        captured["messages"] = messages
+        captured["kwargs"] = kwargs
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content='{"word": "OK"}'))])
+
+    model._agenerate = _fake_agenerate  # type: ignore[assignment]
+
+    out = await runnable.ainvoke([HumanMessage(content="pick a word")])
+    assert out == {"word": "OK"}
+    assert "response_format" not in captured["kwargs"]
+    assert '"word"' in captured["messages"][-1].content  # type: ignore[index]
+
+
+@pytest.mark.asyncio
+async def test_structured_output_runnable_fallback_does_not_mutate_caller_messages() -> None:
+    model = _fallback_model()
+    runnable = model.with_structured_output(_WORD_SCHEMA)
+
+    async def _fake_agenerate(messages, stop=None, run_manager=None, **kwargs):  # type: ignore[no-untyped-def]
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content='{"word": "OK"}'))])
+
+    model._agenerate = _fake_agenerate  # type: ignore[assignment]
+
+    original = [HumanMessage(content="pick a word")]
+    await runnable.ainvoke(original)
+    assert len(original) == 1
+
+
+def _single_fallback_chat() -> MagicMock:
+    """MagicMock chat whose capabilities mark the single-method fallback."""
+    chat = MagicMock()
+    chat.capabilities = MagicMock()
+    chat.capabilities.supports_json_schema = False
+    return chat
+
+
+@pytest.mark.asyncio
+async def test_invoke_structured_chat_collapses_ladder_for_single_fallback_models() -> None:
+    """Nano models without json_schema support run one real method, not 4x2."""
+    chat = _single_fallback_chat()
+    invoke_counts: dict[str | None, int] = {}
+
+    def _with_structured_output(
+        _schema: object, method: str | None = None, **kwargs: object
+    ) -> MagicMock:
+        runnable = MagicMock()
+
+        async def _ainvoke(*_a: object, **_k: object) -> object:
+            invoke_counts[method] = invoke_counts.get(method, 0) + 1
+            if method == "json_mode":
+                return {"word": "OK"}
+            return {"wrong": "field"}
+
+        runnable.ainvoke = _ainvoke
+        return runnable
+
+    chat.with_structured_output = MagicMock(side_effect=_with_structured_output)
+
+    out = await invoke_structured_chat(
+        chat,
+        [HumanMessage(content="Return JSON")],
+        json_schema=_WORD_SCHEMA,
+        schema_name="WordReply",
+    )
+    assert out == {"word": "OK"}
+    assert invoke_counts == {"json_mode": 1}
+
+
+@pytest.mark.asyncio
+async def test_invoke_structured_chat_single_fallback_bounded_to_two_attempts() -> None:
+    """A persistently failing fallback stops after attempt + repair, no ladder."""
+    chat = _single_fallback_chat()
+    invoke_counts: dict[str | None, int] = {}
+
+    def _with_structured_output(
+        _schema: object, method: str | None = None, **kwargs: object
+    ) -> MagicMock:
+        runnable = MagicMock()
+
+        async def _ainvoke(*_a: object, **_k: object) -> object:
+            invoke_counts[method] = invoke_counts.get(method, 0) + 1
+            return {"hallucinated": True}
+
+        runnable.ainvoke = _ainvoke
+        return runnable
+
+    chat.with_structured_output = MagicMock(side_effect=_with_structured_output)
+
+    with pytest.raises(StructuredOutputError):
+        await invoke_structured_chat(
+            chat,
+            [HumanMessage(content="Return JSON")],
+            json_schema=_WORD_SCHEMA,
+            schema_name="WordReply",
+        )
+    assert sum(invoke_counts.values()) == 2
+
+
+@pytest.mark.asyncio
+async def test_invoke_structured_chat_deadline_aborts_ladder() -> None:
+    """deadline_s bounds the whole method ladder with StructuredOutputError."""
+    chat = MagicMock()
+    chat.with_structured_output = MagicMock(
+        side_effect=AssertionError("no method should be bound after the deadline")
+    )
+
+    with pytest.raises(StructuredOutputError, match="deadline"):
+        await invoke_structured_chat(
+            chat,
+            [HumanMessage(content="Return JSON")],
+            json_schema=_WORD_SCHEMA,
+            schema_name="WordReply",
+            deadline_s=0.0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_invoke_structured_chat_deadline_allows_fast_calls() -> None:
+    """A generous deadline does not interfere with successful invocations."""
+    chat = MagicMock()
+
+    def _with_structured_output(
+        _schema: object, method: str | None = None, **kwargs: object
+    ) -> MagicMock:
+        runnable = MagicMock()
+        runnable.ainvoke = AsyncMock(return_value={"word": "OK"})
+        return runnable
+
+    chat.with_structured_output = MagicMock(side_effect=_with_structured_output)
+
+    out = await invoke_structured_chat(
+        chat,
+        [HumanMessage(content="Return JSON")],
+        json_schema=_WORD_SCHEMA,
+        schema_name="WordReply",
+        deadline_s=60.0,
+    )
+    assert out == {"word": "OK"}

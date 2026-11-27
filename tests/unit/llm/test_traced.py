@@ -225,6 +225,7 @@ async def test_ainvoke_structured_traced_invokes_structured_chat() -> None:
         config: Any,
         normalize: Any,
         methods: tuple[str | None, ...] | None = None,
+        deadline_s: float | None = None,
     ) -> dict[str, Any]:
         captured.update(
             model=model,
@@ -235,6 +236,7 @@ async def test_ainvoke_structured_traced_invokes_structured_chat() -> None:
             config=config,
             normalize=normalize,
             methods=methods,
+            deadline_s=deadline_s,
         )
         return payload
 
